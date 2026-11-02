@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+/dist/
+guest/agent/target/
+guest/firmware/fbdxe/Build/
+*.xcodeproj/
+.DS_Store
+guest/agent/dist/

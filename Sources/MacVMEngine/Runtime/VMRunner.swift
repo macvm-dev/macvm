@@ -1,0 +1,223 @@
+public import Foundation
+public import MacVMModel
+@preconcurrency public import Virtualization
+
+/// 持有一台运行中的虚拟机。
+///
+/// 全部在主线程：`VZVirtualMachineView` 要求虚拟机建在主队列上，且 VZ 把客户机放在独立的
+/// XPC 进程里执行，主线程只处理控制调用与回调，不承载 vCPU。
+@MainActor
+public final class VMRunner: NSObject {
+    public enum StopReason: Sendable {
+        case guestShutdown
+        case suspended
+        case forced
+        case error(String)
+    }
+
+    public let bundle: VMBundle
+    public let config: VMConfig
+    public let virtualMachine: VZVirtualMachine
+    private let vzConfiguration: VZVirtualMachineConfiguration
+    public private(set) var stopReason: StopReason?
+
+    /// 虚拟机停止后回调一次。
+    public var onStop: ((StopReason) -> Void)?
+
+    private let lock: BundleLock
+    private var stopWaiters: [CheckedContinuation<StopReason, Never>] = []
+
+    public init(bundle: VMBundle, console: ConfigBuilder.Console = .none) throws {
+        guard VZVirtualMachine.isSupported else {
+            throw MacVMError.unsupported("本机不支持虚拟化（需要 Apple Silicon，且进程签名带 com.apple.security.virtualization）")
+        }
+        lock = try BundleLock.acquire(bundle)
+        self.bundle = bundle
+        config = try bundle.loadConfig()
+        var builder = ConfigBuilder(bundle: bundle, config: config)
+        builder.console = console
+        vzConfiguration = try builder.build()
+        virtualMachine = VZVirtualMachine(configuration: vzConfiguration)
+        super.init()
+        virtualMachine.delegate = self
+    }
+
+    public var state: VZVirtualMachine.State { virtualMachine.state }
+
+    public var canSuspend: Bool {
+        guard config.supportsSuspend, #available(macOS 14, *) else { return false }
+        return (try? vzConfiguration.validateSaveRestoreSupport()) != nil
+    }
+
+    public enum StartOutcome: Sendable {
+        case coldBoot
+        case restored
+        /// 挂起状态无法恢复（与当前配置或主机版本不符），已丢弃并冷启动。
+        case restoreFailed(String)
+    }
+
+    /// 存在挂起状态时从它恢复，否则冷启动。恢复失败会丢弃状态文件后冷启动，
+    /// 因为状态与磁盘已不一致，留着只会每次都失败。
+    @discardableResult
+    public func start(recovery: Bool = false) async throws -> StartOutcome {
+        var outcome = StartOutcome.coldBoot
+        if bundle.hasSavedState, !recovery, #available(macOS 14, *) {
+            do {
+                try await restore()
+                try? FileManager.default.removeItem(at: bundle.savedStateURL)
+                return .restored
+            } catch {
+                try? FileManager.default.removeItem(at: bundle.savedStateURL)
+                outcome = .restoreFailed(Self.describe(error))
+            }
+        }
+        if config.os == .macOS {
+            let options = VZMacOSVirtualMachineStartOptions()
+            options.startUpFromMacOSRecovery = recovery
+            var provisioning = false
+            if #available(macOS 27, *) { provisioning = try MacOSProvisioning.apply(to: options, bundle: bundle) }
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+                virtualMachine.start(options: options) { error in
+                    if let error { c.resume(throwing: error) } else { c.resume() }
+                }
+            }
+            if provisioning { MacOSProvisioning.markApplied(bundle) }
+        } else {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+                virtualMachine.start { c.resume(with: $0) }
+            }
+        }
+        return outcome
+    }
+
+    /// VZ 的错误把具体原因放在 underlying error 里，一并带上。
+    static func describe(_ error: any Error) -> String {
+        let ns = error as NSError
+        var parts = ["\(ns.domain)#\(ns.code) \(ns.localizedDescription)"]
+        if let reason = ns.localizedFailureReason { parts.append(reason) }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError { parts.append(describe(underlying)) }
+        return parts.joined(separator: "；")
+    }
+
+    /// 向客户机发送关机请求（相当于按电源键），客户机可能忽略。
+    public func requestStop() throws {
+        guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
+        do { try virtualMachine.requestStop() } catch {
+            throw MacVMError.engine("请求关机失败：\(error.localizedDescription)")
+        }
+    }
+
+    /// 立即断电，未写回的客户机数据会丢失。
+    public func forceStop() async throws {
+        guard virtualMachine.canStop else { throw MacVMError.notRunning(bundle.name) }
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            virtualMachine.stop { error in
+                if let error { c.resume(throwing: error) } else { c.resume() }
+            }
+        }
+        finish(.forced)
+    }
+
+    public func pause() async throws {
+        guard virtualMachine.canPause else { throw MacVMError.notRunning(bundle.name) }
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            virtualMachine.pause { c.resume(with: $0) }
+        }
+    }
+
+    public func resume() async throws {
+        guard virtualMachine.canResume else { throw MacVMError.notRunning(bundle.name) }
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            virtualMachine.resume { c.resume(with: $0) }
+        }
+    }
+
+    /// 暂停、把内存与设备状态写进包内后断电；下次 `start` 从该状态继续。
+    public func suspend() async throws {
+        guard canSuspend, #available(macOS 14, *) else {
+            throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
+        }
+        if virtualMachine.state == .running { try await pause() }
+        let url = bundle.savedStateURL
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            virtualMachine.saveMachineStateTo(url: url) { error in
+                if let error { c.resume(throwing: error) } else { c.resume() }
+            }
+        }
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            virtualMachine.stop { error in
+                if let error { c.resume(throwing: error) } else { c.resume() }
+            }
+        }
+        finish(.suspended)
+    }
+
+    /// 连接客户机内监听的 vsock 端口。返回的连接须保持引用直到用完。
+    public func connectToGuest(port: UInt32) async throws -> VZVirtioSocketConnection {
+        guard let device = virtualMachine.socketDevices.first as? VZVirtioSocketDevice else {
+            throw MacVMError.unsupported("虚拟机没有 vsock 设备")
+        }
+        do {
+            return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Unchecked<VZVirtioSocketConnection>, any Error>) in
+                device.connect(toPort: port) { c.resume(with: $0.map(Unchecked.init)) }
+            }.value
+        } catch {
+            throw MacVMError.notRunning("客户机 vsock 端口 \(port) 无人监听")
+        }
+    }
+
+    /// 等到虚拟机停止并返回原因。
+    public func waitUntilStopped() async -> StopReason {
+        if let stopReason { return stopReason }
+        return await withCheckedContinuation { stopWaiters.append($0) }
+    }
+
+    @available(macOS 14, *)
+    private func restore() async throws {
+        let url = bundle.savedStateURL
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            virtualMachine.restoreMachineStateFrom(url: url) { error in
+                if let error { c.resume(throwing: error) } else { c.resume() }
+            }
+        }
+        try await resume()
+    }
+
+    private func finish(_ reason: StopReason) {
+        guard stopReason == nil else { return }
+        stopReason = reason
+        onStop?(reason)
+        let waiters = stopWaiters
+        stopWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: reason) }
+    }
+}
+
+extension VMRunner: VZVirtualMachineDelegate {
+    nonisolated public func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+        MainActor.assumeIsolated { finish(.guestShutdown) }
+    }
+
+    nonisolated public func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: any Error) {
+        let message = error.localizedDescription
+        MainActor.assumeIsolated { finish(.error(message)) }
+    }
+}
+
+extension VZVirtualMachine.State {
+    public var label: String {
+        switch self {
+        case .stopped: "stopped"
+        case .running: "running"
+        case .paused: "paused"
+        case .error: "error"
+        case .starting: "starting"
+        case .pausing: "pausing"
+        case .resuming: "resuming"
+        case .stopping: "stopping"
+        case .saving: "saving"
+        case .restoring: "restoring"
+        @unknown default: "unknown"
+        }
+    }
+}

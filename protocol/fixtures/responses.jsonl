@@ -1,0 +1,4 @@
+{"ok":true}
+{"ok":false,"error":"no such file"}
+{"ok":true,"info":{"version":"0.1.0","os":"linux","hostname":"dev","ipv4":["192.168.64.3"],"mem_total":2073000000,"mem_available":1800000000,"uptime_ms":123456}}
+{"ok":true,"text":"hello"}

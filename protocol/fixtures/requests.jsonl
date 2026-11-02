@@ -1,0 +1,10 @@
+{"op":"info"}
+{"op":"exec","argv":["uname","-a"],"cwd":"/tmp","env":{"LANG":"C.UTF-8"},"tty":true,"cols":120,"rows":40}
+{"op":"exec","argv":["true"]}
+{"op":"exec","argv":["id"],"user":"root"}
+{"op":"forward","port":22}
+{"op":"shutdown","reboot":false}
+{"op":"set-time","unix_ms":1793660000000}
+{"op":"clipboard-get"}
+{"op":"clipboard-set","text":"你好 \"quoted\"\n"}
+{"op":"mount","tag":"src","path":"/Users/ethan/src","read_only":false}

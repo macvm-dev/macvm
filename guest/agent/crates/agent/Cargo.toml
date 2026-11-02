@@ -1,0 +1,12 @@
+[package]
+name = "macvm-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+macvm-agent-protocol.workspace = true
+macvm-agent-platform.workspace = true
+
+[lints]
+workspace = true
