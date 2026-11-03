@@ -1,4 +1,5 @@
-//! virtio-gpu 显卡驱动（viogpudo、viogpu3d）的硬件光标开关（驱动键下的 `HWCursor`，驱动启动时读取，INF 默认关）。
+//! virtio-gpu 显卡驱动的硬件光标开关（驱动键下的 `HWCursor`，驱动启动时读取，INF 默认关）。
+//! 只有 viogpudo 支持硬件光标；viogpu3d 不向 Windows 申报硬件光标能力，开关对它无效，光标总由 Windows 画进画面。
 //!
 //! 打开后 Windows 不再把光标画进画面，而是交给显卡：QEMU 的 virtio-gpu 把光标形状转给宿主，宿主用它作
 //! 系统光标，跟手且无延迟；VZ 的 virtio-gpu 不显示硬件光标，打开后客户机里就看不到光标。
@@ -21,7 +22,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{CURSOR_SHOWING, CURSORINFO, GetCursorInfo, GetIconInfo, HCURSOR, ICONINFO};
 
-use super::gpu::{for_each_present_virtio_gpu, on_vz, open_driver_key};
+use super::gpu::{for_each_present_virtio_gpu, is_3d_driver, on_vz, open_driver_key};
 use super::wide;
 use crate::CursorImage;
 
@@ -43,7 +44,7 @@ pub fn configure_hardware_cursor() -> bool {
         unsafe {
             let read = RegQueryValueExW(key, name.as_ptr(), ptr::null(), ptr::null_mut(), (&mut current as *mut u32).cast(), &mut size);
             let wanted = u32::from(enable);
-            if enable && read == 0 && current == 1 {
+            if enable && read == 0 && current == 1 && !is_3d_driver(key) {
                 HARDWARE_CURSOR_ACTIVE.store(true, Ordering::Relaxed);
             }
             if read != 0 || current != wanted {
@@ -55,6 +56,11 @@ pub fn configure_hardware_cursor() -> bool {
     changed
 }
 
+/// 运行中换上了不支持硬件光标的驱动：此后光标由客户机画进画面，`watch_cursor` 随即结束。
+pub(super) fn hardware_cursor_lost() {
+    HARDWARE_CURSOR_ACTIVE.store(false, Ordering::Relaxed);
+}
+
 /// 光标变化时回调（`None` 表示隐藏），回调出错即返回。只有本次开机已在用硬件光标时才提供：
 /// 否则客户机自己把光标画进画面，宿主再显示一个就成了两个。
 pub fn watch_cursor(mut on_change: impl FnMut(Option<CursorImage>) -> io::Result<()>) -> io::Result<()> {
@@ -63,6 +69,9 @@ pub fn watch_cursor(mut on_change: impl FnMut(Option<CursorImage>) -> io::Result
     }
     let mut last: Option<(HCURSOR, bool)> = None;
     loop {
+        if !HARDWARE_CURSOR_ACTIVE.load(Ordering::Relaxed) {
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "客户机未使用硬件光标"));
+        }
         // SAFETY: 结构体先填 cbSize。
         let mut info: CURSORINFO = unsafe { zeroed() };
         info.cbSize = size_of::<CURSORINFO>() as u32;

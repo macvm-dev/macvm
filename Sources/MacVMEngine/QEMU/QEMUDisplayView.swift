@@ -157,9 +157,18 @@ public final class QEMUDisplayView: NSView {
         watcher.onClose = { [weak self] retry in
             guard let self else { return }
             cursorWatcher = nil
-            agentCursorActive = false
+            if agentCursorActive {
+                agentCursorActive = false
+                guestCursorImage = nil
+                guestCursor = nil
+                updateCursor()
+            }
             spice?.showGuestCursor(true)
-            guard retry, window != nil else { return }
+            guard retry, window != nil else {
+                // 代理在线但不提供光标（客户机自己画光标），同样补上缩放比例。
+                scheduleGuestFit()
+                return
+            }
             cursorWatchRetry = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.cursorWatchRetry = nil

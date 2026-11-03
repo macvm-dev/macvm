@@ -79,6 +79,12 @@ pub(super) fn open_driver_key(set: HDEVINFO, info: &SP_DEVINFO_DATA, access: u32
     (!key.is_null() && !ptr::eq(key, INVALID_HANDLE_VALUE as _)).then_some(key)
 }
 
+/// 驱动键所属的驱动是否带用户态驱动（Direct3D），即 viogpu3d：只有它在驱动键下登记 UserModeDriverName，viogpudo 没有。
+pub(super) fn is_3d_driver(key: HKEY) -> bool {
+    // SAFETY: 只查询值是否存在，不读数据。
+    unsafe { RegQueryValueExW(key, wide("UserModeDriverName").as_ptr(), ptr::null(), ptr::null_mut(), ptr::null_mut(), ptr::null_mut()) == 0 }
+}
+
 /// QEMU 下有驱动包时，把在场且还没用上它的 virtio-gpu 换成 viogpu3d；返回是否换了。
 /// 换上后画面立即由它驱动，桌面合成改用 GPU 要等下次开机。
 pub fn install_gpu_driver() -> io::Result<bool> {
@@ -88,12 +94,9 @@ pub fn install_gpu_driver() -> io::Result<bool> {
     }
     let mut pending = Vec::new();
     for_each_present_virtio_gpu(|set, info| {
-        // 只有带用户态驱动（Direct3D）的显卡驱动才在驱动键下登记 UserModeDriverName，viogpudo 没有。
         if let Some(key) = open_driver_key(set, info, KEY_QUERY_VALUE) {
-            // SAFETY: 只查询值是否存在，不读数据。
-            let has_3d = unsafe {
-                RegQueryValueExW(key, wide("UserModeDriverName").as_ptr(), ptr::null(), ptr::null_mut(), ptr::null_mut(), ptr::null_mut())
-            } == 0;
+            let has_3d = is_3d_driver(key);
+            // SAFETY: 键由 open_driver_key 打开，只关一次。
             unsafe { RegCloseKey(key) };
             if has_3d {
                 return;
@@ -110,6 +113,9 @@ pub fn install_gpu_driver() -> io::Result<bool> {
         if unsafe { UpdateDriverForPlugAndPlayDevicesW(ptr::null_mut(), wide(id).as_ptr(), inf.as_ptr(), 0, &mut reboot) } == 0 {
             return Err(io::Error::from_raw_os_error(unsafe { GetLastError() } as i32));
         }
+    }
+    if !pending.is_empty() {
+        super::cursor::hardware_cursor_lost();
     }
     Ok(!pending.is_empty())
 }
