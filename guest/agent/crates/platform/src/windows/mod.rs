@@ -10,7 +10,7 @@ mod system;
 pub use cursor::{configure_hardware_cursor, restore_system_cursors, watch_cursor};
 pub use display::set_display;
 pub use dpi::set_display_scale;
-pub use gpu::{GPU_DRIVER_DIR, install_gpu_driver};
+pub use gpu::{GPU_DRIVER_DIR, gpu_driver_package_is, install_gpu_driver, replace_gpu_driver};
 pub use exec::spawn;
 pub use listener::{Conn, Listener, shutdown_write};
 pub use system::*;

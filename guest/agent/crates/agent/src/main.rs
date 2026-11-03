@@ -99,6 +99,7 @@ fn serve(mut conn: Conn, config: &Config) -> io::Result<()> {
         Request::Display { width, height } => reply(&mut conn, platform::set_display(width, height).map(|_| Response::ok())),
         Request::DisplayScale { percent } => reply(&mut conn, platform::set_display_scale(percent).map(|_| Response::ok())),
         Request::CursorWatch => watch_cursor(conn),
+        Request::GpuDriver { sha256, size } => receive_gpu_driver(conn, &sha256, size),
         Request::Forward { port } => match TcpStream::connect(("127.0.0.1", port)) {
             Ok(tcp) => {
                 tcp.set_nodelay(true).ok();
@@ -155,6 +156,24 @@ fn watch_cursor(mut conn: Conn) -> io::Result<()> {
     // 读线程还持有连接的克隆，只 drop 不会让宿主看到结束。
     platform::shutdown_write(&conn);
     written
+}
+
+/// 驱动包的大小上限，防止宿主传错长度时按它分配内存。
+const MAX_GPU_DRIVER_PACKAGE: u64 = 256 << 20;
+
+fn receive_gpu_driver(mut conn: Conn, sha256: &str, size: u64) -> io::Result<()> {
+    let reply = |text: &str| Response { text: Some(text.to_string()), ..Response::ok() };
+    if platform::gpu_driver_package_is(sha256) {
+        return proto::write_json_line(&mut conn, &reply("current"));
+    }
+    if size > MAX_GPU_DRIVER_PACKAGE {
+        return proto::write_json_line(&mut conn, &Response::error(format!("驱动包过大：{size} 字节")));
+    }
+    proto::write_json_line(&mut conn, &reply("send"))?;
+    let mut zip = vec![0u8; size as usize];
+    conn.read_exact(&mut zip)?;
+    let result = platform::replace_gpu_driver(&zip, sha256).map(|changed| reply(if changed { "installed" } else { "unchanged" }));
+    proto::write_json_line(&mut conn, &result.unwrap_or_else(|e| Response::error(e.to_string())))
 }
 
 fn forward(conn: Conn, tcp: TcpStream) -> io::Result<()> {

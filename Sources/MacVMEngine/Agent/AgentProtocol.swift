@@ -37,8 +37,10 @@ public enum AgentProtocol {
         case display(width: Int, height: Int)
         case cursorWatch
         case displayScale(percent: Int)
+        /// 随后发送 `size` 字节的驱动包，见 `WindowsGPUDriver.push`。
+        case gpuDriver(sha256: String, size: Int)
 
-        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent }
+        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size }
 
         public func encode(to encoder: any Encoder) throws {
             if case .exec(let req) = self {
@@ -60,6 +62,8 @@ public enum AgentProtocol {
                 try c.encode("mount", forKey: .op); try c.encode(tag, forKey: .tag); try c.encode(path, forKey: .path); try c.encode(ro, forKey: .read_only)
             case .cursorWatch: try c.encode("cursor-watch", forKey: .op)
             case .displayScale(let percent): try c.encode("display-scale", forKey: .op); try c.encode(percent, forKey: .percent)
+            case .gpuDriver(let sha256, let size):
+                try c.encode("gpu-driver", forKey: .op); try c.encode(sha256, forKey: .sha256); try c.encode(size, forKey: .size)
             case .display(let width, let height):
                 try c.encode("display", forKey: .op); try c.encode(width, forKey: .width); try c.encode(height, forKey: .height)
             }
@@ -81,6 +85,7 @@ public enum AgentProtocol {
             case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
             case "cursor-watch": self = .cursorWatch
             case "display-scale": self = .displayScale(percent: try c.decode(Int.self, forKey: .percent))
+            case "gpu-driver": self = .gpuDriver(sha256: try c.decode(String.self, forKey: .sha256), size: try c.decode(Int.self, forKey: .size))
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }

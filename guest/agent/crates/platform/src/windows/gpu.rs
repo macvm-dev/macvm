@@ -4,10 +4,14 @@
 //! 3D 经 virglrenderer 在宿主 GPU 上执行。VZ 的 virtio-gpu 没有 3D，换上 viogpu3d 开机即崩溃，
 //! 所以只装在场的设备，不像 `pnputil /install` 那样给不在场的同型号实例也标上「下次出现时重装」。
 
+use std::fs;
 use std::io;
 use std::mem::size_of;
+use std::os::windows::process::CommandExt;
 use std::path::Path;
+use std::process::Command;
 use std::ptr;
+use std::sync::Mutex;
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
     DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DRV, GUID_DEVCLASS_DISPLAY, HDEVINFO, INSTALLFLAG_FORCE, SP_DEVINFO_DATA, SPDRP_HARDWAREID,
@@ -23,6 +27,12 @@ use super::wide;
 
 /// 宿主放 viogpu3d 驱动包（含 `viogpu3d.inf`）的目录。
 pub const GPU_DRIVER_DIR: &str = r"C:\ProgramData\macvm\viogpu3d";
+/// 驱动目录里记着宿主推来的驱动包（zip）SHA-256 的文件。
+const PACKAGE_STAMP: &str = ".macvm-package";
+/// 开机时的安装与宿主推送可能同时发生，装驱动一次只做一个。
+static INSTALLING: Mutex<()> = Mutex::new(());
+/// 不创建控制台窗口（`CREATE_NO_WINDOW`）。
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// virtio-gpu 的 PCI 厂商与设备号。
 const VIRTIO_GPU: &str = "VEN_1AF4&DEV_1050";
 /// VZ 的 SMBIOS 制造商。
@@ -89,6 +99,7 @@ pub(super) fn is_3d_driver(key: HKEY) -> bool {
 /// 比已装的旧也强制换上：驱动要与宿主的图形栈配套。
 /// 换上后画面立即由它驱动，桌面合成改用 GPU 要等下次开机。
 pub fn install_gpu_driver() -> io::Result<bool> {
+    let _installing = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
     let inf = Path::new(GPU_DRIVER_DIR).join("viogpu3d.inf");
     if on_vz() {
         return Ok(false);
@@ -122,6 +133,51 @@ pub fn install_gpu_driver() -> io::Result<bool> {
         super::cursor::hardware_cursor_lost();
     }
     Ok(changed)
+}
+
+/// 驱动目录里的驱动包是否就是宿主那个 SHA-256 为 `sha256` 的包。
+pub fn gpu_driver_package_is(sha256: &str) -> bool {
+    fs::read_to_string(Path::new(GPU_DRIVER_DIR).join(PACKAGE_STAMP)).is_ok_and(|s| s.trim() == sha256)
+}
+
+/// 用宿主推来的驱动包（含 `drivers/viogpu3d` 的 zip）替换驱动目录，随即安装；返回是否换了驱动。
+pub fn replace_gpu_driver(zip: &[u8], sha256: &str) -> io::Result<bool> {
+    if on_vz() {
+        return Err(io::Error::new(io::ErrorKind::Unsupported, "VZ 下不装 3D 显卡驱动"));
+    }
+    let staging = std::env::temp_dir().join(format!("macvm-viogpu3d-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging)?;
+    let result = unpack_driver_package(zip, &staging);
+    if result.is_ok() {
+        fs::write(Path::new(GPU_DRIVER_DIR).join(PACKAGE_STAMP), sha256)?;
+    }
+    let _ = fs::remove_dir_all(&staging);
+    result?;
+    install_gpu_driver()
+}
+
+fn unpack_driver_package(zip: &[u8], staging: &Path) -> io::Result<()> {
+    let archive = staging.join("package.zip");
+    fs::write(&archive, zip)?;
+    // Windows 自带的 bsdtar 能解 zip。
+    let tar = Path::new(&std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into())).join(r"System32\tar.exe");
+    let status = Command::new(tar).arg("-xf").arg(&archive).arg("-C").arg(staging).creation_flags(CREATE_NO_WINDOW).status()?;
+    if !status.success() {
+        return Err(io::Error::other(format!("解压驱动包失败：{status}")));
+    }
+    let source = staging.join("drivers").join("viogpu3d");
+    if !source.join("viogpu3d.inf").exists() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "驱动包里没有 drivers/viogpu3d/viogpu3d.inf"));
+    }
+    let target = Path::new(GPU_DRIVER_DIR);
+    let _ = fs::remove_dir_all(target);
+    fs::create_dir_all(target)?;
+    for entry in fs::read_dir(&source)? {
+        let entry = entry?;
+        fs::copy(entry.path(), target.join(entry.file_name()))?;
+    }
+    Ok(())
 }
 
 /// 设备当前驱动的 INF 内容。Windows 安装驱动时把 INF 原样复制为 `%windir%\INF` 下的 oemN.inf，驱动键的 InfPath 记着文件名。

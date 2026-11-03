@@ -191,3 +191,12 @@ pub fn mount_virtiofs(tag: &str, path: &str, read_only: bool) -> io::Result<()> 
         Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 客户机的共享目录由系统自动挂载"))
     }
 }
+
+/// 只有 Windows 客户机由宿主推送显卡驱动。
+pub fn gpu_driver_package_is(_sha256: &str) -> bool {
+    false
+}
+
+pub fn replace_gpu_driver(_zip: &[u8], _sha256: &str) -> io::Result<bool> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机由宿主推送显卡驱动"))
+}

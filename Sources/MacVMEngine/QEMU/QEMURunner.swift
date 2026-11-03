@@ -16,6 +16,7 @@ public final class QEMURunner: MachineRunner {
     private var qmp: QMPClient?
     private var stopReason: MachineStopReason?
     private var stopWaiters: [CheckedContinuation<MachineStopReason, Never>] = []
+    private var gpuDriverSync: Task<Void, Never>?
 
     /// `display` 为 true 时由 QEMU 自己开一个 Cocoa 窗口显示画面。
     public init(bundle: VMBundle, display: Bool = false) throws {
@@ -43,6 +44,7 @@ public final class QEMURunner: MachineRunner {
                 try await qmp?.execute("cont")
                 try? FileManager.default.removeItem(at: bundle.savedStateURL)
                 stateLabel = "running"
+                syncGuestGPUDriver()
                 return .restored
             } catch {
                 await terminate()
@@ -50,12 +52,14 @@ public final class QEMURunner: MachineRunner {
                 try await launch(incoming: nil)
                 stateLabel = "running"
                 pressKeysForInstallMedia()
+                syncGuestGPUDriver()
                 return .restoreFailed(VZRunner.describe(error))
             }
         }
         try await launch(incoming: nil)
         stateLabel = "running"
         pressKeysForInstallMedia()
+        syncGuestGPUDriver()
         return .coldBoot
     }
 
@@ -219,6 +223,7 @@ public final class QEMURunner: MachineRunner {
 
     /// 结束当前 QEMU 进程并等它退出。先摘下 `process`，它的退出不再触发停止回调，由调用方决定停止原因。
     private func terminate() async {
+        gpuDriverSync?.cancel()
         guard let process else { return }
         let client = qmp
         self.process = nil
@@ -248,6 +253,35 @@ public final class QEMURunner: MachineRunner {
         stopWaiters.removeAll()
         waiters.forEach { $0.resume(returning: reason) }
     }
+
+    /// 开了 3D 加速的 Windows：代理上线后把自带的驱动包推过去。驱动要与自带 QEMU 的图形组件配套，
+    /// 升级 App 换了图形组件而客户机还是旧驱动时，桌面合成会崩溃。
+    private func syncGuestGPUDriver() {
+        guard config.os == .windows, config.guestAgent, config.graphicsAcceleration, let zip = WindowsGPUDriver.package(qemu) else { return }
+        let socket = QEMUCommand.portSocket(bundle, port: AgentProtocol.port).path
+        let name = bundle.name
+        gpuDriverSync?.cancel()
+        gpuDriverSync = Task.detached {
+            // 代理在客户机登录后才启动，开机慢时要等好几分钟。
+            for _ in 0..<Self.agentWaitAttempts {
+                do {
+                    if try WindowsGPUDriver.push(zip, to: socket) {
+                        FileHandle.standardError.write(Data("macvm: 已为 \(name) 更新显卡驱动，重启客户机后桌面合成改用新驱动\n".utf8))
+                    }
+                    return
+                } catch is WindowsGPUDriver.AgentNotReady {
+                    try? await Task.sleep(for: Self.agentWaitInterval)
+                    if Task.isCancelled { return }
+                } catch {
+                    FileHandle.standardError.write(Data("macvm: 为 \(name) 推送显卡驱动失败：\(error)\n".utf8))
+                    return
+                }
+            }
+        }
+    }
+
+    private nonisolated static let agentWaitAttempts = 120
+    private nonisolated static let agentWaitInterval: Duration = .seconds(5)
 
     /// Windows 安装光盘的引导程序要求开机几秒内按任意键，否则跳过光盘。
     /// 只在前几秒按，免得回车落到安装程序界面上。
