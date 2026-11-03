@@ -12,7 +12,9 @@
 
 | 命令 | 作用 |
 | --- | --- |
-| `create <名> [--image ID \| --iso 文件] [--os linux\|windows]` | 创建 Linux / Windows 虚拟机 |
+| `create <名> [--image ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu]` | 创建 Linux / Windows 虚拟机；Windows 从原版 ISO 无人值守部署 |
+| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G]` | 修改已停止虚拟机的配置，可切换引擎 |
+| `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
 | `install-macos <名> [--ipsw 文件]` | 安装 macOS 虚拟机并开通 SSH 与代理 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
 | `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机 |
@@ -24,6 +26,19 @@
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
 | `agent install\|info <名>` | 安装 / 查询客户机代理 |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
+
+## 引擎
+
+| | vz（默认） | qemu |
+| --- | --- | --- |
+| 依赖 | 无 | `brew install qemu` |
+| 资源占用 | 最低 | 多一个 QEMU 进程 |
+| macOS 客户机 | 支持 | 不支持 |
+| Windows 声音 / 挂起 | 无 | 有 |
+| 共享目录（virtio-fs） | 支持 | 不支持 |
+| 客户机端口访问 | vsock、NAT IP | 只有 22 与代理端口，经 Unix socket 转发 |
+
+Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改用 vz 运行。
 
 ## 与 runode 配合
 

@@ -9,6 +9,8 @@ public struct HostCapabilities: Codable, Sendable {
     public let physicalMemory: UInt64
     public let virtualization: Bool
     public let windows: Bool
+    /// Homebrew 安装的 qemu-system-aarch64 路径；未安装时为 nil。
+    public let qemu: String?
     public let rosetta: Bool
     public let bridgedNetworking: Bool
     public let bridgeInterfaces: [String]
@@ -26,6 +28,7 @@ public struct HostCapabilities: Codable, Sendable {
             physicalMemory: HostInfo.physicalMemory,
             virtualization: VZVirtualMachine.isSupported,
             windows: WindowsSupport.isAvailable,
+            qemu: QEMUInstallation.locate()?.binary.path,
             rosetta: VZLinuxRosettaDirectoryShare.availability == .installed,
             bridgedNetworking: Entitlements.has(Entitlements.bridgedNetworking) && !bridges.isEmpty,
             bridgeInterfaces: bridges,

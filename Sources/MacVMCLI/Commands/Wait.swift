@@ -29,8 +29,7 @@ struct Wait: AsyncParsableCommand {
             let ready = try await VMStatus.poll(timeout: TimeInterval(timeout), interval: 0.2) { AgentClient.isReachable(bundle) }
             guard ready else { throw MacVMError.timeout("\(bundle.name) 的客户机代理 \(timeout) 秒内未响应") }
         } else {
-            let fd = try await GuestConnection.connect(to: bundle, port: 22, timeout: TimeInterval(timeout))
-            close(fd)
+            close(try await Proxy.openWithRetry(bundle, config: config, port: 22, timeout: timeout))
         }
     }
 }

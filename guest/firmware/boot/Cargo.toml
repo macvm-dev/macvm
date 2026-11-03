@@ -1,0 +1,8 @@
+[package]
+name = "macvm-boot"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+uefi-raw = "0.11"
+uefi = { version = "0.35", features = ["alloc", "global_allocator", "panic_handler", "logger"] }

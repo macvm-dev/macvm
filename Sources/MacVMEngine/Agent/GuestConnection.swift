@@ -1,8 +1,21 @@
 public import Foundation
 public import MacVMModel
 
-/// 连到客户机内的 TCP 端口。当前经 NAT 网络直连客户机 IP。
+/// 连到客户机内的 TCP 端口。
 public enum GuestConnection {
+    /// 返回连到客户机 `port` 的文件描述符，调用方负责关闭：
+    /// QEMU 引擎经其转发到 Unix socket 的端口；装有代理时经代理转发；否则经 NAT 网络直连客户机 IP。
+    public static func open(_ bundle: VMBundle, config: VMConfig, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
+        if config.engine == .qemu {
+            let socket = try ControlClient.openGuestPort(bundle, port: UInt32(port))
+            return dup(socket.fd)
+        }
+        if config.guestAgent {
+            return dup(try AgentClient.forward(bundle, port: port).socket.fd)
+        }
+        return try await connect(to: bundle, port: port, timeout: timeout)
+    }
+
     public static func connect(to bundle: VMBundle, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
         guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
         var ip: String?

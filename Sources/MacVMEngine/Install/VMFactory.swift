@@ -108,6 +108,7 @@ public enum VMFactory {
                 serialConsole: options.serialConsole
             )
             try bundle.saveConfig(config)
+            try await RunnerFactory.prepare(bundle)
             // 立即组装一次，让磁盘、网络、共享目录等配置错误在创建时就暴露。
             _ = try ConfigBuilder(bundle: bundle, config: config).build(validate: Entitlements.has(Entitlements.virtualization))
             return bundle

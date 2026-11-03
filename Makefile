@@ -4,7 +4,7 @@ ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 
-.PHONY: build sign test lint agent app release clean
+.PHONY: build sign test lint agent firmware app release clean
 
 build:
 	swift build -c $(CONFIG)
@@ -24,6 +24,9 @@ lint:
 agent:
 	scripts/build-agent.sh
 
+firmware:
+	scripts/build-firmware.sh
+
 app:
 	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" scripts/bundle-app.sh
 
@@ -32,4 +35,4 @@ release:
 	scripts/notarize.sh dist/MacVM.app
 
 clean:
-	rm -rf .build dist guest/agent/target
+	rm -rf .build dist guest/agent/target guest/agent/dist guest/firmware/target guest/firmware/dist

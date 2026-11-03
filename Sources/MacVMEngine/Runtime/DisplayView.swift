@@ -1,7 +1,7 @@
 public import AppKit
 @preconcurrency import Virtualization
 
-extension VMRunner {
+extension VZRunner {
     /// 显示本虚拟机画面并接收键鼠的视图。窗口缩放时客户机跟着改分辨率，而不是缩放画面。
     public func makeDisplayView() -> NSView {
         let view = VZVirtualMachineView()

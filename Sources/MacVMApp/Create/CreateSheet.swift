@@ -41,7 +41,9 @@ struct CreateSheet: View {
                     if os == .linux { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
                 }
                 if os == .windows {
-                    Text("Windows 需自备 ARM64 安装 ISO。Virtualization.framework 不提供 TPM，Windows 11 安装程序会拒绝安装。")
+                    Text(QEMUInstallation.locate() == nil
+                         ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
+                         : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，会弹出 QEMU 窗口显示进度），装好后可在设置里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -94,7 +96,10 @@ struct CreateSheet: View {
     private var allowedTypes: [UTType] { [UTType(filenameExtension: os == .macOS ? "ipsw" : "iso") ?? .data] }
     private var defaultName: String { os == .macOS ? "macos" : os == .windows ? "windows" : "linux" }
     private var finalName: String { name.isEmpty ? defaultName : name }
-    private var isValid: Bool { (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil) }
+    private var isValid: Bool {
+        (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
+            && (os != .windows || QEMUInstallation.locate() != nil)
+    }
 
     private func resetDefaults(for os: GuestOS) {
         file = nil
@@ -126,6 +131,18 @@ struct CreateSheet: View {
                         case .installing(let f): model.activity[name] = "正在安装 \(Int(f * 100))%"
                         }
                     }
+                case (.windows, _):
+                    guard let iso = file else { return }
+                    model.activity[name] = "正在准备 Windows 安装盘…"
+                    let bundle = try await WindowsInstaller.create(.init(name: name, iso: iso, cpuCount: cpus, memorySize: memory, diskSize: disk),
+                                                                   in: model.library)
+                    model.activity[name] = "正在安装 Windows…"
+                    guard await model.start(name) != nil else { return }
+                    try await WindowsInstaller.waitUntilSetupComplete(bundle, proxyCommand: "\"\(CLILocation.path)\" proxy \(name) --timeout 10")
+                    model.activity[name] = "正在完成安装…"
+                    await model.stop(name)
+                    _ = try await VMStatus.poll(timeout: 180) { BundleLock.holder(of: bundle) == nil }
+                    try WindowsInstaller.finishSetup(bundle)
                 case (_, .cloudImage(let id)):
                     model.activity[name] = "正在下载镜像…"
                     let options = VMFactory.Options(name: name, os: .linux, cpuCount: cpus, memorySize: memory, diskSize: disk,

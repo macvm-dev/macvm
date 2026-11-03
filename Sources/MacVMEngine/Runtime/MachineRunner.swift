@@ -1,0 +1,76 @@
+public import Foundation
+public import MacVMModel
+
+public enum MachineStopReason: Sendable, Equatable {
+    case guestShutdown
+    case suspended
+    case forced
+    case error(String)
+
+    public var label: String {
+        switch self {
+        case .guestShutdown: "guest_shutdown"
+        case .suspended: "suspended"
+        case .forced: "forced"
+        case .error: "error"
+        }
+    }
+}
+
+public enum MachineStartOutcome: Sendable {
+    case coldBoot
+    case restored
+    /// 挂起状态无法恢复（与当前配置或主机版本不符），已丢弃并冷启动。
+    case restoreFailed(String)
+}
+
+/// 到客户机内某个端口的双向字节通道；用完调用 `close`。
+public struct GuestChannel: Sendable {
+    public let fileDescriptor: Int32
+    public let close: @Sendable () -> Void
+}
+
+/// 一台运行中的虚拟机，与具体引擎无关。持有者负责包内 `run.lock`。
+@MainActor
+public protocol MachineRunner: AnyObject, Sendable {
+    var bundle: VMBundle { get }
+    var config: VMConfig { get }
+    /// 与 `VZVirtualMachine.State` 的标签同一套取值：running、paused、stopped、starting 等。
+    var stateLabel: String { get }
+    var canSuspend: Bool { get }
+    var onStop: ((MachineStopReason) -> Void)? { get set }
+
+    @discardableResult
+    func start(recovery: Bool) async throws -> MachineStartOutcome
+    func requestStop() throws
+    func forceStop() async throws
+    func pause() async throws
+    func resume() async throws
+    func suspend() async throws
+    func waitUntilStopped() async -> MachineStopReason
+    func openGuestChannel(port: UInt32) async throws -> GuestChannel
+    func screenshot(to url: URL) async throws
+}
+
+extension MachineRunner {
+    @discardableResult
+    public func start() async throws -> MachineStartOutcome { try await start(recovery: false) }
+}
+
+public enum RunnerFactory {
+    /// 创建运行器前需要的异步准备，目前只有 VZ 引擎的 Windows 客户机需要。
+    public static func prepare(_ bundle: VMBundle) async throws {
+        let config = try bundle.loadConfig()
+        if config.os == .windows, config.engine == .vz {
+            try await WindowsSupport.prepareForVZ(bundle)
+        }
+    }
+
+    @MainActor
+    public static func make(_ bundle: VMBundle, console: ConfigBuilder.Console = .none, display: Bool = false) throws -> any MachineRunner {
+        switch try bundle.loadConfig().engine {
+        case .vz: try VZRunner(bundle: bundle, console: console)
+        case .qemu: try QEMURunner(bundle: bundle, display: display)
+        }
+    }
+}

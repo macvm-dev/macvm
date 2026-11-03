@@ -79,7 +79,7 @@ public enum MacOSInstaller {
                 guestUser: options.user
             )
             try bundle.saveConfig(config)
-            try MacOSProvisioning.schedule(.init(user: options.user, password: options.password ?? MacOSProvisioning.randomPassword()), in: bundle)
+            try MacOSProvisioning.schedule(.init(user: options.user, password: options.password ?? GuestCredentials.randomPassword()), in: bundle)
 
             let vz = try ConfigBuilder(bundle: bundle, config: config).build()
             let vm = VZVirtualMachine(configuration: vz)
@@ -95,7 +95,7 @@ public enum MacOSInstaller {
             return bundle
         } catch {
             try? FileManager.default.removeItem(at: bundle.url)
-            throw MacVMError.engine("安装 macOS 失败：\(VMRunner.describe(error))")
+            throw MacVMError.engine("安装 macOS 失败：\(VZRunner.describe(error))")
         }
     }
 

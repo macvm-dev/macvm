@@ -6,26 +6,12 @@ public enum AgentInstaller {
     public static let linuxPath = "/usr/local/bin/macvm-agent"
     static let launchAgentLabel = "cn.barey.macvm.agent"
 
-    /// 查找顺序：环境变量 `MACVM_AGENT_DIR`；App 内 `Contents/Resources/guest`（CLI 在其旁边的 `bin/`）；
-    /// 开发构建时向上查找源码树里的 `guest/agent/dist`。
     public static func binary(for os: GuestOS) -> URL? {
-        let name: String = switch os {
-        case .linux: "macvm-agent-linux"
-        case .macOS: "macvm-agent-darwin"
-        case .windows: "macvm-agent-windows.exe"
+        switch os {
+        case .linux: GuestFiles.locate("macvm-agent-linux")
+        case .macOS: GuestFiles.locate("macvm-agent-darwin")
+        case .windows: GuestFiles.locate("macvm-agent-windows.exe")
         }
-        var candidates: [URL] = []
-        if let dir = ProcessInfo.processInfo.environment["MACVM_AGENT_DIR"] { candidates.append(URL(filePath: dir)) }
-        if let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() {
-            candidates.append(exe.deletingLastPathComponent().appending(path: "../guest").standardizedFileURL)
-            candidates.append(exe.deletingLastPathComponent().appending(path: "../Resources/guest").standardizedFileURL)
-            var dir = exe.deletingLastPathComponent()
-            for _ in 0..<6 {
-                candidates.append(dir.appending(path: "guest/agent/dist"))
-                dir = dir.deletingLastPathComponent()
-            }
-        }
-        return candidates.map { $0.appending(path: name) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
     /// cloud-init 用：systemd 单元与从种子盘安装代理的命令。

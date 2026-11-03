@@ -7,13 +7,8 @@ public import MacVMModel
 /// 全部在主线程：`VZVirtualMachineView` 要求虚拟机建在主队列上，且 VZ 把客户机放在独立的
 /// XPC 进程里执行，主线程只处理控制调用与回调，不承载 vCPU。
 @MainActor
-public final class VMRunner: NSObject {
-    public enum StopReason: Sendable {
-        case guestShutdown
-        case suspended
-        case forced
-        case error(String)
-    }
+public final class VZRunner: NSObject, MachineRunner {
+    public typealias StopReason = MachineStopReason
 
     public let bundle: VMBundle
     public let config: VMConfig
@@ -43,24 +38,18 @@ public final class VMRunner: NSObject {
     }
 
     public var state: VZVirtualMachine.State { virtualMachine.state }
+    public var stateLabel: String { virtualMachine.state.label }
 
     public var canSuspend: Bool {
         guard config.supportsSuspend, #available(macOS 14, *) else { return false }
         return (try? vzConfiguration.validateSaveRestoreSupport()) != nil
     }
 
-    public enum StartOutcome: Sendable {
-        case coldBoot
-        case restored
-        /// 挂起状态无法恢复（与当前配置或主机版本不符），已丢弃并冷启动。
-        case restoreFailed(String)
-    }
-
     /// 存在挂起状态时从它恢复，否则冷启动。恢复失败会丢弃状态文件后冷启动，
     /// 因为状态与磁盘已不一致，留着只会每次都失败。
     @discardableResult
-    public func start(recovery: Bool = false) async throws -> StartOutcome {
-        var outcome = StartOutcome.coldBoot
+    public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
+        var outcome = MachineStartOutcome.coldBoot
         if bundle.hasSavedState, !recovery, #available(macOS 14, *) {
             do {
                 try await restore()
@@ -100,7 +89,20 @@ public final class VMRunner: NSObject {
     }
 
     /// 向客户机发送关机请求（相当于按电源键），客户机可能忽略。
+    /// Windows 收不到 VZ 的电源键事件，改为经 SSH 在客户机里执行关机命令。
     public func requestStop() throws {
+        if config.os == .windows, let user = config.guestUser,
+           let ip = config.networks.first?.macAddress.flatMap({ DHCPLeases.ipAddress(forMAC: $0) }) {
+            let process = Process()
+            process.executableURL = URL(filePath: "/usr/bin/ssh")
+            process.arguments = ["-q", "-T", "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+                                 "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10",
+                                 "\(user)@\(ip)", "shutdown /s /t 0"]
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            if (try? process.run()) != nil { return }
+        }
         guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
         do { try virtualMachine.requestStop() } catch {
             throw MacVMError.engine("请求关机失败：\(error.localizedDescription)")
@@ -166,6 +168,16 @@ public final class VMRunner: NSObject {
         }
     }
 
+    /// VZ 没有截取画面的接口，画面只存在于 `VZVirtualMachineView` 里。
+    public func screenshot(to url: URL) async throws {
+        throw MacVMError.unsupported("VZ 引擎不支持截屏")
+    }
+
+    public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
+        let connection = Unchecked(value: try await connectToGuest(port: port))
+        return GuestChannel(fileDescriptor: connection.value.fileDescriptor, close: { connection.value.close() })
+    }
+
     /// 等到虚拟机停止并返回原因。
     public func waitUntilStopped() async -> StopReason {
         if let stopReason { return stopReason }
@@ -193,7 +205,7 @@ public final class VMRunner: NSObject {
     }
 }
 
-extension VMRunner: VZVirtualMachineDelegate {
+extension VZRunner: VZVirtualMachineDelegate {
     nonisolated public func guestDidStop(_ virtualMachine: VZVirtualMachine) {
         MainActor.assumeIsolated { finish(.guestShutdown) }
     }

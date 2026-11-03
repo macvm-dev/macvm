@@ -10,6 +10,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public var version: Int
     public var name: String
     public var os: GuestOS
+    public var engine: Engine
     public var cpuCount: Int
     /// 字节数。
     public var memorySize: UInt64
@@ -36,6 +37,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public init(
         name: String,
         os: GuestOS,
+        engine: Engine = .vz,
         cpuCount: Int,
         memorySize: UInt64,
         disks: [DiskConfig],
@@ -54,6 +56,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.version = Self.currentVersion
         self.name = name
         self.os = os
+        self.engine = engine
         self.cpuCount = cpuCount
         self.memorySize = memorySize
         self.disks = disks
@@ -75,6 +78,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         version = try c.decode(Int.self, forKey: .version)
         name = try c.decode(String.self, forKey: .name)
         os = try c.decode(GuestOS.self, forKey: .os)
+        engine = try c.decodeIfPresent(Engine.self, forKey: .engine) ?? .vz
         cpuCount = try c.decode(Int.self, forKey: .cpuCount)
         memorySize = try c.decode(UInt64.self, forKey: .memorySize)
         disks = try c.decode([DiskConfig].self, forKey: .disks)
@@ -91,11 +95,16 @@ public struct VMConfig: Codable, Sendable, Equatable {
         serialConsole = try c.decodeIfPresent(Bool.self, forKey: .serialConsole) ?? false
     }
 
-    /// 能否挂起。通用平台（Linux、Windows）带 USB 控制器或 USB 设备时，Virtualization.framework
-    /// 恢复会报 invalid argument，而 `validateSaveRestoreSupport()` 并不拦截，因此在这里排除。
+    /// 能否挂起。VZ 下通用平台（Linux、Windows）带 USB 控制器或 USB 设备时恢复会报 invalid argument，
+    /// 而 `validateSaveRestoreSupport()` 并不拦截，因此在这里排除。
     public var supportsSuspend: Bool {
-        guard os.supportsSuspend else { return false }
-        return os == .macOS || (headless && installMedia.isEmpty)
+        guard installMedia.isEmpty else { return false }
+        switch engine {
+        case .qemu: return true
+        case .vz:
+            guard os.supportsSuspend else { return false }
+            return os == .macOS || headless
+        }
     }
 
     private static let encoder: JSONEncoder = {

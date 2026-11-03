@@ -17,6 +17,7 @@ struct VMConfigTests {
     @Test func missingOptionalFieldsUseDefaults() throws {
         let json = #"{"version":1,"name":"a","os":"windows","cpuCount":2,"memorySize":1073741824,"disks":[]}"#
         let config = try VMConfig.decode(Data(json.utf8))
+        #expect(config.engine == .vz)
         #expect(config.networks == [NetworkConfig()])
         #expect(config.audio)
         #expect(!config.microphone)
@@ -26,6 +27,20 @@ struct VMConfigTests {
     @Test func rejectsNewerVersion() {
         let json = #"{"version":999,"name":"a","os":"linux","cpuCount":2,"memorySize":1,"disks":[]}"#
         #expect(throws: MacVMError.self) { try VMConfig.decode(Data(json.utf8)) }
+    }
+}
+
+struct SuspendPolicyTests {
+    @Test func rules() {
+        func make(_ os: GuestOS, _ engine: Engine, headless: Bool = false, media: [String] = []) -> VMConfig {
+            VMConfig(name: "x", os: os, engine: engine, cpuCount: 1, memorySize: 1, disks: [], installMedia: media, headless: headless)
+        }
+        #expect(make(.macOS, .vz).supportsSuspend)
+        #expect(!make(.linux, .vz).supportsSuspend)
+        #expect(make(.linux, .vz, headless: true).supportsSuspend)
+        #expect(!make(.windows, .vz, headless: true).supportsSuspend)
+        #expect(make(.windows, .qemu).supportsSuspend)
+        #expect(!make(.windows, .qemu, media: ["a.iso"]).supportsSuspend)
     }
 }
 

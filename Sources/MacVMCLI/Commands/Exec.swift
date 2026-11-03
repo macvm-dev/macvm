@@ -42,10 +42,28 @@ struct Exec: AsyncParsableCommand {
                 terminal?.restore()
                 throw ExitCode(code)
             }
-            var remote = command.map(Self.shellQuote).joined(separator: " ")
-            if let cwd { remote = "cd \(Self.shellQuote(cwd)) && " + (remote.isEmpty ? "exec \"$SHELL\" -l" : "exec \(remote)") }
-            try SSH.execSSH(config: config, tty: tty || command.isEmpty, remoteCommand: remote.isEmpty ? nil : remote)
+            try await Wait.untilReady(bundle, config: config, timeout: 300)
+            let remote = config.os == .windows ? Self.powerShellCommand(command, cwd: cwd) : Self.posixCommand(command, cwd: cwd)
+            try SSH.execSSH(config: config, tty: tty || command.isEmpty, remoteCommand: remote)
         }
+    }
+
+    static func posixCommand(_ argv: [String], cwd: String?) -> String? {
+        var remote = argv.map(shellQuote).joined(separator: " ")
+        if let cwd { remote = "cd \(shellQuote(cwd)) && " + (remote.isEmpty ? "exec \"$SHELL\" -l" : "exec \(remote)") }
+        return remote.isEmpty ? nil : remote
+    }
+
+    /// Windows 客户机的 sshd 默认 shell 是 PowerShell：以调用运算符执行，参数用单引号字面量。
+    static func powerShellCommand(_ argv: [String], cwd: String?) -> String? {
+        var parts: [String] = []
+        if let cwd { parts.append("Set-Location -LiteralPath \(powerShellQuote(cwd))") }
+        if !argv.isEmpty { parts.append("& " + argv.map(powerShellQuote).joined(separator: " ") + "; exit $LASTEXITCODE") }
+        return parts.isEmpty ? nil : parts.joined(separator: "; ")
+    }
+
+    static func powerShellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
     static func shellQuote(_ s: String) -> String {

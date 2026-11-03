@@ -10,8 +10,8 @@ struct MacVM: AsyncParsableCommand {
         discussion: discussion,
         version: "0.1.0",
         subcommands: [
-            Create.self, InstallMacOS.self, List.self, Run.self, Start.self, Stop.self, Suspend.self,
-            Status.self, IP.self, Wait.self, CloneCommand.self, SnapshotCommand.self,
+            Create.self, InstallMacOS.self, Set.self, List.self, Run.self, Start.self, Stop.self, Suspend.self,
+            Status.self, IP.self, Wait.self, Screenshot.self, CloneCommand.self, SnapshotCommand.self,
             Exec.self, SSH.self, Proxy.self, SSHConfigCommand.self, Agent.self,
             Delete.self, Doctor.self,
         ]

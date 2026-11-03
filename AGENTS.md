@@ -12,7 +12,7 @@
 | `Sources/MacVMApp` | SwiftUI 应用 |
 | `Sources/MacVMCLI` | `macvm` 命令，每个子命令一个文件 |
 | `guest/agent` | 客户机代理（Cargo workspace） |
-| `guest/firmware/fbdxe` | Windows 用的 UEFI 帧缓冲驱动 |
+| `guest/firmware` | UEFI 引导程序 macvm-boot（Rust）：在 VZ 上启动 Windows 用的帧缓冲垫片 |
 | `protocol` | 宿主与代理之间的协议定义与黄金样例 |
 | `packaging` | Info.plist、entitlements、图标 |
 | `scripts` | Makefile 调用的脚本 |

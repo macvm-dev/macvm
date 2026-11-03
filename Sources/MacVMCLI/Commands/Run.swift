@@ -18,6 +18,9 @@ struct Run: AsyncParsableCommand {
     @Flag(help: "macOS 客户机：进入恢复模式。")
     var recovery = false
 
+    @Flag(help: "QEMU 引擎：打开 QEMU 自己的窗口显示画面。")
+    var display = false
+
     /// `macvm start` 派生的后台进程；标准输出已重定向到 run.log。
     @Flag(help: .hidden)
     var detached = false
@@ -38,7 +41,8 @@ struct Run: AsyncParsableCommand {
                 consoleMode = .none
             }
 
-            let runner = try VMRunner(bundle: bundle, console: consoleMode)
+            try await RunnerFactory.prepare(bundle)
+            let runner = try RunnerFactory.make(bundle, console: consoleMode, display: display)
             let server = try ControlServer(runner: runner)
             defer { server.close() }
             let terminal = console ? RawTerminal() : nil
@@ -68,24 +72,13 @@ struct Run: AsyncParsableCommand {
     }
 }
 
-extension VMRunner.StopReason {
-    var label: String {
-        switch self {
-        case .guestShutdown: "guest_shutdown"
-        case .suspended: "suspended"
-        case .forced: "forced"
-        case .error: "error"
-        }
-    }
-}
-
 /// 第一次 SIGINT/SIGTERM 请求客户机关机，第二次立即断电。
 @MainActor
 final class SignalHandler {
     private var sources: [any DispatchSourceSignal] = []
     private var requested = false
 
-    init(runner: VMRunner) {
+    init(runner: any MachineRunner) {
         for sig in [SIGINT, SIGTERM] {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)

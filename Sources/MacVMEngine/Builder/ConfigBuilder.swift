@@ -78,6 +78,13 @@ public struct ConfigBuilder {
 
     private func configureStorage(_ vz: VZVirtualMachineConfiguration) throws {
         var devices: [VZStorageDeviceConfiguration] = []
+        if config.os == .windows {
+            let boot = WindowsSupport.bootImageURL(bundle)
+            guard FileManager.default.fileExists(atPath: boot.path) else {
+                throw MacVMError.invalidConfig("缺少 Windows 启动盘 \(WindowsSupport.bootImageName)，启动前应先调用 RunnerFactory.prepare")
+            }
+            devices.append(VZVirtioBlockDeviceConfiguration(attachment: try diskAttachment(url: boot, readOnly: true, caching: .automatic, sync: .none)))
+        }
         for disk in config.disks {
             devices.append(try storageDevice(for: disk))
         }

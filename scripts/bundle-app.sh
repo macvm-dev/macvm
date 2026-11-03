@@ -16,7 +16,7 @@ cp packaging/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN/MacVMApp" "$APP/Contents/MacOS/MacVM"
 cp "$BIN/macvm" "$APP/Contents/Resources/bin/macvm"
 # 代理与固件是可选产物，缺失时 App 仍可运行，只是相应功能不可用。
-for f in guest/agent/dist/* guest/firmware/fbdxe/dist/*; do
+for f in guest/agent/dist/* guest/firmware/dist/*; do
   [ -f "$f" ] && cp "$f" "$APP/Contents/Resources/guest/"
 done
 if [ -n "${PROVISIONING_PROFILE:-}" ]; then

@@ -7,6 +7,8 @@ struct Create: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "创建虚拟机。",
         discussion: """
+        Windows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。
+          macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso
         Linux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。
           macvm create dev --image debian-13 --memory 8G
         安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。
@@ -52,6 +54,15 @@ struct Create: AsyncParsableCommand {
     @Flag(inversion: .prefixedNo, help: "不挂键盘鼠标，只用 SSH 访问；可挂起。云镜像默认开启，安装介质默认关闭。")
     var headless: Bool?
 
+    @Option(help: "Windows：virtio-win 驱动 ISO，省略时下载并缓存。")
+    var virtioWin: String?
+
+    @Option(help: "虚拟化引擎：vz（默认，资源占用最低）或 qemu（功能更全）。Windows 安装总是用 qemu。")
+    var engine: Engine?
+
+    @Flag(help: "Windows：只建好虚拟机，不立即开始安装。")
+    var noInstall = false
+
     @Flag(help: "后台运行时把客户机控制台输出写进 run.log。")
     var console = false
 
@@ -60,6 +71,7 @@ struct Create: AsyncParsableCommand {
             guard os.usesEFI else {
                 throw MacVMError.invalidConfig("macOS 客户机请用 macvm install-macos 创建")
             }
+            if os == .windows { return try await createWindows() }
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
@@ -69,9 +81,44 @@ struct Create: AsyncParsableCommand {
                 showProgress: !global.json && isatty(STDERR_FILENO) == 1, headless: headless
             )
             let bundle = try await VMFactory.createEFIGuest(options)
+            if let engine, engine != .vz {
+                var config = try bundle.loadConfig()
+                config.engine = engine
+                try bundle.saveConfig(config)
+            }
             SSHConfigCommand.refresh()
             return try VMStatus.summary(of: bundle)
         }
+    }
+
+    private func createWindows() async throws -> VMSummary {
+        guard installMedia.count == 1, let iso = installMedia.first else {
+            throw MacVMError.invalidConfig("Windows 需要用 --iso 指定一张 Windows 11 ARM64 安装 ISO")
+        }
+        let interactive = !global.json && isatty(STDERR_FILENO) == 1
+        func say(_ text: String) { if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) } }
+
+        let options = WindowsInstaller.Options(
+            name: name, iso: URL(filePath: (iso as NSString).expandingTildeInPath).standardizedFileURL,
+            virtioWin: virtioWin.map { URL(filePath: ($0 as NSString).expandingTildeInPath) },
+            cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
+            user: user, showProgress: interactive
+        )
+        let bundle = try await WindowsInstaller.create(options)
+        SSHConfigCommand.refresh()
+        guard !noInstall else { return try VMStatus.summary(of: bundle) }
+
+        say("开始安装 Windows（约 15–30 分钟，进度可用 macvm run \(name) --display 查看）…")
+        _ = try await Start.launch(bundle, timeout: 120)
+        try await WindowsInstaller.waitUntilSetupComplete(bundle, proxyCommand: "\"\(SSHConfigCommand.executablePath)\" proxy \(name) --timeout 10")
+        say("安装完成，正在关机并卸下安装介质…")
+        _ = try ControlClient.send(.stop(force: false), to: bundle)
+        guard try await VMStatus.poll(timeout: 180, { BundleLock.holder(of: bundle) == nil }) else {
+            throw MacVMError.timeout("安装完成后客户机未关机")
+        }
+        try WindowsInstaller.finishSetup(bundle)
+        say("Windows 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
+        return try VMStatus.summary(of: bundle)
     }
 
     static func parseNetwork(_ text: String) throws -> NetworkConfig {
@@ -96,3 +143,4 @@ struct Create: AsyncParsableCommand {
 }
 
 extension GuestOS: ExpressibleByArgument {}
+extension Engine: ExpressibleByArgument {}

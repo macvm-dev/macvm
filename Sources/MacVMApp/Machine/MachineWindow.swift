@@ -6,13 +6,15 @@ import SwiftUI
 struct MachineWindow: View {
     @Environment(AppModel.self) private var model
     let name: String
-    @State private var runner: VMRunner?
+    @State private var runner: (any MachineRunner)?
     @State private var failed = false
 
     var body: some View {
         Group {
-            if let runner {
-                VirtualMachineView(runner: runner)
+            if let vz = runner as? VZRunner {
+                VirtualMachineView(runner: vz)
+            } else if runner != nil {
+                ContentUnavailableView("画面在 QEMU 窗口中", systemImage: "macwindow.on.rectangle", description: Text("QEMU 引擎的虚拟机由 QEMU 自己的窗口显示。"))
             } else if model.summary(name)?.state == .running, !model.isRunningHere(name) {
                 ContentUnavailableView {
                     Label("在后台进程中运行", systemImage: "terminal")

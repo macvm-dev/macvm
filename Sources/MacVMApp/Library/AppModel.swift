@@ -16,7 +16,7 @@ final class AppModel {
     /// 正在进行的长操作（安装、下载），键为虚拟机名。
     var activity: [String: String] = [:]
 
-    private(set) var runners: [String: VMRunner] = [:]
+    private(set) var runners: [String: any MachineRunner] = [:]
     private var servers: [String: ControlServer] = [:]
     private var refreshTask: Task<Void, Never>?
     let library = VMLibrary.default
@@ -42,13 +42,14 @@ final class AppModel {
 
     // MARK: - 运行
 
-    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。
+    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。QEMU 引擎的画面在 QEMU 自己的窗口里。
     @discardableResult
-    func start(_ name: String) async -> VMRunner? {
+    func start(_ name: String) async -> (any MachineRunner)? {
         if let runner = runners[name] { return runner }
         do {
             let bundle = try library.bundle(named: name)
-            let runner = try VMRunner(bundle: bundle)
+            try await RunnerFactory.prepare(bundle)
+            let runner = try RunnerFactory.make(bundle, display: true)
             let server = try ControlServer(runner: runner)
             runners[name] = runner
             servers[name] = server

@@ -63,7 +63,7 @@ struct InstallMacOS: AsyncParsableCommand {
             SSHConfigCommand.refresh()
 
             var sshReady = false
-            if !noProvision, let pw = MacOSProvisioning.password(for: bundle) {
+            if !noProvision, let pw = GuestCredentials.password(for: bundle) {
                 if interactive { FileHandle.standardError.write(Data("首次开机并配置 SSH（可能需要几分钟）…\n".utf8)) }
                 _ = try await Start.launch(bundle, timeout: 120)
                 let proxy = "\"\(SSHConfigCommand.executablePath)\" proxy \(name) --tcp --timeout 600"
@@ -79,7 +79,7 @@ struct InstallMacOS: AsyncParsableCommand {
                 }
             }
             return Result(vm: try VMStatus.summary(of: bundle), user: user,
-                          passwordFile: MacOSProvisioning.passwordURL(bundle).path, sshReady: sshReady)
+                          passwordFile: GuestCredentials.passwordURL(bundle).path, sshReady: sshReady)
         }
     }
 

@@ -5,14 +5,8 @@ public import MacVMModel
 public enum AgentClient {
     /// 打开到代理的连接并发出请求，返回响应与连接（`exec`、`forward` 之后继续使用）。
     static func open(_ request: AgentProtocol.Request, bundle: VMBundle, timeout: Int = 30) throws -> (AgentProtocol.Response, UnixSocket) {
-        guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
-        let socket: UnixSocket
-        do { socket = try UnixSocket.connect(to: bundle.controlSocketURL.path) } catch { throw MacVMError.notRunning(bundle.name) }
+        let socket = try ControlClient.openGuestPort(bundle, port: AgentProtocol.port)
         socket.setTimeout(seconds: timeout)
-        try socket.writeLine(JSONEncoder().encode(ControlRequest.connect(port: AgentProtocol.port)))
-        guard let bridged = try socket.readLine() else { throw MacVMError.io("控制连接被关闭") }
-        let control = try JSONDecoder().decode(ControlResponse.self, from: bridged)
-        guard control.ok else { throw MacVMError.notRunning(control.message ?? "客户机代理不可用") }
 
         try socket.writeLine(JSONEncoder().encode(request))
         guard let line = try socket.readLine() else { throw MacVMError.io("客户机代理关闭了连接") }

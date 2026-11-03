@@ -2,7 +2,8 @@
 .swiftpm/
 /dist/
 guest/agent/target/
-guest/firmware/fbdxe/Build/
+guest/firmware/target/
+guest/firmware/dist/
 *.xcodeproj/
 .DS_Store
 guest/agent/dist/
