@@ -1,6 +1,9 @@
-//! macvm-agent：在客户机内监听 vsock，为宿主提供执行、端口转发、系统信息与管理操作。
+//! macvm-agent：在客户机内监听宿主连接，为宿主提供执行、端口转发、系统信息与管理操作。
 
-use macvm_agent_platform::{exec, system, vsock};
+// Windows 上由登录时的计划任务启动，不需要也不应弹出控制台窗口。
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
+use macvm_agent_platform::{self as platform, Conn, ExecOptions, SpawnedIo};
 use macvm_agent_protocol::{self as proto, ExecRequest, ExitStatus, FrameKind, Info, Request, Response, WindowSize};
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -16,10 +19,10 @@ struct Config {
 
 fn main() {
     let config = parse_args();
-    let listener = match vsock::Listener::bind(config.port) {
+    let listener = match platform::Listener::bind(config.port) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("macvm-agent: 监听 vsock 端口 {} 失败：{e}", config.port);
+            eprintln!("macvm-agent: 监听端口 {} 失败：{e}", config.port);
             std::process::exit(1);
         }
     };
@@ -59,13 +62,13 @@ fn parse_args() -> Config {
     config
 }
 
-fn serve(mut conn: File, config: &Config) -> io::Result<()> {
+fn serve(mut conn: Conn, config: &Config) -> io::Result<()> {
     let line = proto::read_line(&mut conn)?;
     let request: Request = match serde_json::from_slice(&line) {
         Ok(r) => r,
         Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("无法解析请求：{e}"))),
     };
-    let reply = |conn: &mut File, result: io::Result<Response>| {
+    let reply = |conn: &mut Conn, result: io::Result<Response>| {
         let resp = result.unwrap_or_else(|e| Response::error(e.to_string()));
         proto::write_json_line(conn, &resp)
     };
@@ -74,12 +77,12 @@ fn serve(mut conn: File, config: &Config) -> io::Result<()> {
         Request::Shutdown { reboot } => {
             proto::write_json_line(&mut conn, &Response::ok())?;
             drop(conn);
-            system::shutdown(reboot)
+            platform::shutdown(reboot)
         }
-        Request::SetTime { unix_ms } => reply(&mut conn, system::set_time(unix_ms).map(|_| Response::ok())),
-        Request::ClipboardGet => reply(&mut conn, system::clipboard_get().map(|text| Response { text: Some(text), ..Response::ok() })),
-        Request::ClipboardSet { text } => reply(&mut conn, system::clipboard_set(&text).map(|_| Response::ok())),
-        Request::Mount { tag, path, read_only } => reply(&mut conn, system::mount_virtiofs(&tag, &path, read_only).map(|_| Response::ok())),
+        Request::SetTime { unix_ms } => reply(&mut conn, platform::set_time(unix_ms).map(|_| Response::ok())),
+        Request::ClipboardGet => reply(&mut conn, platform::clipboard_get().map(|text| Response { text: Some(text), ..Response::ok() })),
+        Request::ClipboardSet { text } => reply(&mut conn, platform::clipboard_set(&text).map(|_| Response::ok())),
+        Request::Mount { tag, path, read_only } => reply(&mut conn, platform::mount_virtiofs(&tag, &path, read_only).map(|_| Response::ok())),
         Request::Forward { port } => match TcpStream::connect(("127.0.0.1", port)) {
             Ok(tcp) => {
                 tcp.set_nodelay(true).ok();
@@ -93,19 +96,19 @@ fn serve(mut conn: File, config: &Config) -> io::Result<()> {
 }
 
 fn info() -> Info {
-    let (mem_total, mem_available) = system::memory();
+    let (mem_total, mem_available) = platform::memory();
     Info {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        os: system::os_name().to_string(),
-        hostname: system::hostname(),
-        ipv4: system::ipv4_addresses(),
+        os: platform::os_name().to_string(),
+        hostname: platform::hostname(),
+        ipv4: platform::ipv4_addresses(),
         mem_total,
         mem_available,
-        uptime_ms: system::uptime_ms(),
+        uptime_ms: platform::uptime_ms(),
     }
 }
 
-fn forward(conn: File, tcp: TcpStream) -> io::Result<()> {
+fn forward(conn: Conn, tcp: TcpStream) -> io::Result<()> {
     let mut conn_read = conn.try_clone()?;
     let mut tcp_write = tcp.try_clone()?;
     let upstream = thread::spawn(move || {
@@ -115,38 +118,27 @@ fn forward(conn: File, tcp: TcpStream) -> io::Result<()> {
     let mut tcp_read = tcp;
     let mut conn_write = conn;
     let _ = io::copy(&mut tcp_read, &mut conn_write);
+    // 上行线程还持有连接的克隆，只 drop 不会让宿主看到结束。
+    platform::shutdown_write(&conn_write);
     drop(conn_write);
     let _ = upstream.join();
     Ok(())
 }
 
-fn run_exec(mut conn: File, req: ExecRequest, config: &Config) -> io::Result<()> {
+fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()> {
     if req.argv.is_empty() {
         return proto::write_json_line(&mut conn, &Response::error("argv 为空"));
     }
-    let root = system::is_root();
-    let identity = match req.user.as_deref().or(config.default_user.as_deref()) {
-        Some(name) if root => exec::Identity::lookup(name),
-        Some(name) => exec::Identity::current().and_then(|me| {
-            if me.name == name { Ok(me) } else { Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("代理不是 root，无法以 {name} 执行"))) }
-        }),
-        None => exec::Identity::current(),
-    };
-    let identity = match identity {
-        Ok(id) => id,
-        Err(e) => return proto::write_json_line(&mut conn, &Response::error(e.to_string())),
-    };
     let env: Vec<(String, String)> = req.env.into_iter().collect();
-    let tty = req.tty.then(|| (req.cols.unwrap_or(80), req.rows.unwrap_or(24)));
-    let spawned = exec::spawn(exec::Options {
+    let options = ExecOptions {
         argv: &req.argv,
         cwd: req.cwd.as_deref(),
         env: &env,
-        tty,
-        identity: &identity,
-        switch_user: root && identity.uid != 0,
-    });
-    let mut spawned = match spawned {
+        tty: req.tty.then(|| (req.cols.unwrap_or(80), req.rows.unwrap_or(24))),
+        user: req.user.as_deref(),
+        default_user: config.default_user.as_deref(),
+    };
+    let mut spawned = match platform::spawn(&options) {
         Ok(s) => s,
         Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("无法执行 {}：{e}", req.argv[0]))),
     };
@@ -155,18 +147,21 @@ fn run_exec(mut conn: File, req: ExecRequest, config: &Config) -> io::Result<()>
     let writer = Arc::new(Mutex::new(conn.try_clone()?));
     let mut pumps = Vec::new();
     let mut input: Option<File>;
-    let pty: Option<File>;
+    let resize: Option<Box<dyn Fn(u16, u16) + Send + Sync>>;
+    let is_pty;
     match spawned.io {
-        exec::SpawnedIo::Pty(master) => {
-            pumps.push(pump_output(master.try_clone()?, FrameKind::Stdout, writer.clone()));
-            input = Some(master.try_clone()?);
-            pty = Some(master);
+        SpawnedIo::Pty { input: pty_in, output, resize: r } => {
+            pumps.push(pump_output(output, FrameKind::Stdout, writer.clone()));
+            input = Some(pty_in);
+            resize = Some(r);
+            is_pty = true;
         }
-        exec::SpawnedIo::Pipes { stdin, stdout, stderr } => {
+        SpawnedIo::Pipes { stdin, stdout, stderr } => {
             pumps.push(pump_output(stdout, FrameKind::Stdout, writer.clone()));
             pumps.push(pump_output(stderr, FrameKind::Stderr, writer.clone()));
             input = Some(stdin);
-            pty = None;
+            resize = None;
+            is_pty = false;
         }
     }
 
@@ -183,8 +178,8 @@ fn run_exec(mut conn: File, req: ExecRequest, config: &Config) -> io::Result<()>
                     }
                 }
                 FrameKind::StdinEof => {
-                    // PTY 没有半关闭，发送 EOT 让行规程向程序报告文件结束。
-                    if pty.is_some() {
+                    // 终端没有半关闭，发送 EOT 让行规程向程序报告文件结束。
+                    if is_pty {
                         if let Some(w) = input.as_mut() {
                             let _ = w.write_all(&[4]);
                         }
@@ -193,8 +188,8 @@ fn run_exec(mut conn: File, req: ExecRequest, config: &Config) -> io::Result<()>
                     }
                 }
                 FrameKind::Resize => {
-                    if let (Some(p), Ok(size)) = (pty.as_ref(), serde_json::from_slice::<WindowSize>(&payload)) {
-                        exec::resize(p, size.cols, size.rows);
+                    if let (Some(r), Ok(size)) = (resize.as_ref(), serde_json::from_slice::<WindowSize>(&payload)) {
+                        r(size.cols, size.rows);
                     }
                 }
                 _ => {}
@@ -202,14 +197,14 @@ fn run_exec(mut conn: File, req: ExecRequest, config: &Config) -> io::Result<()>
         }
     });
 
-    let status = spawned.child.wait()?;
+    let exit = spawned.child.wait()?;
     for p in pumps {
         let _ = p.join();
     }
-    let exit = exit_status(status);
+    let status = ExitStatus { code: exit.code, signal: exit.signal };
     {
         let mut w = writer.lock().unwrap();
-        proto::write_frame(&mut *w, FrameKind::Exit, &serde_json::to_vec(&exit).map_err(io::Error::other)?)?;
+        proto::write_frame(&mut *w, FrameKind::Exit, &serde_json::to_vec(&status).map_err(io::Error::other)?)?;
         let _ = w.flush();
     }
     drop(writer);
@@ -218,7 +213,7 @@ fn run_exec(mut conn: File, req: ExecRequest, config: &Config) -> io::Result<()>
 }
 
 /// 把子进程输出转成帧。PTY 主端在子进程及其后代都退出后返回 EIO，视为结束。
-fn pump_output(mut source: File, kind: FrameKind, writer: Arc<Mutex<File>>) -> thread::JoinHandle<()> {
+fn pump_output(mut source: File, kind: FrameKind, writer: Arc<Mutex<Conn>>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buf = vec![0u8; 64 * 1024];
         loop {
@@ -235,13 +230,4 @@ fn pump_output(mut source: File, kind: FrameKind, writer: Arc<Mutex<File>>) -> t
             }
         }
     })
-}
-
-fn exit_status(status: std::process::ExitStatus) -> ExitStatus {
-    use std::os::unix::process::ExitStatusExt;
-    match (status.code(), status.signal()) {
-        (Some(code), _) => ExitStatus { code, signal: None },
-        (None, Some(sig)) => ExitStatus { code: 128 + sig, signal: Some(sig) },
-        _ => ExitStatus { code: 1, signal: None },
-    }
 }

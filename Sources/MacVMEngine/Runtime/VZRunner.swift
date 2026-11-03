@@ -89,24 +89,38 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 向客户机发送关机请求（相当于按电源键），客户机可能忽略。
-    /// Windows 收不到 VZ 的电源键事件，改为经 SSH 在客户机里执行关机命令。
+    /// Windows 收不到 VZ 的电源键事件，改请客户机代理关机，没有代理时经 SSH 执行关机命令。
     public func requestStop() throws {
-        if config.os == .windows, let user = config.guestUser,
-           let ip = config.networks.first?.macAddress.flatMap({ DHCPLeases.ipAddress(forMAC: $0) }) {
-            let process = Process()
-            process.executableURL = URL(filePath: "/usr/bin/ssh")
-            process.arguments = ["-q", "-T", "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
-                                 "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10",
-                                 "\(user)@\(ip)", "shutdown /s /t 0"]
-            process.standardInput = FileHandle.nullDevice
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            if (try? process.run()) != nil { return }
+        if config.os == .windows, let ip = config.networks.first?.macAddress.flatMap({ DHCPLeases.ipAddress(forMAC: $0) }) {
+            if config.guestAgent, Self.requestAgentShutdown(ip) { return }
+            if let user = config.guestUser {
+                let process = Process()
+                process.executableURL = URL(filePath: "/usr/bin/ssh")
+                process.arguments = ["-q", "-T", "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+                                     "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10",
+                                     "\(user)@\(ip)", "shutdown /s /t 0"]
+                process.standardInput = FileHandle.nullDevice
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                if (try? process.run()) != nil { return }
+            }
         }
         guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
         do { try virtualMachine.requestStop() } catch {
             throw MacVMError.engine("请求关机失败：\(error.localizedDescription)")
         }
+    }
+
+    private static func requestAgentShutdown(_ ip: String) -> Bool {
+        let fd = GuestConnection.tcpConnect(ip, UInt16(AgentProtocol.port))
+        guard fd >= 0 else { return false }
+        let socket = UnixSocket(fd: fd)
+        socket.setTimeout(seconds: 3)
+        guard let request = try? JSONEncoder().encode(AgentProtocol.Request.shutdown(reboot: false)),
+              (try? socket.writeLine(request)) != nil,
+              let line = try? socket.readLine(),
+              let response = try? JSONDecoder().decode(AgentProtocol.Response.self, from: line) else { return false }
+        return response.ok
     }
 
     /// 立即断电，未写回的客户机数据会丢失。
@@ -173,7 +187,16 @@ public final class VZRunner: NSObject, MachineRunner {
         throw MacVMError.unsupported("VZ 引擎不支持截屏")
     }
 
+    /// Windows 没有 VZ 能用的 vsock 驱动，改经 NAT 网络连客户机 IP 上的同号 TCP 端口。
     public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
+        if config.os == .windows {
+            guard let ip = config.networks.first?.macAddress.flatMap({ DHCPLeases.ipAddress(forMAC: $0) }) else {
+                throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址")
+            }
+            let fd = await Task.detached { GuestConnection.tcpConnect(ip, UInt16(port)) }.value
+            guard fd >= 0 else { throw MacVMError.io("连接 \(ip):\(port) 失败：\(String(cString: strerror(errno)))") }
+            return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
+        }
         let connection = Unchecked(value: try await connectToGuest(port: port))
         return GuestChannel(fileDescriptor: connection.value.fileDescriptor, close: { connection.value.close() })
     }

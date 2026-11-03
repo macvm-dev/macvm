@@ -105,7 +105,7 @@ fn sysctl_u64(name: &str) -> u64 {
     if rc == 0 { value } else { 0 }
 }
 
-pub fn is_root() -> bool {
+pub(crate) fn is_root() -> bool {
     // SAFETY: 无副作用。
     unsafe { libc::geteuid() == 0 }
 }

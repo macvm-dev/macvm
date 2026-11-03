@@ -1,12 +1,12 @@
 # MacVM
 
-在 Apple Silicon 上运行 macOS、Linux、Windows（ARM64）虚拟机，基于 Apple Virtualization.framework。SwiftUI 应用与 `macvm` 命令行共用同一引擎，客户机内的 `macvm-agent` 经 vsock 提供执行、端口转发与系统管理。
+在 Apple Silicon 上运行 macOS、Linux、Windows（ARM64）虚拟机，基于 Apple Virtualization.framework。SwiftUI 应用与 `macvm` 命令行共用同一引擎，客户机内的 `macvm-agent` 经 vsock（Windows 上经 TCP）提供执行、端口转发与系统管理。
 
 ## 构建
 
 ```sh
 make sign            # 调试构建并 ad-hoc 签名：.build/debug/macvm、.build/debug/MacVMApp
-make agent           # 交叉编译客户机代理到 guest/agent/dist
+make agent           # 交叉编译客户机代理到 guest/agent/dist（Windows 版需 cargo install cargo-xwin）
 make firmware        # 编译 UEFI 引导程序到 guest/firmware/dist
 make app             # 发布构建并组装 dist/MacVM.app
 make test lint

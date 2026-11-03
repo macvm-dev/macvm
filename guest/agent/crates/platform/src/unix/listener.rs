@@ -34,6 +34,16 @@ impl SockaddrVm {
     }
 }
 
+/// 宿主经 vsock 连入的连接。
+pub type Conn = File;
+
+/// 半关闭写方向；连接的其他克隆仍可读。
+pub fn shutdown_write(conn: &Conn) {
+    use std::os::fd::AsRawFd;
+    // SAFETY: fd 由 conn 持有，shutdown 不改变其所有权。
+    unsafe { libc::shutdown(conn.as_raw_fd(), libc::SHUT_WR) };
+}
+
 pub struct Listener {
     fd: RawFd,
 }

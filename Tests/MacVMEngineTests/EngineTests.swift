@@ -130,6 +130,23 @@ struct WindowsUnattendTests {
         #expect(script.contains("MACVMDATA") && script.contains("MACVMSETUP"))
     }
 
+    @Test func setupScriptInstallsAgentOnlyWhenBundled() {
+        var o = options
+        #expect(!WindowsUnattend.setupScript(o).contains("Register-ScheduledTask"))
+        o.installAgent = true
+        let script = WindowsUnattend.setupScript(o)
+        #expect(script.contains("Register-ScheduledTask") && script.contains("-UserId 'a<b'"))
+        #expect(script.contains("-LocalPort \(AgentProtocol.port)"))
+    }
+
+    @Test func encodedPowerShellIsUTF16LEBase64() throws {
+        let script = "Write-Output '你好'\nexit 3"
+        let command = AgentInstaller.encodedPowerShell(script)
+        let encoded = try #require(command.split(separator: " ").last)
+        let data = try #require(Data(base64Encoded: String(encoded)))
+        #expect(String(data: data, encoding: .utf16LittleEndian) == script)
+    }
+
     @Test func unattendEscapesXML() throws {
         let xml = WindowsUnattend.unattend(options)
         #expect(xml.contains("<Name>a&lt;b</Name>"))

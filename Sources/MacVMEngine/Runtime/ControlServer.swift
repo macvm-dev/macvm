@@ -123,7 +123,8 @@ public enum ControlClient {
         do { socket = try UnixSocket.connect(to: bundle.controlSocketURL.path) } catch { throw MacVMError.notRunning(bundle.name) }
         socket.setTimeout(seconds: 30)
         try socket.writeLine(JSONEncoder().encode(ControlRequest.connect(port: port)))
-        guard let line = try socket.readLine() else { throw MacVMError.io("控制连接被关闭") }
+        // 逐字节读：客户机服务可能紧跟着先说话，这些字节要留在 fd 里给调用方。
+        guard let line = try socket.readLine(exact: true) else { throw MacVMError.io("控制连接被关闭") }
         let response = try JSONDecoder().decode(ControlResponse.self, from: line)
         guard response.ok else { throw MacVMError.notRunning(response.message ?? "客户机端口 \(port) 不可达") }
         socket.setTimeout(seconds: 0)

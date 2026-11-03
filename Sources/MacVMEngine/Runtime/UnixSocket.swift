@@ -57,7 +57,8 @@ final class UnixSocket: @unchecked Sendable {
     }
 
     /// 读到换行为止（不含换行）；对端关闭且没有剩余数据时返回 nil。
-    func readLine(limit: Int = 1 << 20) throws -> Data? {
+    /// `exact` 时逐字节读，不越过换行，之后的字节留在 fd 里，供把 fd 交给别人直接转发的调用方用。
+    func readLine(limit: Int = 1 << 20, exact: Bool = false) throws -> Data? {
         while true {
             if let nl = buffer.firstIndex(of: 0x0A) {
                 let line = buffer[buffer.startIndex..<nl]
@@ -65,7 +66,7 @@ final class UnixSocket: @unchecked Sendable {
                 return Data(line)
             }
             guard buffer.count < limit else { throw MacVMError.io("控制消息超长") }
-            var chunk = [UInt8](repeating: 0, count: 4096)
+            var chunk = [UInt8](repeating: 0, count: exact ? 1 : 4096)
             let n = Darwin.read(fd, &chunk, chunk.count)
             if n < 0 {
                 if errno == EINTR { continue }

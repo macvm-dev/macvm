@@ -9,7 +9,11 @@ enum WindowsUnattend {
         /// 安装镜像的界面语言，如 zh-CN、en-US。
         var locale: String
         var sshPublicKey: String
+        /// 安装盘上带有 `agentFileName`，首次登录时装好客户机代理。
+        var installAgent = false
     }
+
+    static let agentFileName = "macvm-agent.exe"
 
     /// 安装盘（FAT32）的卷标，首次登录脚本据此找到自己所在的盘符。
     static let volumeLabel = "MACVMSETUP"
@@ -157,7 +161,7 @@ enum WindowsUnattend {
         return script.replacingOccurrences(of: "\n", with: "\r\n") + "\r\n"
     }
 
-    /// 首次登录时运行：关休眠、装并启动 OpenSSH Server、写入 macvm 公钥，最后留下完成标记。
+    /// 首次登录时运行：关休眠、装并启动 OpenSSH Server、写入 macvm 公钥、装客户机代理，最后留下完成标记。
     /// OpenSSH Server 是按需功能，需联网下载，所以先等网络可用。用户态网络会被识别为公用网络，
     /// 而系统自带的 sshd 入站规则只对专用网络生效，因此改为对所有网络生效。
     /// PowerShell 的全局配置把控制台输出设为 UTF-8，经 SSH 取回的中文才不乱码。
@@ -186,6 +190,7 @@ enum WindowsUnattend {
         Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
         Set-Content -Path $PSHOME\profile.ps1 -Encoding utf8 -Value '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding'
         Restart-Service sshd
+        \#(o.installAgent ? AgentInstaller.windowsRegistration(source: "(Join-Path $PSScriptRoot '\(agentFileName)')", user: o.user) : "")
         New-Item -ItemType File -Path \#(doneMarker) -Force
         Stop-Transcript
 

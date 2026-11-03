@@ -53,7 +53,8 @@ public enum WindowsInstaller {
         let unattend = WindowsUnattend.Options(
             computerName: String(options.name.filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(15)),
             user: options.user, password: password, locale: locale,
-            sshPublicKey: try await SSHKeys.ensurePublicKey()
+            sshPublicKey: try await SSHKeys.ensurePublicKey(),
+            installAgent: AgentInstaller.binary(for: .windows) != nil
         )
 
         let bundle = try VMFactory.prepareEmptyBundle(named: options.name, in: library)
@@ -71,7 +72,8 @@ public enum WindowsInstaller {
                 disks: [DiskConfig(path: bundle.diskURL.lastPathComponent, bus: .nvme), DiskConfig(path: dataImageName, bus: .nvme)],
                 networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],
                 installMedia: [options.iso.path, setupImageName],
-                guestUser: options.user
+                guestUser: options.user,
+                guestAgent: unattend.installAgent
             )
             try bundle.saveConfig(config)
             return bundle
@@ -121,6 +123,9 @@ public enum WindowsInstaller {
         try WindowsUnattend.unattend(o).write(to: staging.appending(path: "unattend.xml"), atomically: true, encoding: .utf8)
         try WindowsUnattend.installScript().write(to: staging.appending(path: WindowsUnattend.installScriptName), atomically: true, encoding: .ascii)
         try WindowsUnattend.setupScript(o).write(to: staging.appending(path: "setup.ps1"), atomically: true, encoding: .utf8)
+        if o.installAgent, let agent = AgentInstaller.binary(for: .windows) {
+            try FileManager.default.copyItem(at: agent, to: staging.appending(path: WindowsUnattend.agentFileName))
+        }
 
         let dmg = output.deletingPathExtension().appendingPathExtension("dmg")
         try await Subprocess.run("/usr/bin/hdiutil", ["create", "-quiet", "-size", "64m", "-fs", "MS-DOS", "-fsargs", "-F 32",

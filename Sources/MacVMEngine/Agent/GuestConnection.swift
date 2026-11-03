@@ -6,12 +6,14 @@ public enum GuestConnection {
     /// 返回连到客户机 `port` 的文件描述符，调用方负责关闭：
     /// QEMU 引擎经其转发到 Unix socket 的端口；装有代理时经代理转发；否则经 NAT 网络直连客户机 IP。
     public static func open(_ bundle: VMBundle, config: VMConfig, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
-        if config.engine == .qemu {
-            let socket = try ControlClient.openGuestPort(bundle, port: UInt32(port))
-            return dup(socket.fd)
-        }
-        if config.guestAgent {
-            return dup(try AgentClient.forward(bundle, port: port).socket.fd)
+        if config.engine == .qemu || config.guestAgent {
+            let socket = config.engine == .qemu
+                ? try ControlClient.openGuestPort(bundle, port: UInt32(port))
+                : try AgentClient.forward(bundle, port: port)
+            // socket 析构时关闭 fd，要在它存活期间复制。
+            let fd = withExtendedLifetime(socket) { dup(socket.fd) }
+            guard fd >= 0 else { throw MacVMError.io("复制连接失败：\(String(cString: strerror(errno)))") }
+            return fd
         }
         return try await connect(to: bundle, port: port, timeout: timeout)
     }
@@ -34,7 +36,7 @@ public enum GuestConnection {
         return fd
     }
 
-    private static func tcpConnect(_ ip: String, _ port: UInt16) -> Int32 {
+    static func tcpConnect(_ ip: String, _ port: UInt16) -> Int32 {
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)

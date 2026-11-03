@@ -115,7 +115,9 @@ public final class QEMURunner: MachineRunner {
             throw MacVMError.unsupported("QEMU 引擎只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")
         }
         let socket = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
-        let fd = dup(socket.fd)
+        // socket 析构时关闭 fd，要在它存活期间复制。
+        let fd = withExtendedLifetime(socket) { dup(socket.fd) }
+        guard fd >= 0 else { throw MacVMError.io("复制连接失败：\(String(cString: strerror(errno)))") }
         return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
     }
 

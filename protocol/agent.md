@@ -1,10 +1,11 @@
 # macvm-agent 协议
 
-宿主经 virtio-vsock 连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`fixtures/` 中的样例由 Swift（`AgentProtocol`）与 Rust（`macvm-agent-protocol`）两侧测试共同校验。
+宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`fixtures/` 中的样例由 Swift（`AgentProtocol`）与 Rust（`macvm-agent-protocol`）两侧测试共同校验。
 
 ## 传输
 
-- 代理监听 vsock 端口 **6100**（CID 任意）。
+- Linux、macOS 客户机：代理监听 vsock 端口 **6100**（CID 任意）。
+- Windows 客户机：没有可用的 vsock 驱动，代理监听 TCP 端口 **6100**，只接受源地址是客户机默认网关的连接（VZ 的 NAT 网关、QEMU 用户态网络的网关都是宿主）。安装时同时开放该端口的防火墙入站规则。
 - 每个连接只承载一个请求。宿主先发一行 UTF-8 JSON（以 `\n` 结尾），代理回一行 JSON 响应。
 - 响应 `{"ok":false,"error":"…"}` 表示失败，代理随后关闭连接。
 - `exec` 与 `forward` 的成功响应之后，连接切换为下述各自的数据格式。

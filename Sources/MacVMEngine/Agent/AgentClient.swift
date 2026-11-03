@@ -4,12 +4,14 @@ public import MacVMModel
 /// 经运行虚拟机的进程（控制 socket 的 `connect`）连到客户机代理。
 public enum AgentClient {
     /// 打开到代理的连接并发出请求，返回响应与连接（`exec`、`forward` 之后继续使用）。
+    /// `forward` 的响应逐字节读：客户机服务可能紧跟着先说话（如 SSH 握手串），这些字节要留在 fd 里给调用方。
     static func open(_ request: AgentProtocol.Request, bundle: VMBundle, timeout: Int = 30) throws -> (AgentProtocol.Response, UnixSocket) {
         let socket = try ControlClient.openGuestPort(bundle, port: AgentProtocol.port)
         socket.setTimeout(seconds: timeout)
 
         try socket.writeLine(JSONEncoder().encode(request))
-        guard let line = try socket.readLine() else { throw MacVMError.io("客户机代理关闭了连接") }
+        let exact = if case .forward = request { true } else { false }
+        guard let line = try socket.readLine(exact: exact) else { throw MacVMError.io("客户机代理关闭了连接") }
         let response = try JSONDecoder().decode(AgentProtocol.Response.self, from: line)
         return (response, socket)
     }
@@ -33,11 +35,11 @@ public enum AgentClient {
     public static func setClipboard(_ bundle: VMBundle, text: String) throws { _ = try call(.clipboardSet(text: text), bundle: bundle) }
 
     /// 客户机本地 TCP 端口的字节管道；返回的 socket 交给调用方转发。
-    public static func forward(_ bundle: VMBundle, port: UInt16) throws -> ForwardedConnection {
+    static func forward(_ bundle: VMBundle, port: UInt16) throws -> UnixSocket {
         let (response, socket) = try open(.forward(port: port), bundle: bundle)
         guard response.ok else { throw MacVMError.engine("客户机代理：\(response.error ?? "端口转发失败")") }
         socket.setTimeout(seconds: 0)
-        return ForwardedConnection(socket: socket)
+        return socket
     }
 
     /// 执行命令，标准输入输出接到本进程，返回客户机命令的退出码。
@@ -46,19 +48,6 @@ public enum AgentClient {
         guard response.ok else { throw MacVMError.engine("客户机代理：\(response.error ?? "执行失败")") }
         socket.setTimeout(seconds: 0)
         return try ExecSession(socket: socket, tty: request.tty == true).run()
-    }
-}
-
-public final class ForwardedConnection: @unchecked Sendable {
-    let socket: UnixSocket
-
-    init(socket: UnixSocket) { self.socket = socket }
-
-    /// 与本进程标准输入输出之间转发，直到客户机端关闭。
-    public func pumpStandardIO() {
-        let leftover = socket.takeBuffered()
-        if !leftover.isEmpty { FileHandle.standardOutput.write(leftover) }
-        GuestConnection.pump((STDIN_FILENO, STDOUT_FILENO), socket.fd)
     }
 }
 
