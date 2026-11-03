@@ -26,6 +26,13 @@ struct MachineDetailView: View {
                 }
             }
             Section("配置") {
+                if let config, config.os != .macOS {
+                    Picker("引擎", selection: Binding(get: { config.engine }, set: { model.setEngine(vm.name, to: $0) })) {
+                        Text("VZ（占用低）").tag(Engine.vz)
+                        Text("QEMU（声音、挂起）").tag(Engine.qemu)
+                    }
+                    .disabled(vm.state != .stopped || !config.installMedia.isEmpty)
+                }
                 LabeledContent("CPU", value: "\(vm.cpuCount) 核")
                 LabeledContent("内存", value: ByteSize.format(vm.memorySize))
                 if let disk = config?.disks.first, let size = try? DiskImage.allocatedSize(at: model.library.bundleURL(named: vm.name).appending(path: disk.path)) {

@@ -1,12 +1,9 @@
-//! 让 virtio-gpu 成为唯一的桌面显示器，并取宿主设定的输出尺寸。
+//! 让 virtio-gpu 成为唯一的桌面显示器，并取宿主给的分辨率。
 //!
-//! 宿主改变 virtio-gpu 的输出尺寸后，viogpudo 不会自己切换分辨率；VZ 下引导垫片交给 Windows 的
-//! 内存帧缓冲又会成为另一块显示器，宿主看不到它，却常被选为主显示器。宿主在开机后与每次改尺寸后
-//! 发来 `display` 请求。
-//!
-//! 驱动只在收到 virtio-gpu 的配置变更中断后才登记新尺寸，VZ 下这个中断并不可靠；Windows 又按缓存的
-//! 模式列表校验 `ChangeDisplaySettingsEx`。所以与 virtio-win 的 viogpures 一样：先经驱动的 escape
-//! 接口设定自定义模式，再用 `SetDisplayConfig`（允许系统调整）提交只含 virtio-gpu 的显示拓扑。
+//! VZ 下引导垫片交给 Windows 的内存帧缓冲会成为另一块显示器，宿主看不到它，却常被选为主显示器。
+//! 任意尺寸的做法与 virtio-win 的 viogpures 相同：先经驱动的 escape 接口设定自定义模式，再用
+//! `SetDisplayConfig`（允许系统调整）提交只含 virtio-gpu 的显示拓扑；`ChangeDisplaySettingsEx`
+//! 按 Windows 缓存的模式列表校验，会拒绝新尺寸。
 
 use std::io;
 use std::mem::{size_of, zeroed};
@@ -22,12 +19,6 @@ use windows_sys::Win32::Devices::Display::{
     SetDisplayConfig,
 };
 use windows_sys::Win32::Foundation::LUID;
-use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, RRF_RT_REG_SZ, RegCloseKey, RegDeleteKeyValueW, RegEnumKeyExW, RegGetValueW,
-    RegOpenKeyExW,
-};
-
-use super::wide;
 use windows_sys::Win32::Graphics::Gdi::{
     CreateDCW, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DEVMODEW, DeleteDC,
     ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplaySettingsW,
@@ -48,42 +39,7 @@ pub fn set_display(width: u32, height: u32) -> io::Result<()> {
     }
     let adapter = Adapter::open(&virtio.name)?;
     let (width, height) = adapter.set_custom_resolution(width, height)?;
-    let result = apply_only(adapter.luid, adapter.source_id, width, height);
-    forget_persistent_mode();
-    result
-}
-
-/// 显示适配器设备类的驱动键。
-const DISPLAY_CLASS_KEY: &str = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
-const PERSISTENT_MODE_VALUES: [&str; 2] = ["PersistentDispMode0Width", "PersistentDispMode0Height"];
-
-/// 设定自定义模式时驱动会把尺寸写进自己的驱动键，下次开机按它而不是开机输出尺寸分配帧缓冲，
-/// 帧缓冲就可能放不下宿主允许的最大分辨率。删掉这两个值，让驱动按宿主为此预留的开机尺寸分配。
-fn forget_persistent_mode() {
-    // SAFETY: 键句柄在本函数内打开并关闭；缓冲区长度按字符或字节如实传入。
-    unsafe {
-        let mut class: HKEY = ptr::null_mut();
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, wide(DISPLAY_CLASS_KEY).as_ptr(), 0, KEY_READ | KEY_SET_VALUE, &mut class) != 0 {
-            return;
-        }
-        for index in 0.. {
-            let mut name = [0u16; 256];
-            let mut name_len = name.len() as u32;
-            if RegEnumKeyExW(class, index, name.as_mut_ptr(), &mut name_len, ptr::null(), ptr::null_mut(), ptr::null_mut(), ptr::null_mut()) != 0 {
-                break;
-            }
-            let mut id = [0u16; 512];
-            let mut id_bytes = (id.len() * 2) as u32;
-            let read = RegGetValueW(class, name.as_ptr(), wide("MatchingDeviceId").as_ptr(), RRF_RT_REG_SZ, ptr::null_mut(), id.as_mut_ptr().cast(), &mut id_bytes);
-            if read != 0 || !String::from_utf16_lossy(until_nul(&id)).to_uppercase().contains(VIRTIO_GPU) {
-                continue;
-            }
-            for value in PERSISTENT_MODE_VALUES {
-                RegDeleteKeyValueW(class, name.as_ptr(), wide(value).as_ptr());
-            }
-        }
-        RegCloseKey(class);
-    }
+    apply_only(adapter.luid, adapter.source_id, width, height)
 }
 
 /// 提交只含 (`luid`, `source`) 这一路输出的拓扑，其余输出随之关闭；该输出放在原点即为主显示器。

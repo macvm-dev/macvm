@@ -21,6 +21,8 @@ struct QEMUCommand {
             "-nodefaults", "-no-user-config",
             "-machine", "virt,highmem=on,gic-version=3",
             "-accel", "hvf", "-cpu", "host",
+            // 运行它的进程（应用或 macvm run）意外退出时 QEMU 跟着退出，不留下无人管理的虚拟机。
+            "-run-with", "exit-with-parent=on",
             "-smp", "\(config.cpuCount)",
             "-m", "\(config.memorySize >> 20)M",
             "-drive", "if=pflash,format=raw,readonly=on,file=\(qemu.firmwareCode.path)",
@@ -70,7 +72,8 @@ struct QEMUCommand {
         }
 
         a += ["-qmp", "unix:\(Self.qmpSocket(bundle).path),server=on,wait=off"]
-        a += ["-display", display ? "cocoa,show-cursor=on" : "none", "-monitor", "none", "-serial", "none"]
+        // ramfb 没有硬件光标，客户机自己在画面里画光标；cocoa 默认在指针进入窗口时藏起宿主光标，免得出现两个。
+        a += ["-display", display ? "cocoa" : "none", "-monitor", "none", "-serial", "none"]
         if let incoming { a += ["-incoming", "file:\(incoming.path)"] }
         return a
     }

@@ -128,6 +128,11 @@ public final class QEMURunner: MachineRunner {
     // MARK: - 进程
 
     private func launch(incoming: URL?) async throws {
+        let qmpPath = QEMUCommand.qmpSocket(bundle).path
+        // 能连上说明上一个 QEMU 还在运行（持有锁的进程已不在）；删掉它的 socket 会让它再也无法管理。
+        if (try? UnixSocket.connect(to: qmpPath)) != nil {
+            throw MacVMError.engine("\(bundle.name) 上次的 QEMU 进程仍在运行，先结束它（ps 中 -name \(bundle.name) 的 qemu-system-aarch64）")
+        }
         for path in [QEMUCommand.qmpSocket(bundle)] + QEMUCommand.forwardedPorts.map({ QEMUCommand.portSocket(bundle, port: $0) }) {
             unlink(path.path)
         }
@@ -139,6 +144,8 @@ public final class QEMURunner: MachineRunner {
         process.executableURL = qemu.binary
         process.arguments = try command.arguments()
         process.standardInput = FileHandle.nullDevice
+        let stderr = StderrTail()
+        process.standardError = stderr.pipe
         let token = ObjectIdentifier(process)
         process.terminationHandler = { [weak self] p in
             let status = p.terminationStatus
@@ -150,7 +157,13 @@ public final class QEMURunner: MachineRunner {
         self.process = process
         stateLabel = "starting"
 
-        let client = try await QMPClient.connect(to: QEMUCommand.qmpSocket(bundle).path, timeout: 15) { [process = Unchecked(value: process)] in process.value.isRunning }
+        let client: QMPClient
+        do {
+            client = try await QMPClient.connect(to: qmpPath, timeout: 15) { [process = Unchecked(value: process)] in process.value.isRunning }
+        } catch {
+            let detail = stderr.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw detail.isEmpty ? error : MacVMError.engine("QEMU 启动失败：\(detail)")
+        }
         client.onEvent = { [weak self] event, _ in
             Task { @MainActor in self?.handle(event: event) }
         }
@@ -203,6 +216,7 @@ public final class QEMURunner: MachineRunner {
     private func finish(_ reason: MachineStopReason) {
         guard stopReason == nil else { return }
         stopReason = reason
+        lock.release()
         onStop?(reason)
         let waiters = stopWaiters
         stopWaiters.removeAll()
@@ -219,5 +233,35 @@ public final class QEMURunner: MachineRunner {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+}
+
+/// 把 QEMU 的标准错误照常转给本进程，同时留下最后 `limit` 字节，启动失败时放进错误信息。
+private final class StderrTail: @unchecked Sendable {
+    let pipe = Pipe()
+    private let lock = NSLock()
+    private var buffer = Data()
+    private let limit = 4096
+
+    init() {
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { handle.readabilityHandler = nil; return }
+            FileHandle.standardError.write(chunk)
+            self?.append(chunk)
+        }
+    }
+
+    private func append(_ chunk: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        buffer.append(chunk)
+        if buffer.count > limit { buffer.removeFirst(buffer.count - limit) }
+    }
+
+    var text: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(decoding: buffer, as: UTF8.self)
     }
 }

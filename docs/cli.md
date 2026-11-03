@@ -15,7 +15,7 @@
 | `create <名> [--image ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu]` | 创建 Linux / Windows 虚拟机；Windows 从原版 ISO 无人值守部署 |
 | `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高]` | 修改已停止虚拟机的配置，可切换引擎 |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
-| `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎），Windows 客户机由代理切换分辨率 |
+| `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `install-macos <名> [--ipsw 文件]` | 安装 macOS 虚拟机并开通 SSH 与代理 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
 | `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机 |

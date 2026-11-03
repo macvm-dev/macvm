@@ -24,7 +24,7 @@ final class QMPClient: @unchecked Sendable {
                 _ = try await client.execute("qmp_capabilities")
                 return client
             }
-            guard isAlive() else { throw MacVMError.engine("QEMU 启动后立即退出，原因见虚拟机包内的 run.log") }
+            guard isAlive() else { throw MacVMError.engine("QEMU 启动后立即退出") }
             guard Date() < deadline else { throw MacVMError.timeout("连接 QEMU 控制接口超时") }
             try await Task.sleep(for: .milliseconds(100))
         }

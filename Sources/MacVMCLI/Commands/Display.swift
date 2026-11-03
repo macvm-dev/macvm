@@ -6,7 +6,7 @@ import MacVMModel
 struct Display: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "调整运行中虚拟机的显示尺寸（VZ 引擎）。",
-        discussion: "只改本次运行；默认尺寸用 set --display 修改。Windows 客户机由代理切换分辨率。"
+        discussion: "只改本次运行；默认尺寸用 set --display 修改。VZ 下 Windows 的分辨率固定，不支持调整。"
     )
 
     @OptionGroup var global: GlobalOptions

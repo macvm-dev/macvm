@@ -153,10 +153,9 @@ public struct ConfigBuilder {
             graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: d.width, heightInPixels: d.height)]
             vz.graphicsDevices = [graphics]
         case .windows:
-            // 以最大尺寸开机，驱动才按它分配帧缓冲；开机后 `VZRunner` 改回配置的尺寸。
-            let max = WindowsSupport.maxDisplaySize
+            let size = WindowsSupport.displaySize
             let graphics = VZVirtioGraphicsDeviceConfiguration()
-            graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: Swift.max(d.width, max.width), heightInPixels: Swift.max(d.height, max.height))]
+            graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: size.width, heightInPixels: size.height)]
             vz.graphicsDevices = [graphics]
         }
     }

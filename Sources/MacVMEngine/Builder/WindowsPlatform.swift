@@ -22,11 +22,12 @@ public enum WindowsSupport {
 
     public static let bootImageName = "vz-boot.img"
 
-    /// VZ 下 Windows 能切换到的最大分辨率。viogpudo 在开机时按开机输出尺寸分配帧缓冲，之后放不下更大的模式。
-    public static let maxDisplaySize = (width: 3840, height: 2400)
+    /// VZ 下 Windows 的固定分辨率。viogpudo 切换模式时销毁旧资源并以同一 ID 按新尺寸重建，VZ 却一直按
+    /// 驱动开机时建的第一个资源（即此尺寸）取画面，换成别的宽度就花屏或黑屏；所以不随窗口改分辨率，由 VZ 缩放画面。
+    public static let displaySize = (width: 1024, height: 768)
 
-    public static func fitsDisplay(width: Int, height: Int) -> Bool {
-        width * height <= maxDisplaySize.width * maxDisplaySize.height
+    public static var fixedDisplayError: MacVMError {
+        .unsupported("VZ 下 Windows 的分辨率固定为 \(displaySize.width)x\(displaySize.height)，画面随窗口缩放；需要其他分辨率请用 qemu 引擎")
     }
 
     static func bootImageURL(_ bundle: VMBundle) -> URL { bundle.url.appending(path: bootImageName) }

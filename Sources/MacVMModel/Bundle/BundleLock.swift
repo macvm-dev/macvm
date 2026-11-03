@@ -3,11 +3,21 @@ import Foundation
 /// 包内 `run.lock` 上的独占 flock：持有者就是正在运行该虚拟机的进程。
 /// 锁随进程退出自动释放，不会因崩溃残留；文件内容是持有者 pid，仅供展示。
 public final class BundleLock: @unchecked Sendable {
-    private let fd: Int32
+    private var fd: Int32
+    private let mutex = NSLock()
 
     private init(fd: Int32) { self.fd = fd }
 
-    deinit { close(fd) }
+    deinit { release() }
+
+    /// 立即释放；虚拟机停止后调用，不等持有者被回收。可重复调用。
+    public func release() {
+        mutex.lock()
+        defer { mutex.unlock() }
+        guard fd >= 0 else { return }
+        close(fd)
+        fd = -1
+    }
 
     /// 已被别的进程持有时抛 `alreadyRunning`。
     public static func acquire(_ bundle: VMBundle) throws -> BundleLock {

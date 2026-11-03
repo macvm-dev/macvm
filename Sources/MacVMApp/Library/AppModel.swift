@@ -107,6 +107,16 @@ final class AppModel {
         refresh()
     }
 
+    func setEngine(_ name: String, to engine: Engine) {
+        do {
+            let bundle = try library.bundle(named: name)
+            var config = try bundle.loadConfig()
+            try config.switchEngine(to: engine)
+            try bundle.saveConfig(config)
+        } catch { report(error) }
+        refresh()
+    }
+
     func clone(_ name: String, as newName: String) async {
         do { _ = try await VMClone.clone(library.bundle(named: name), as: newName) } catch { report(error) }
         refresh()

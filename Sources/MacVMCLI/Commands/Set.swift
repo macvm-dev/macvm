@@ -28,21 +28,11 @@ struct Set: AsyncParsableCommand {
             let bundle = try VMLibrary.default.bundle(named: name)
             if BundleLock.holder(of: bundle) != nil { throw MacVMError.alreadyRunning(name) }
             var config = try bundle.loadConfig()
-            if let engine {
-                if engine == .qemu, config.os == .macOS { throw MacVMError.unsupported("macOS 客户机只能用 vz 引擎") }
-                if engine == .qemu { _ = try QEMUInstallation.require() }
-                if engine == .vz, config.os == .windows, !WindowsSupport.isAvailable {
-                    throw MacVMError.unsupported("当前 macOS 不支持用 vz 运行 Windows")
-                }
-                // 安装中的虚拟机依赖 QEMU 的光驱启动与按键，不能换引擎。
-                guard config.installMedia.isEmpty || engine == config.engine else {
-                    throw MacVMError.invalidConfig("安装尚未完成，不能切换引擎")
-                }
-                config.engine = engine
-            }
+            if let engine { try config.switchEngine(to: engine) }
             if let cpuCount { config.cpuCount = cpuCount }
             if let memory { config.memorySize = try ByteSize.parse(memory) }
             if let display, let (width, height) = Display.parse(display) {
+                if config.os == .windows { throw WindowsSupport.fixedDisplayError }
                 config.display.width = width
                 config.display.height = height
             }

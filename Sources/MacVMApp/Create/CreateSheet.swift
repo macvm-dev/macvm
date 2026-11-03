@@ -43,7 +43,7 @@ struct CreateSheet: View {
                 if os == .windows {
                     Text(QEMUInstallation.locate() == nil
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
-                         : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，会弹出 QEMU 窗口显示进度），装好后可在设置里改用 VZ 引擎运行。")
+                         : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，会弹出 QEMU 窗口显示进度），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

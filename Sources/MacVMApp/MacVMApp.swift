@@ -26,6 +26,8 @@ struct MacVMApp: App {
             }
         }
         .windowResizability(.contentMinSize)
+        // 打开窗口即启动虚拟机，恢复上次的窗口会把它们全部开机。
+        .restorationBehavior(.disabled)
 
         Settings {
             SettingsView()
