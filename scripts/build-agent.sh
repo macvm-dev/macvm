@@ -13,7 +13,7 @@ $CARGO build --release --target aarch64-apple-darwin
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \
   $CARGO build --release --target aarch64-unknown-linux-musl
 
-PATH="$TOOLCHAIN_BIN:$PATH" cargo-xwin xwin build --release --target aarch64-pc-windows-msvc
+PATH="$TOOLCHAIN_BIN:${CARGO_HOME:-$HOME/.cargo}/bin:$PATH" cargo-xwin xwin build --release --target aarch64-pc-windows-msvc
 
 mkdir -p dist
 cp target/aarch64-apple-darwin/release/macvm-agent dist/macvm-agent-darwin
