@@ -68,15 +68,15 @@ public final class QEMURunner: MachineRunner {
         guard let qmp, process?.isRunning == true else { throw MacVMError.notRunning(bundle.name) }
         let agent = config.os == .windows && config.guestAgent ? QEMUCommand.portSocket(bundle, port: AgentProtocol.port).path : nil
         Task.detached {
-            if let agent, Self.askAgentToShutDown(socketPath: agent) { return }
+            if let agent, Self.askAgentToShutDown(socketPath: agent, reboot: false) { return }
             _ = try? await qmp.execute("system_powerdown")
         }
     }
 
-    nonisolated private static func askAgentToShutDown(socketPath: String) -> Bool {
+    nonisolated private static func askAgentToShutDown(socketPath: String, reboot: Bool) -> Bool {
         guard let socket = try? UnixSocket.connect(to: socketPath) else { return false }
         socket.setTimeout(seconds: 3)
-        guard let data = try? JSONEncoder().encode(AgentProtocol.Request.shutdown(reboot: false)), (try? socket.writeLine(data)) != nil,
+        guard let data = try? JSONEncoder().encode(AgentProtocol.Request.shutdown(reboot: reboot)), (try? socket.writeLine(data)) != nil,
               let line = try? socket.readLine(),
               let response = try? JSONDecoder().decode(AgentProtocol.Response.self, from: line) else { return false }
         return response.ok
@@ -255,7 +255,7 @@ public final class QEMURunner: MachineRunner {
     }
 
     /// 开了 3D 加速的 Windows：代理上线后把自带的驱动包推过去。驱动要与自带 QEMU 的图形组件配套，
-    /// 升级 App 换了图形组件而客户机还是旧驱动时，桌面合成会崩溃。
+    /// 升级 App 换了图形组件而客户机还是旧驱动时，桌面合成会崩溃；换了驱动就重启客户机，桌面合成才用上新驱动。
     private func syncGuestGPUDriver() {
         guard config.os == .windows, config.guestAgent, config.graphicsAcceleration, let zip = WindowsGPUDriver.package(qemu) else { return }
         let socket = QEMUCommand.portSocket(bundle, port: AgentProtocol.port).path
@@ -266,7 +266,9 @@ public final class QEMURunner: MachineRunner {
             for _ in 0..<Self.agentWaitAttempts {
                 do {
                     if try WindowsGPUDriver.push(zip, to: socket) {
-                        FileHandle.standardError.write(Data("macvm: 已为 \(name) 更新显卡驱动，重启客户机后桌面合成改用新驱动\n".utf8))
+                        let rebooting = Self.askAgentToShutDown(socketPath: socket, reboot: true)
+                        let next = rebooting ? "正在重启客户机" : "重启客户机失败，请手动重启"
+                        FileHandle.standardError.write(Data("macvm: 已为 \(name) 更新显卡驱动，\(next)\n".utf8))
                     }
                     return
                 } catch is WindowsGPUDriver.AgentNotReady {
