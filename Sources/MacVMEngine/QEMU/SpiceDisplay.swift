@@ -85,6 +85,12 @@ final class SpiceDisplay: DisplayBackend {
     /// 宿主已用系统光标显示客户机光标时，不再把 SPICE 光标画进画面。
     func showGuestCursor(_ shows: Bool) { library.showGuestCursor(handle, shows) }
 
+    /// 冻结时画面停在当前这一帧，客户机照常运行。
+    func setFrozen(_ frozen: Bool) { library.setFrozen(handle, frozen) }
+
+    /// 画面尺寸下次变化时自动冻结，停在变化前的最后一帧，直到 `setFrozen(false)`。
+    func freezeOnResize() { library.freezeOnResize(handle) }
+
     func close() {
         guard !closed else { return }
         closed = true
@@ -102,6 +108,8 @@ final class SpiceDisplay: DisplayBackend {
         let pointer: @convention(c) (UnsafeMutableRawPointer, Double, Double, UInt32) -> Void
         let scroll: @convention(c) (UnsafeMutableRawPointer, Bool, UInt32) -> Void
         let showGuestCursor: @convention(c) (UnsafeMutableRawPointer, Bool) -> Void
+        let setFrozen: @convention(c) (UnsafeMutableRawPointer, Bool) -> Void
+        let freezeOnResize: @convention(c) (UnsafeMutableRawPointer) -> Void
 
         @MainActor private static var loaded: [URL: Library] = [:]
 
@@ -116,9 +124,12 @@ final class SpiceDisplay: DisplayBackend {
                   let key = symbol("MacVMDisplayKey", (@convention(c) (UnsafeMutableRawPointer, Int32, Bool) -> Void).self),
                   let pointer = symbol("MacVMDisplayPointer", (@convention(c) (UnsafeMutableRawPointer, Double, Double, UInt32) -> Void).self),
                   let scroll = symbol("MacVMDisplayScroll", (@convention(c) (UnsafeMutableRawPointer, Bool, UInt32) -> Void).self),
-                  let showGuestCursor = symbol("MacVMDisplayShowGuestCursor", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self)
+                  let showGuestCursor = symbol("MacVMDisplayShowGuestCursor", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self),
+                  let setFrozen = symbol("MacVMDisplaySetFrozen", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self),
+                  let freezeOnResize = symbol("MacVMDisplayFreezeOnResize", (@convention(c) (UnsafeMutableRawPointer) -> Void).self)
             else { return nil }
-            let library = Library(create: create, close: close, key: key, pointer: pointer, scroll: scroll, showGuestCursor: showGuestCursor)
+            let library = Library(create: create, close: close, key: key, pointer: pointer, scroll: scroll, showGuestCursor: showGuestCursor, setFrozen: setFrozen,
+                                  freezeOnResize: freezeOnResize)
             loaded[url] = library
             return library
         }

@@ -62,6 +62,7 @@ public final class QEMUDisplayView: NSView {
         guestFit = nil
         requestedGuestSize = nil
         requestedGuestScale = nil
+        endScaleTransition()
         cursorWatchRetry?.invalidate()
         cursorWatchRetry = nil
         cursorWatcher?.onClose = nil
@@ -78,6 +79,9 @@ public final class QEMUDisplayView: NSView {
                 let resized = framebufferSize != size
                 framebufferSize = size
                 if resized { rebuildGuestCursor() }
+                if let transition = scaleTransition, !transition.scaleSent, transition.size == (Int(size.width), Int(size.height)) {
+                    sendTransitionScale()
+                }
             }
             spice.onClose = { [weak self] in
                 guard let self else { return }
@@ -245,10 +249,10 @@ public final class QEMUDisplayView: NSView {
     /// 客户机显示的最小尺寸（点数），再小 Windows 的界面就排不开了。
     private static let minimumGuestSize = (width: 800, height: 600)
 
-    private func scheduleGuestFit() {
+    private func scheduleGuestFit(after delay: TimeInterval = guestFitDelay) {
         guard spice != nil else { return }
         guestFit?.invalidate()
-        guestFit = Timer.scheduledTimer(withTimeInterval: Self.guestFitDelay, repeats: false) { [weak self] _ in
+        guestFit = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.fitGuestToView() }
         }
     }
@@ -267,20 +271,73 @@ public final class QEMUDisplayView: NSView {
             requestedGuestSize = (width, height)
             Task.detached { _ = try? ControlClient.send(.display(width: width, height: height), to: bundle, timeout: 5) }
         }
-        // 客户机的推荐缩放按固定 DPI 算，与分辨率无关，所以缩放比例不必等分辨率切换完。
         let percent = Int((factor * 100).rounded())
         guard config?.os == .windows, config?.guestAgent == true, requestedGuestScale != percent else { return }
+        let changing = requestedGuestScale != nil
         requestedGuestScale = percent
+        guard changing, (Int(framebufferSize.width), Int(framebufferSize.height)) != (width, height) else {
+            sendGuestScale(percent) { _ in }
+            return
+        }
+        // 分辨率与缩放比例在客户机里先后生效，中间那一刻界面会突然缩小或放大。分辨率切换较慢，
+        // 期间画面照常；新分辨率的第一帧到达时画面停住，再改缩放比例，客户机按新比例重绘完再放开。
+        scaleTransition = ((width, height), percent, false)
+        spice?.freezeOnResize()
+        scheduleScaleTransitionEnd(after: Self.scaleTransitionTimeout)
+    }
+
+    private func sendGuestScale(_ percent: Int, then done: @escaping @MainActor (Bool) -> Void) {
+        let bundle = bundle
         Task.detached { [weak self] in
-            guard (try? AgentClient.call(.displayScale(percent: percent), bundle: bundle, timeout: 10))?.ok != true else { return }
-            // 代理还没上线：等它上线（光标推送开始）或下次窗口变化时再试。
-            await MainActor.run { if self?.requestedGuestScale == percent { self?.requestedGuestScale = nil } }
+            let ok = (try? AgentClient.call(.displayScale(percent: percent), bundle: bundle, timeout: 10))?.ok == true
+            await MainActor.run {
+                guard let self else { return }
+                // 代理还没上线：等它上线或下次窗口变化时再试。
+                if !ok, self.requestedGuestScale == percent { self.requestedGuestScale = nil }
+                done(ok)
+            }
         }
     }
 
+    /// 缩放比例随分辨率一起变化的过渡：分辨率生效后才发缩放比例，其间画面冻结；客户机迟迟不切换时到期也照发、放开。
+    private var scaleTransition: (size: (Int, Int), percent: Int, scaleSent: Bool)?
+    private var scaleTransitionTimer: Timer?
+    /// 缩放比例生效后，客户机各程序按新比例重绘界面所需的时间。
+    private static let scaleRedrawDelay: TimeInterval = 0.3
+    private static let scaleTransitionTimeout: TimeInterval = 3
+
+    private func sendTransitionScale() {
+        guard let transition = scaleTransition, !transition.scaleSent else { return }
+        scaleTransition?.scaleSent = true
+        scheduleScaleTransitionEnd(after: Self.scaleTransitionTimeout)
+        sendGuestScale(transition.percent) { [weak self] _ in
+            self?.scheduleScaleTransitionEnd(after: Self.scaleRedrawDelay)
+        }
+    }
+
+    private func scheduleScaleTransitionEnd(after delay: TimeInterval) {
+        scaleTransitionTimer?.invalidate()
+        scaleTransitionTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.endScaleTransition() }
+        }
+    }
+
+    private func endScaleTransition() {
+        scaleTransitionTimer?.invalidate()
+        scaleTransitionTimer = nil
+        guard let transition = scaleTransition else { return }
+        if !transition.scaleSent {
+            sendTransitionScale()
+            return
+        }
+        scaleTransition = nil
+        spice?.setFrozen(false)
+    }
+
+    /// 换屏不像拖动改大小那样连续变化，不必等。
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        scheduleGuestFit()
+        scheduleGuestFit(after: 0)
     }
 
     /// 改了 `DisplayConfig.retina` 后调用，已打开的这台虚拟机的画面立即按新设置请求分辨率。

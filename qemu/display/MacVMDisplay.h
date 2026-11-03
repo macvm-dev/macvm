@@ -25,3 +25,7 @@ void MacVMDisplayPointer(void *view, double x, double y, uint32_t buttons);
 void MacVMDisplayScroll(void *view, bool up, uint32_t buttons);
 /// 是否把 SPICE 光标通道的光标画进画面（默认画）；宿主已用系统光标显示客户机光标时关掉。
 void MacVMDisplayShowGuestCursor(void *view, bool shows);
+/// 冻结时画面停在当前这一帧（窗口变大时拉伸显示），新帧照常接收确认、客户机不受阻；解冻立即画最新一帧。
+void MacVMDisplaySetFrozen(void *view, bool frozen);
+/// 画面尺寸下次变化时自动冻结，停在变化前的最后一帧，直到 `MacVMDisplaySetFrozen(view, false)`。
+void MacVMDisplayFreezeOnResize(void *view);

@@ -20,7 +20,7 @@ static void debug_log(NSString *format, ...) {
     fprintf(stderr, "[MacVMDisplay] %s\n", line.UTF8String);
 }
 
-@interface MacVMSpiceView : MTKView <CSConnectionDelegate>
+@interface MacVMSpiceView : MTKView <CSConnectionDelegate, MTKViewDelegate>
 @property (nonatomic) MacVMDisplayHandler handler;
 @property (nonatomic) void *context;
 @end
@@ -31,6 +31,9 @@ static void debug_log(NSString *format, ...) {
     CSDisplay *_display;
     CSInput *_input;
     BOOL _showsGuestCursor;
+    BOOL _frozen;
+    BOOL _freezeOnResize;
+    CGSize _freezeFromSize;
 }
 
 - (instancetype)initWithSocket:(NSURL *)socket {
@@ -49,7 +52,7 @@ static void debug_log(NSString *format, ...) {
     layer.maximumDrawableCount = 2;
     layer.displaySyncEnabled = NO;
     _renderer = [[CSMetalRenderer alloc] initWithMetalKitView:self];
-    self.delegate = _renderer;
+    self.delegate = self;
     _showsGuestCursor = YES;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -89,12 +92,16 @@ static void debug_log(NSString *format, ...) {
     }
 }
 
-// 按比例缩放进视图；渲染器以视图中心为原点。
 - (void)fitDisplay {
+    [self fitDisplayInto:self.drawableSize];
+}
+
+// 按比例缩放进视图；渲染器以视图中心为原点。
+- (void)fitDisplayInto:(CGSize)drawable {
     if (!_display) {
         return;
     }
-    CGSize guest = _display.displaySize, drawable = self.drawableSize;
+    CGSize guest = _display.displaySize;
     if (guest.width > 0 && guest.height > 0 && drawable.width > 0 && drawable.height > 0) {
         _renderer.viewportScale = MIN(drawable.width / guest.width, drawable.height / guest.height);
         debug_log(@"fit: guest %@ drawable %@ scale %f", NSStringFromSize(guest), NSStringFromSize(drawable), _renderer.viewportScale);
@@ -142,6 +149,39 @@ static void debug_log(NSString *format, ...) {
 - (void)setFrameSize:(NSSize)size {
     [super setFrameSize:size];
     [self fitDisplay];
+}
+
+- (void)setFrozen:(BOOL)frozen {
+    _frozen = frozen;
+    _freezeOnResize = NO;
+    if (!frozen) {
+        self.needsDisplay = YES;
+    }
+}
+
+- (void)freezeOnResize {
+    _freezeOnResize = YES;
+    _freezeFromSize = _display.displaySize;
+}
+
+#pragma mark - MTKViewDelegate
+
+// 渲染器的待画标记在跳过时保留，解冻后的那次绘制会画上最新一帧。
+// 尺寸在新尺寸的帧画出之前就已更新，所以绘制时比较尺寸，新尺寸的第一帧也不会漏出来。
+- (void)drawInMTKView:(MTKView *)view {
+    if (_freezeOnResize && !CGSizeEqualToSize(_display.displaySize, _freezeFromSize)) {
+        _freezeOnResize = NO;
+        _frozen = YES;
+    }
+    if (!_frozen) {
+        [_renderer drawInMTKView:view];
+    }
+}
+
+// 换到缩放倍数不同的屏幕时视图点数不变、像素变了，缩放比例要跟着重算。
+- (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size {
+    [_renderer mtkView:view drawableSizeWillChange:size];
+    [self fitDisplayInto:size];
 }
 
 - (void)setShowsGuestCursor:(BOOL)shows {
@@ -275,4 +315,12 @@ void MacVMDisplayScroll(void *view, bool up, uint32_t buttons) {
 
 void MacVMDisplayShowGuestCursor(void *view, bool shows) {
     [view_of(view) setShowsGuestCursor:shows];
+}
+
+void MacVMDisplaySetFrozen(void *view, bool frozen) {
+    [view_of(view) setFrozen:frozen];
+}
+
+void MacVMDisplayFreezeOnResize(void *view) {
+    [view_of(view) freezeOnResize];
 }
