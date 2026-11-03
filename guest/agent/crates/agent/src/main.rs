@@ -27,7 +27,10 @@ fn main() {
         }
     };
     #[cfg(windows)]
-    platform::configure_hardware_cursor();
+    {
+        platform::configure_hardware_cursor();
+        platform::configure_rtc_utc();
+    }
     let config = Arc::new(config);
     loop {
         match listener.accept() {

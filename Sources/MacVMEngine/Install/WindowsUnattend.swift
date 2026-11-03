@@ -172,6 +172,8 @@ enum WindowsUnattend {
         Start-Transcript -Path C:\macvm-setup.log -Append
         for ($i = 0; $i -lt 60 -and -not (Test-NetConnection -ComputerName www.microsoft.com -Port 443 -InformationLevel Quiet); $i++) { Start-Sleep 5 }
         powercfg /hibernate off
+        # 虚拟机的主板时钟是 UTC，Windows 默认当本地时间读。
+        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation' -Name RealTimeIsUniversal -Value 1 -Type DWord
         powercfg /change standby-timeout-ac 0
         powercfg /change monitor-timeout-ac 0
         $cap = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1

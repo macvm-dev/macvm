@@ -1,4 +1,6 @@
 use std::io;
+use std::mem::size_of;
+use std::ptr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::process::Command;
 
@@ -9,6 +11,8 @@ use windows_sys::Win32::NetworkManagement::IpHelper::{
 };
 use windows_sys::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR, SOCKADDR_IN};
+use super::wide;
+use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, REG_DWORD, RRF_RT_REG_DWORD, RegGetValueW, RegSetKeyValueW};
 use windows_sys::Win32::System::SystemInformation::{
     ComputerNameDnsHostname, GetComputerNameExW, GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX,
 };
@@ -103,6 +107,23 @@ pub fn shutdown(reboot: bool) -> io::Result<()> {
 }
 
 /// 恢复挂起后对时；修改系统时间需要管理员权限，代理以最高权限运行。
+/// 让 Windows 把主板时钟当 UTC 读：QEMU 与 VZ 的 RTC 都是 UTC，Windows 默认当本地时间读，
+/// 时钟会差一个时区。开机时读取，改动在下次开机生效。
+pub fn configure_rtc_utc() {
+    let key = wide(r"SYSTEM\CurrentControlSet\Control\TimeZoneInformation");
+    let name = wide("RealTimeIsUniversal");
+    let mut current: u32 = 0;
+    let mut size = size_of::<u32>() as u32;
+    // SAFETY: 缓冲区与长度一致；字符串以 NUL 结尾。
+    unsafe {
+        let read = RegGetValueW(HKEY_LOCAL_MACHINE, key.as_ptr(), name.as_ptr(), RRF_RT_REG_DWORD, ptr::null_mut(), (&mut current as *mut u32).cast(), &mut size);
+        if read != 0 || current != 1 {
+            let one: u32 = 1;
+            RegSetKeyValueW(HKEY_LOCAL_MACHINE, key.as_ptr(), name.as_ptr(), REG_DWORD, (&one as *const u32).cast(), size_of::<u32>() as u32);
+        }
+    }
+}
+
 pub fn set_time(unix_ms: i64) -> io::Result<()> {
     let script = format!("Set-Date -Date ([DateTimeOffset]::FromUnixTimeMilliseconds({unix_ms}).LocalDateTime) | Out-Null");
     run("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script])
