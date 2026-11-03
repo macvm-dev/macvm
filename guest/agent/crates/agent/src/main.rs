@@ -30,6 +30,12 @@ fn main() {
     {
         platform::configure_hardware_cursor();
         platform::configure_rtc_utc();
+        // 换显卡驱动要十几秒，不挡住监听；光标开关已按换之前的驱动设好，换上的驱动下次开机读到。
+        std::thread::spawn(|| {
+            if let Err(e) = platform::install_gpu_driver() {
+                eprintln!("macvm-agent: 安装 3D 显卡驱动失败：{e}");
+            }
+        });
     }
     let config = Arc::new(config);
     loop {

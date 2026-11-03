@@ -25,7 +25,7 @@
 | `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand |
 | `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名 `macvm-<名>` |
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
-| `agent install\|info <名>` | 安装 / 查询客户机代理 |
+| `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU） |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
 
 ## 引擎
@@ -41,6 +41,7 @@
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 截不到）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Windows 分辨率 | 固定 1024x768，随窗口缩放 | 由客户机设定 |
 | Windows 光标 | 客户机自绘 | 宿主系统光标（硬件光标；换到 qemu 后第二次开机起生效） |
+| Windows 3D | 无 | 自带的 QEMU 下装 viogpu3d（Direct3D 11.1，桌面合成用 GPU）；装上后只能用自带的 QEMU 运行，不能再改用 vz |
 
 Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改用 vz 运行。
 

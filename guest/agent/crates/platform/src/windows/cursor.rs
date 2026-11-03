@@ -1,4 +1,4 @@
-//! viogpudo 的硬件光标开关（驱动键下的 `HWCursor`，驱动启动时读取，INF 默认关）。
+//! virtio-gpu 显卡驱动（viogpudo、viogpu3d）的硬件光标开关（驱动键下的 `HWCursor`，驱动启动时读取，INF 默认关）。
 //!
 //! 打开后 Windows 不再把光标画进画面，而是交给显卡：QEMU 的 virtio-gpu 把光标形状转给宿主，宿主用它作
 //! 系统光标，跟手且无延迟；VZ 的 virtio-gpu 不显示硬件光标，打开后客户机里就看不到光标。
@@ -14,21 +14,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DRV, GUID_DEVCLASS_DISPLAY, SP_DEVINFO_DATA, SetupDiDestroyDeviceInfoList,
-    SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceInstanceIdW, SetupDiOpenDevRegKey,
-};
-use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-use windows_sys::Win32::System::Registry::{
-    HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegGetValueW, RegQueryValueExW,
-    RegSetValueExW,
-};
+use windows_sys::Win32::System::Registry::{KEY_QUERY_VALUE, KEY_SET_VALUE, REG_DWORD, RegCloseKey, RegQueryValueExW, RegSetValueExW};
 
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits, GetObjectW, HBITMAP, ReleaseDC,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{CURSOR_SHOWING, CURSORINFO, GetCursorInfo, GetIconInfo, HCURSOR, ICONINFO};
 
+use super::gpu::{for_each_present_virtio_gpu, on_vz, open_driver_key};
 use super::wide;
 use crate::CursorImage;
 
@@ -37,40 +30,17 @@ static HARDWARE_CURSOR_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// 轮询当前光标的间隔，即形状变化最多晚这么久到达宿主；位置由宿主自己画，不受影响。
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
-/// virtio-gpu 的 PCI 厂商与设备号。
-const VIRTIO_GPU: &str = "VEN_1AF4&DEV_1050";
-/// VZ 的 SMBIOS 制造商。
-const VZ_MANUFACTURER: &str = "Apple Inc.";
-
 /// 按所在引擎设好在场 virtio-gpu 的硬件光标开关，返回是否改动（改动在下次开机生效）。
 pub fn configure_hardware_cursor() -> bool {
-    let enable = system_manufacturer().as_deref() != Some(VZ_MANUFACTURER);
+    let enable = !on_vz();
     let mut changed = false;
-    // SAFETY: 设备信息集在本函数内创建并销毁；注册表键打开后即关闭；缓冲区长度如实传入。
-    unsafe {
-        let set = SetupDiGetClassDevsW(&GUID_DEVCLASS_DISPLAY, ptr::null(), ptr::null_mut(), DIGCF_PRESENT);
-        if set == INVALID_HANDLE_VALUE as isize || set == 0 {
-            return false;
-        }
-        for index in 0.. {
-            let mut info: SP_DEVINFO_DATA = std::mem::zeroed();
-            info.cbSize = size_of::<SP_DEVINFO_DATA>() as u32;
-            if SetupDiEnumDeviceInfo(set, index, &mut info) == 0 {
-                break;
-            }
-            let mut id = [0u16; 512];
-            if SetupDiGetDeviceInstanceIdW(set, &info, id.as_mut_ptr(), id.len() as u32, ptr::null_mut()) == 0
-                || !String::from_utf16_lossy(&id).to_uppercase().contains(VIRTIO_GPU)
-            {
-                continue;
-            }
-            let key = SetupDiOpenDevRegKey(set, &info, DICS_FLAG_GLOBAL, 0, DIREG_DRV, KEY_QUERY_VALUE | KEY_SET_VALUE);
-            if key.is_null() || ptr::eq(key, INVALID_HANDLE_VALUE as _) {
-                continue;
-            }
-            let name = wide("HWCursor");
-            let mut current: u32 = 0;
-            let mut size = size_of::<u32>() as u32;
+    for_each_present_virtio_gpu(|set, info| {
+        let Some(key) = open_driver_key(set, info, KEY_QUERY_VALUE | KEY_SET_VALUE) else { return };
+        let name = wide("HWCursor");
+        let mut current: u32 = 0;
+        let mut size = size_of::<u32>() as u32;
+        // SAFETY: 缓冲区与长度一致；键在本闭包内关闭。
+        unsafe {
             let read = RegQueryValueExW(key, name.as_ptr(), ptr::null(), ptr::null_mut(), (&mut current as *mut u32).cast(), &mut size);
             let wanted = u32::from(enable);
             if enable && read == 0 && current == 1 {
@@ -81,27 +51,8 @@ pub fn configure_hardware_cursor() -> bool {
             }
             RegCloseKey(key);
         }
-        SetupDiDestroyDeviceInfoList(set);
-    }
+    });
     changed
-}
-
-fn system_manufacturer() -> Option<String> {
-    let mut buf = [0u16; 256];
-    let mut bytes = (buf.len() * 2) as u32;
-    // SAFETY: 缓冲区与长度（字节）一致。
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            wide(r"HARDWARE\DESCRIPTION\System\BIOS").as_ptr(),
-            wide("SystemManufacturer").as_ptr(),
-            RRF_RT_REG_SZ,
-            ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut bytes,
-        )
-    };
-    (status == 0).then(|| String::from_utf16_lossy(&buf[..buf.iter().position(|&c| c == 0).unwrap_or(0)]))
 }
 
 /// 光标变化时回调（`None` 表示隐藏），回调出错即返回。只有本次开机已在用硬件光标时才提供：

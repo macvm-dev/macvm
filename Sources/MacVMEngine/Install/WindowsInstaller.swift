@@ -50,16 +50,19 @@ public enum WindowsInstaller {
         var virtioWin = options.virtioWin
         if virtioWin == nil { virtioWin = try await cachedVirtioWin(showProgress: options.showProgress) }
         let password = options.password ?? GuestCredentials.randomPassword()
-        let unattend = WindowsUnattend.Options(
+        var unattend = WindowsUnattend.Options(
             computerName: String(options.name.filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(15)),
             user: options.user, password: password, locale: locale,
             sshPublicKey: try await SSHKeys.ensurePublicKey(),
             installAgent: AgentInstaller.binary(for: .windows) != nil
         )
+        // 驱动由代理装，没有代理就不放。
+        unattend.installGPUDriver = unattend.installAgent && WindowsGPUDriver.package(qemu) != nil
 
         let bundle = try VMFactory.prepareEmptyBundle(named: options.name, in: library)
         do {
-            try await buildSetupImage(unattend, to: bundle.url.appending(path: setupImageName))
+            try await buildSetupImage(unattend, gpuDriver: unattend.installGPUDriver ? WindowsGPUDriver.package(qemu) : nil,
+                                      to: bundle.url.appending(path: setupImageName))
             try await buildDataImage(iso: options.iso, virtioWin: virtioWin!, to: bundle.url.appending(path: dataImageName))
             try DiskImage.createSparse(at: bundle.diskURL, size: options.diskSize ?? HostInfo.defaultDiskSize(for: .windows))
             try MachineIdentity.createGeneric(in: bundle)
@@ -73,7 +76,8 @@ public enum WindowsInstaller {
                 networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],
                 installMedia: [options.iso.path, setupImageName],
                 guestUser: options.user,
-                guestAgent: unattend.installAgent
+                guestAgent: unattend.installAgent,
+                graphicsAcceleration: unattend.installGPUDriver
             )
             try bundle.saveConfig(config)
             return bundle
@@ -114,7 +118,7 @@ public enum WindowsInstaller {
 
     // MARK: - 安装盘
 
-    static func buildSetupImage(_ o: WindowsUnattend.Options, to output: URL) async throws {
+    static func buildSetupImage(_ o: WindowsUnattend.Options, gpuDriver: URL? = nil, to output: URL) async throws {
         let staging = FileManager.default.temporaryDirectory.appending(path: "macvm-winsetup-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: staging) }
@@ -125,6 +129,9 @@ public enum WindowsInstaller {
         try WindowsUnattend.setupScript(o).write(to: staging.appending(path: "setup.ps1"), atomically: true, encoding: .utf8)
         if o.installAgent, let agent = AgentInstaller.binary(for: .windows) {
             try FileManager.default.copyItem(at: agent, to: staging.appending(path: WindowsUnattend.agentFileName))
+        }
+        if let gpuDriver {
+            try await WindowsGPUDriver.extract(gpuDriver, to: staging.appending(path: WindowsUnattend.gpuDriverFolder))
         }
 
         let dmg = output.deletingPathExtension().appendingPathExtension("dmg")

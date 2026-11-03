@@ -13,6 +13,25 @@ public struct QEMUInstallation: Sendable {
     public var displayLibrary: URL?
     /// 编进了 Direct3D 转译（DXMT），virtio-gpu 可开 Windows 的 3D 上下文。
     public var direct3D = false
+    /// 自带布局的根目录；有它才是带图形加速补丁的 QEMU。
+    public var bundleRoot: URL?
+
+    /// 启动 QEMU 时附加的环境变量：virglrenderer 按编译时的绝对路径找 render server，要改指向自带的那份；
+    /// ANGLE 用 Metal 后端；Windows 的 Direct3D 经 DXMT 转成 Metal。
+    var environment: [String: String] {
+        guard let bundleRoot else { return [:] }
+        var env = [
+            "RENDER_SERVER_EXEC_PATH": bundleRoot.appending(path: "bin/virgl_render_server").path,
+            "ANGLE_DEFAULT_PLATFORM": "metal",
+            "XDG_RUNTIME_DIR": RuntimeDirectory.url.path,
+        ]
+        if direct3D {
+            env["NPT_BACKEND"] = "dxmt"
+            env["NPT_DXGI_LIBRARY_PATH"] = bundleRoot.appending(path: "lib/libdxmt-native.dylib").path
+            env["DXMT_LOG_LEVEL"] = "none"
+        }
+        return env
+    }
 
     public init(binary: URL, firmwareCode: URL, firmwareVarsTemplate: URL) {
         self.binary = binary
@@ -66,6 +85,7 @@ public struct QEMUInstallation: Sendable {
         guard fm.isExecutableFile(atPath: binary.path), fm.fileExists(atPath: code.path), fm.fileExists(atPath: vars.path) else { return nil }
         var found = QEMUInstallation(binary: binary, firmwareCode: code, firmwareVarsTemplate: vars)
         found.dataDirectory = share
+        found.bundleRoot = root
         let display = root.appending(path: "lib/libMacVMDisplay.dylib")
         if fm.fileExists(atPath: display.path) { found.displayLibrary = display }
         found.direct3D = fm.fileExists(atPath: root.appending(path: "lib/libdxmt-native.dylib").path)

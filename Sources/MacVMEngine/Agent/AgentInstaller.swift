@@ -59,7 +59,9 @@ public enum AgentInstaller {
 
     /// 经 SSH 安装到已运行的客户机：Linux 装为 systemd 服务（root），macOS 装为登录会话里的 LaunchAgent，
     /// Windows 装为登录时运行的计划任务；后两者在交互会话里运行，才能访问剪贴板。
-    public static func installOverSSH(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws {
+    /// 用 qemu 引擎的 Windows 在自带 QEMU 带 3D 时一并放进 viogpu3d 驱动包，返回是否放了。
+    @discardableResult
+    public static func installOverSSH(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> Bool {
         guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 安装代理") }
         guard let binary = binary(for: config.os) else { throw MacVMError.io("找不到 \(config.os.rawValue) 版客户机代理，先运行 make agent") }
         let ssh = sshArguments(bundle: bundle, user: user, macvmPath: macvmPath)
@@ -101,12 +103,30 @@ public enum AgentInstaller {
         case .windows:
             // Windows 的 sshd 把命令交给 PowerShell 执行，经标准输入传二进制不可靠，改用 scp 传到用户目录。
             let staged = "macvm-agent.exe"
-            try await Subprocess.run("/usr/bin/scp", ["-q"] + ssh.dropLast().filter { $0 != "-T" } + [binary.path, "\(ssh.last!):\(staged)"])
-            let install = windowsRegistration(source: "(Join-Path $HOME '\(staged)')", user: user) + "\nRemove-Item (Join-Path $HOME '\(staged)')"
+            let scp = ["-q"] + ssh.dropLast().filter { $0 != "-T" }
+            try await Subprocess.run("/usr/bin/scp", scp + [binary.path, "\(ssh.last!):\(staged)"])
+            var install = ""
+            let gpuDriver = config.engine == .qemu ? WindowsGPUDriver.package(QEMUInstallation.locate()) : nil
+            if let gpuDriver {
+                // 先放驱动包再重启代理，代理启动时即可装上。
+                let local = FileManager.default.temporaryDirectory.appending(path: "macvm-\(WindowsUnattend.gpuDriverFolder)-\(UUID().uuidString)")
+                defer { try? FileManager.default.removeItem(at: local) }
+                try await WindowsGPUDriver.extract(gpuDriver, to: local)
+                try await Subprocess.run("/usr/bin/scp", scp + ["-r", local.path, "\(ssh.last!):\(WindowsUnattend.gpuDriverFolder)"])
+                let target = "'\(WindowsGPUDriver.guestDirectory)'"
+                install += """
+                New-Item -ItemType Directory -Force -Path (Split-Path \(target)) | Out-Null
+                Remove-Item -Recurse -Force -LiteralPath \(target) -ErrorAction SilentlyContinue
+                Move-Item -LiteralPath (Join-Path $HOME '\(WindowsUnattend.gpuDriverFolder)') -Destination \(target)
+
+                """
+            }
+            install += windowsRegistration(source: "(Join-Path $HOME '\(staged)')", user: user) + "\nRemove-Item (Join-Path $HOME '\(staged)')"
             try await Subprocess.run("/usr/bin/ssh", ssh + [encodedPowerShell(install)])
-            return
+            return gpuDriver != nil
         }
         try await Subprocess.run("/usr/bin/ssh", ssh + [script], stdin: binary)
+        return false
     }
 
     /// 多行脚本经 sshd 交给 PowerShell 时会按行拆开，编码成一条 `-EncodedCommand`（UTF-16LE 的 Base64）。

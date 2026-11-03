@@ -127,6 +127,7 @@ struct QEMUCommandTests {
         bundled.dataDirectory = URL(filePath: "/q/share")
         bundled.displayLibrary = URL(filePath: "/q/lib/libMacVMDisplay.dylib")
         bundled.direct3D = true
+        bundled.bundleRoot = URL(filePath: "/q")
         let bundle = VMBundle(url: URL(filePath: "/vms/win.macvm"))
         var config = VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30,
                               disks: [DiskConfig(path: "disk.img", bus: .nvme)], installMedia: ["/isos/win.iso"])
@@ -137,6 +138,8 @@ struct QEMUCommandTests {
         #expect(joined.contains("-spice unix=on,addr=\(QEMUCommand.spiceSocket(bundle).path),disable-ticketing=on,gl=on"))
         #expect(!args.contains("-vnc") && args.starts(with: ["-L", "/q/share"]))
         #expect(joined.contains("-bios /code.fd -drive if=pflash,unit=1,"))
+        #expect(joined.contains("-accel hvf,ipa-granule-size=4096"))
+        #expect(bundled.environment["RENDER_SERVER_EXEC_PATH"] == "/q/bin/virgl_render_server")
         config.os = .linux
         #expect(!(try QEMUCommand(bundle: bundle, config: config, qemu: bundled).arguments().joined().contains("neptune")))
     }
@@ -167,6 +170,29 @@ struct WindowsUnattendTests {
         let script = WindowsUnattend.setupScript(o)
         #expect(script.contains("Register-ScheduledTask") && script.contains("-UserId 'a<b'"))
         #expect(script.contains("-LocalPort \(AgentProtocol.port)"))
+    }
+
+    @Test func setupScriptPlacesGPUDriverBeforeAgentStarts() throws {
+        var o = options
+        o.installAgent = true
+        #expect(!WindowsUnattend.setupScript(o).contains(WindowsGPUDriver.guestDirectory))
+        o.installGPUDriver = true
+        let script = WindowsUnattend.setupScript(o)
+        let copy = try #require(script.range(of: "-Destination '\(WindowsGPUDriver.guestDirectory)'"))
+        let agent = try #require(script.range(of: "Start-ScheduledTask"))
+        #expect(copy.lowerBound < agent.lowerBound)
+    }
+
+    @Test func acceleratedWindowsCannotSwitchToVZ() throws {
+        var config = VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30, disks: [])
+        // 旧配置文件没有这个字段。
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any])
+        json["graphicsAcceleration"] = nil
+        let old = try JSONDecoder().decode(VMConfig.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(!old.graphicsAcceleration)
+        config.graphicsAcceleration = true
+        #expect(throws: MacVMError.self) { try config.switchEngine(to: .vz) }
+        #expect(config.engine == .qemu)
     }
 
     @Test func encodedPowerShellIsUTF16LEBase64() throws {

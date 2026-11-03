@@ -11,9 +11,12 @@ enum WindowsUnattend {
         var sshPublicKey: String
         /// 安装盘上带有 `agentFileName`，首次登录时装好客户机代理。
         var installAgent = false
+        /// 安装盘上带有 `gpuDriverFolder`，首次登录时放进客户机，由代理装上。
+        var installGPUDriver = false
     }
 
     static let agentFileName = "macvm-agent.exe"
+    static let gpuDriverFolder = "viogpu3d"
 
     /// 安装盘（FAT32）的卷标，首次登录脚本据此找到自己所在的盘符。
     static let volumeLabel = "MACVMSETUP"
@@ -192,6 +195,7 @@ enum WindowsUnattend {
         Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
         Set-Content -Path $PSHOME\profile.ps1 -Encoding utf8 -Value '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding'
         Restart-Service sshd
+        \#(o.installGPUDriver ? "New-Item -ItemType Directory -Force -Path (Split-Path '\(WindowsGPUDriver.guestDirectory)') | Out-Null; Copy-Item -Recurse -Force -LiteralPath (Join-Path $PSScriptRoot '\(gpuDriverFolder)') -Destination '\(WindowsGPUDriver.guestDirectory)'" : "")
         \#(o.installAgent ? AgentInstaller.windowsRegistration(source: "(Join-Path $PSScriptRoot '\(agentFileName)')", user: o.user) : "")
         New-Item -ItemType File -Path \#(doneMarker) -Force
         Stop-Transcript

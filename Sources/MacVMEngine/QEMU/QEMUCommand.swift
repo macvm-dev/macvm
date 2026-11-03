@@ -41,7 +41,8 @@ struct QEMUCommand {
             "-name", config.name,
             "-nodefaults", "-no-user-config",
             "-machine", "virt,highmem=on,gic-version=3",
-            "-accel", "hvf", "-cpu", "host",
+            // 自带的 QEMU 支持 4K 的 IPA 粒度：Windows 的 GPU 驱动按 4K 偏移映射资源，默认的 16K 粒度下映射失败、QEMU 退出。
+            "-accel", qemu.bundleRoot == nil ? "hvf" : "hvf,ipa-granule-size=4096", "-cpu", "host",
             // 运行它的进程（应用或 macvm run）意外退出时 QEMU 跟着退出，不留下无人管理的虚拟机。
             "-run-with", "exit-with-parent=on",
             "-smp", "\(config.cpuCount)",

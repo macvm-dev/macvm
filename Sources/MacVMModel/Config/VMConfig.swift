@@ -33,6 +33,9 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public var guestAgent: Bool
     /// 后台运行（`macvm start`）时把客户机的 virtio 控制台输出写进 `run.log`。
     public var serialConsole: Bool
+    /// 客户机已拿到 3D 显卡驱动（Windows 的 viogpu3d），只能用带图形加速的 QEMU 运行：
+    /// VZ 与不带 virglrenderer 的 QEMU 下它没有 3D 可用，Windows 开机即崩溃。
+    public var graphicsAcceleration: Bool
 
     public init(
         name: String,
@@ -51,7 +54,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
         headless: Bool = false,
         guestUser: String? = nil,
         guestAgent: Bool = false,
-        serialConsole: Bool = false
+        serialConsole: Bool = false,
+        graphicsAcceleration: Bool = false
     ) {
         self.version = Self.currentVersion
         self.name = name
@@ -71,6 +75,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.guestUser = guestUser
         self.guestAgent = guestAgent
         self.serialConsole = serialConsole
+        self.graphicsAcceleration = graphicsAcceleration
     }
 
     public init(from decoder: any Decoder) throws {
@@ -93,6 +98,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         guestUser = try c.decodeIfPresent(String.self, forKey: .guestUser)
         guestAgent = try c.decodeIfPresent(Bool.self, forKey: .guestAgent) ?? false
         serialConsole = try c.decodeIfPresent(Bool.self, forKey: .serialConsole) ?? false
+        graphicsAcceleration = try c.decodeIfPresent(Bool.self, forKey: .graphicsAcceleration) ?? false
     }
 
     /// 能否挂起。VZ 下通用平台（Linux、Windows）带 USB 控制器或 USB 设备时恢复会报 invalid argument，

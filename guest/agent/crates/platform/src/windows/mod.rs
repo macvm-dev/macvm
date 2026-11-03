@@ -3,10 +3,12 @@ mod listener;
 mod clipboard;
 mod cursor;
 mod display;
+mod gpu;
 mod system;
 
 pub use cursor::{configure_hardware_cursor, watch_cursor};
 pub use display::set_display;
+pub use gpu::{GPU_DRIVER_DIR, install_gpu_driver};
 pub use exec::spawn;
 pub use listener::{Conn, Listener, shutdown_write};
 pub use system::*;

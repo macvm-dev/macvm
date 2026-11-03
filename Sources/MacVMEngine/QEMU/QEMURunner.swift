@@ -24,6 +24,9 @@ public final class QEMURunner: MachineRunner {
         self.bundle = bundle
         self.display = display
         config = try bundle.loadConfig()
+        if config.graphicsAcceleration, !qemu.direct3D {
+            throw MacVMError.unsupported("\(config.name) 装了 3D 显卡驱动，需要 App 自带的 QEMU（macOS 27 起）；当前的 QEMU 没有 3D，Windows 开机即崩溃")
+        }
         try qemu.ensureVars(for: bundle)
         _ = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments()
     }
@@ -143,6 +146,11 @@ public final class QEMURunner: MachineRunner {
         let process = Process()
         process.executableURL = qemu.binary
         process.arguments = try command.arguments()
+        // QEMU 与它加载的库可能在当前目录留下日志等文件，别落在调用方的目录里。
+        process.currentDirectoryURL = RuntimeDirectory.url
+        if !qemu.environment.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(qemu.environment) { $1 }
+        }
         process.standardInput = FileHandle.nullDevice
         let stderr = StderrTail()
         process.standardError = stderr.pipe

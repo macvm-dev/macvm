@@ -46,6 +46,8 @@
 
 `bgra` 为逐像素 B G R A（非预乘 alpha）、自上而下的 Base64；`hidden` 为 true 时其余字段无意义，省略时为 false。客户机本次开机自绘光标（VZ 下，或未开硬件光标）时回错误响应。
 
+Windows 3D 显卡驱动：宿主把 viogpu3d 驱动包平铺放在 `C:\ProgramData\macvm\viogpu3d`（含 `viogpu3d.inf`）。代理在非 VZ 下启动时，把它装到在场且还没用上 3D 驱动的 virtio-gpu 上，不经协议请求。
+
 `exec` 经目标用户的登录 shell 执行 `argv`，环境与 SSH 登录一致；`user` 省略时为代理启动参数 `--user` 指定的用户，代理不是 root 时只能以自身身份执行。
 
 ## exec 帧模式
