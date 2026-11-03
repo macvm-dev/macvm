@@ -11,8 +11,10 @@ public enum ControlRequest: Codable, Sendable, Equatable {
     case resume
     /// 把当前画面存成 PNG 到 `path`（宿主路径）。
     case screenshot(path: String)
+    /// 把显示输出调整为 `width`×`height` 像素。
+    case display(width: Int, height: Int)
 
-    private enum CodingKeys: String, CodingKey { case op, force, port, path }
+    private enum CodingKeys: String, CodingKey { case op, force, port, path, width, height }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -24,6 +26,7 @@ public enum ControlRequest: Codable, Sendable, Equatable {
         case "pause": self = .pause
         case "resume": self = .resume
         case "screenshot": self = .screenshot(path: try c.decode(String.self, forKey: .path))
+        case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
         case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
         }
     }
@@ -44,6 +47,10 @@ public enum ControlRequest: Codable, Sendable, Equatable {
         case .screenshot(let path):
             try c.encode("screenshot", forKey: .op)
             try c.encode(path, forKey: .path)
+        case .display(let width, let height):
+            try c.encode("display", forKey: .op)
+            try c.encode(width, forKey: .width)
+            try c.encode(height, forKey: .height)
         }
     }
 }

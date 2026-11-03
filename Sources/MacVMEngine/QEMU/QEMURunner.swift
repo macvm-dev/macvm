@@ -109,6 +109,10 @@ public final class QEMURunner: MachineRunner {
         try await qmp.execute("screendump", ["filename": url.path, "format": "png"])
     }
 
+    public func resizeDisplay(width: Int, height: Int) throws {
+        throw MacVMError.unsupported("QEMU 引擎不支持运行中调整显示尺寸")
+    }
+
     /// 只有 `QEMUCommand.forwardedPorts` 中的端口可达。
     public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
         guard QEMUCommand.forwardedPorts.contains(port) else {

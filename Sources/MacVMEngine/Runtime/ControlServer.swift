@@ -91,6 +91,7 @@ public final class ControlServer: @unchecked Sendable {
             case .pause: try await runner.pause()
             case .resume: try await runner.resume()
             case .screenshot(let path): try await runner.screenshot(to: URL(filePath: path))
+            case .display(let width, let height): try runner.resizeDisplay(width: width, height: height)
             }
             return ControlResponse(ok: true, state: runner.stateLabel, pid: getpid(), canSuspend: runner.canSuspend)
         } catch let error as MacVMError {

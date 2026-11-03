@@ -34,8 +34,9 @@ public enum AgentProtocol {
         case clipboardGet
         case clipboardSet(text: String)
         case mount(tag: String, path: String, readOnly: Bool)
+        case display(width: Int, height: Int)
 
-        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only }
+        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height }
 
         public func encode(to encoder: any Encoder) throws {
             if case .exec(let req) = self {
@@ -55,6 +56,8 @@ public enum AgentProtocol {
             case .clipboardSet(let text): try c.encode("clipboard-set", forKey: .op); try c.encode(text, forKey: .text)
             case .mount(let tag, let path, let ro):
                 try c.encode("mount", forKey: .op); try c.encode(tag, forKey: .tag); try c.encode(path, forKey: .path); try c.encode(ro, forKey: .read_only)
+            case .display(let width, let height):
+                try c.encode("display", forKey: .op); try c.encode(width, forKey: .width); try c.encode(height, forKey: .height)
             }
         }
 
@@ -71,6 +74,7 @@ public enum AgentProtocol {
             case "mount":
                 self = .mount(tag: try c.decode(String.self, forKey: .tag), path: try c.decode(String.self, forKey: .path),
                               readOnly: try c.decodeIfPresent(Bool.self, forKey: .read_only) ?? false)
+            case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }

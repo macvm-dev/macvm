@@ -17,6 +17,11 @@ struct Set: AsyncParsableCommand {
     @Option(help: "虚拟化引擎：vz 或 qemu。") var engine: Engine?
     @Option(name: .customLong("cpus"), help: "vCPU 数。") var cpuCount: Int?
     @Option(help: "内存，如 8G。") var memory: String?
+    @Option(help: "开机时的显示尺寸，宽x高，如 2560x1600。") var display: String?
+
+    func validate() throws {
+        if let display, Display.parse(display) == nil { throw ValidationError("尺寸格式应为 宽x高，如 2560x1600") }
+    }
 
     func run() async throws {
         try await Output.run(json: global.json, human: { (s: VMSummary) in "已更新 \(s.name)" }) {
@@ -37,6 +42,10 @@ struct Set: AsyncParsableCommand {
             }
             if let cpuCount { config.cpuCount = cpuCount }
             if let memory { config.memorySize = try ByteSize.parse(memory) }
+            if let display, let (width, height) = Display.parse(display) {
+                config.display.width = width
+                config.display.height = height
+            }
             try bundle.saveConfig(config)
             return try VMStatus.summary(of: bundle)
         }

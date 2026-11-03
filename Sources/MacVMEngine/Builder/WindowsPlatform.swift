@@ -22,6 +22,13 @@ public enum WindowsSupport {
 
     public static let bootImageName = "vz-boot.img"
 
+    /// VZ 下 Windows 能切换到的最大分辨率。viogpudo 在开机时按开机输出尺寸分配帧缓冲，之后放不下更大的模式。
+    public static let maxDisplaySize = (width: 3840, height: 2400)
+
+    public static func fitsDisplay(width: Int, height: Int) -> Bool {
+        width * height <= maxDisplaySize.width * maxDisplaySize.height
+    }
+
     static func bootImageURL(_ bundle: VMBundle) -> URL { bundle.url.appending(path: bootImageName) }
 
     /// VZ 启动 Windows 前的准备：

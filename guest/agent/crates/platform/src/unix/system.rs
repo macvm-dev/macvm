@@ -163,6 +163,11 @@ pub fn clipboard_set(text: &str) -> io::Result<()> {
     }
 }
 
+/// Linux 与 macOS 客户机的桌面自己跟随显示输出尺寸。
+pub fn set_display(_width: u32, _height: u32) -> io::Result<()> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机需要代理切换分辨率"))
+}
+
 pub fn mount_virtiofs(tag: &str, path: &str, read_only: bool) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {

@@ -1,8 +1,10 @@
 mod exec;
 mod listener;
 mod clipboard;
+mod display;
 mod system;
 
+pub use display::set_display;
 pub use exec::spawn;
 pub use listener::{Conn, Listener, shutdown_write};
 pub use system::*;

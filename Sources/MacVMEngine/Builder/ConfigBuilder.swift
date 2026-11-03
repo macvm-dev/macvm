@@ -148,9 +148,15 @@ public struct ConfigBuilder {
             let graphics = VZMacGraphicsDeviceConfiguration()
             graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: d.width, heightInPixels: d.height, pixelsPerInch: d.pixelsPerInch)]
             vz.graphicsDevices = [graphics]
-        case .linux, .windows:
+        case .linux:
             let graphics = VZVirtioGraphicsDeviceConfiguration()
             graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: d.width, heightInPixels: d.height)]
+            vz.graphicsDevices = [graphics]
+        case .windows:
+            // 以最大尺寸开机，驱动才按它分配帧缓冲；开机后 `VZRunner` 改回配置的尺寸。
+            let max = WindowsSupport.maxDisplaySize
+            let graphics = VZVirtioGraphicsDeviceConfiguration()
+            graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: Swift.max(d.width, max.width), heightInPixels: Swift.max(d.height, max.height))]
             vz.graphicsDevices = [graphics]
         }
     }

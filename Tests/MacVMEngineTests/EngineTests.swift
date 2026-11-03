@@ -157,7 +157,7 @@ struct WindowsUnattendTests {
 }
 
 struct MoreControlProtocolTests {
-    @Test(arguments: [ControlRequest.connect(port: 6100), .screenshot(path: "/tmp/a.png")])
+    @Test(arguments: [ControlRequest.connect(port: 6100), .screenshot(path: "/tmp/a.png"), .display(width: 2560, height: 1600)])
     func roundTrip(request: ControlRequest) throws {
         #expect(try JSONDecoder().decode(ControlRequest.self, from: JSONEncoder().encode(request)) == request)
     }

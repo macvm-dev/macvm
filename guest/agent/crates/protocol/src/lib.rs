@@ -28,6 +28,8 @@ pub enum Request {
         #[serde(default)]
         read_only: bool,
     },
+    /// 宿主改变了显示输出尺寸，客户机桌面跟着切换。
+    Display { width: u32, height: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

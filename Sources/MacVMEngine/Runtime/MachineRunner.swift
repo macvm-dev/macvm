@@ -50,6 +50,7 @@ public protocol MachineRunner: AnyObject, Sendable {
     func waitUntilStopped() async -> MachineStopReason
     func openGuestChannel(port: UInt32) async throws -> GuestChannel
     func screenshot(to url: URL) async throws
+    func resizeDisplay(width: Int, height: Int) throws
 }
 
 extension MachineRunner {

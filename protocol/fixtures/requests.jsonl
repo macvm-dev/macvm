@@ -8,3 +8,4 @@
 {"op":"clipboard-get"}
 {"op":"clipboard-set","text":"你好 \"quoted\"\n"}
 {"op":"mount","tag":"src","path":"/Users/ethan/src","read_only":false}
+{"op":"display","width":1920,"height":1200}

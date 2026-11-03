@@ -24,6 +24,7 @@
 | `clipboard-get` | — | `{"ok":true,"text":"…"}` |
 | `clipboard-set` | `text` | `{"ok":true}` |
 | `mount` | `tag`，`path`，`read_only`（布尔） | `{"ok":true}`（仅 Linux：挂载 virtio-fs） |
+| `display` | `width`，`height`（像素） | `{"ok":true}`（仅 Windows：切换桌面分辨率） |
 
 `info` 的内容：
 
@@ -32,6 +33,8 @@
 ```
 
 `os` 取值 `linux`、`macos`、`windows`。内存单位为字节。
+
+`display`：宿主改变 virtio-gpu 的输出尺寸后发送。Linux、macOS 的桌面自己跟随，Windows 的显示驱动不会，由代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导帧缓冲留下的另一块显示器一并卸下），设置写入注册表。驱动处理尺寸变化需要时间，此前请求会失败，宿主应重试。Windows 记住的分辨率不一定是这次开机的输出尺寸，宿主在开机后代理上线时也发送一次。
 
 `exec` 经目标用户的登录 shell 执行 `argv`，环境与 SSH 登录一致；`user` 省略时为代理启动参数 `--user` 指定的用户，代理不是 root 时只能以自身身份执行。
 

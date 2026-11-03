@@ -83,6 +83,7 @@ fn serve(mut conn: Conn, config: &Config) -> io::Result<()> {
         Request::ClipboardGet => reply(&mut conn, platform::clipboard_get().map(|text| Response { text: Some(text), ..Response::ok() })),
         Request::ClipboardSet { text } => reply(&mut conn, platform::clipboard_set(&text).map(|_| Response::ok())),
         Request::Mount { tag, path, read_only } => reply(&mut conn, platform::mount_virtiofs(&tag, &path, read_only).map(|_| Response::ok())),
+        Request::Display { width, height } => reply(&mut conn, platform::set_display(width, height).map(|_| Response::ok())),
         Request::Forward { port } => match TcpStream::connect(("127.0.0.1", port)) {
             Ok(tcp) => {
                 tcp.set_nodelay(true).ok();
