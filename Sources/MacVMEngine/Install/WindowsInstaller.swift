@@ -10,7 +10,6 @@ public import MacVMModel
 public enum WindowsInstaller {
     public static let setupImageName = "windows-setup.img"
     public static let dataImageName = "windows-data.img"
-    public static var doneMarker: String { WindowsUnattend.doneMarker }
     static let virtioWinURL = URL(string: "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso")!
     static let drivers = ["NetKVM", "viostor", "vioscsi", "viogpudo", "viosock", "viofs", "Balloon", "vioserial", "viorng", "vioinput"]
 
@@ -56,9 +55,8 @@ public enum WindowsInstaller {
     /// 建好包与安装盘；之后 `start` 即开始安装，完成与否看 `isSetupComplete`。
     public static func create(_ options: Options, in library: VMLibrary = .default) async throws -> VMBundle {
         let qemu = try QEMUInstallation.require()
-        try VMLibrary.validate(name: options.name)
+        try VMFactory.ensureNameAvailable(options.name, in: library)
         guard FileManager.default.fileExists(atPath: options.iso.path) else { throw MacVMError.invalidConfig("ISO 不存在：\(options.iso.path)") }
-        if FileManager.default.fileExists(atPath: library.bundleURL(named: options.name).path) { throw MacVMError.alreadyExists(options.name) }
 
         let productKey = try options.productKey.map(normalizeProductKey)
         let locale = try await readLocale(iso: options.iso)
@@ -75,8 +73,7 @@ public enum WindowsInstaller {
         // 驱动由代理装，没有代理就不放。
         unattend.installGPUDriver = unattend.installAgent && WindowsGPUDriver.package(qemu) != nil
 
-        let bundle = try VMFactory.prepareEmptyBundle(named: options.name, in: library)
-        do {
+        return try await VMFactory.withNewBundle(named: options.name, in: library) { bundle in
             try await buildSetupImage(unattend, gpuDriver: unattend.installGPUDriver ? WindowsGPUDriver.package(qemu) : nil,
                                       to: bundle.url.appending(path: setupImageName))
             try await buildDataImage(iso: options.iso, virtioWin: virtioWin!, to: bundle.url.appending(path: dataImageName))
@@ -97,23 +94,32 @@ public enum WindowsInstaller {
             )
             try bundle.saveConfig(config)
             return bundle
-        } catch {
-            try? FileManager.default.removeItem(at: bundle.url)
-            throw error
         }
     }
 
-    /// 轮询直到首次登录脚本写下完成标记。`proxyCommand` 是 ssh 的 ProxyCommand（`macvm proxy <名>`）。
-    public static func waitUntilSetupComplete(_ bundle: VMBundle, proxyCommand: String, timeout: TimeInterval = 3 * 3600) async throws {
+    /// 在已开机安装的 `bundle` 上等首次登录脚本写下完成标记，然后经 `requestStop` 请客户机关机，
+    /// 停下后 `finishSetup`。返回 false 表示客户机在 `stopTimeout` 秒内没有关机，安装介质仍挂着。
+    public static func completeSetup(_ bundle: VMBundle, macvmPath: String, stopTimeout: TimeInterval = 180,
+                                     isolation: isolated (any Actor)? = #isolation,
+                                     requestStop: () async throws -> Void) async throws -> Bool {
+        try await waitUntilSetupComplete(bundle, macvmPath: macvmPath)
+        try await requestStop()
+        guard try await VMStatus.waitUntilStopped(bundle, timeout: stopTimeout) else { return false }
+        try finishSetup(bundle)
+        return true
+    }
+
+    /// 轮询直到首次登录脚本写下完成标记。
+    private static func waitUntilSetupComplete(_ bundle: VMBundle, macvmPath: String, timeout: TimeInterval = 3 * 3600) async throws {
         let config = try bundle.loadConfig()
         guard let user = config.guestUser else { throw MacVMError.invalidConfig("缺少客户机用户") }
+        let proxy = SSHConfig.proxyCommand(macvmPath: macvmPath, name: bundle.name, flags: ["--timeout", "10"])
         let deadline = Date().addingTimeInterval(timeout)
         while true {
             if BundleLock.holder(of: bundle) == nil { throw MacVMError.engine("安装过程中虚拟机意外停止，日志：\(bundle.logURL.path)") }
-            let output = try? await Subprocess.run("/usr/bin/ssh", [
-                "-q", "-T", "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
-                "-o", "ProxyCommand=\(proxyCommand)", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-                "-o", "ConnectTimeout=20", "\(user)@\(SSHConfig.hostAlias(for: bundle.name))", "Test-Path \(doneMarker)",
+            let output = try? await Subprocess.run("/usr/bin/ssh", ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: proxy) + [
+                "-o", "BatchMode=yes", "-o", "ConnectTimeout=20",
+                "\(user)@\(SSHConfig.hostAlias(for: bundle.name))", "Test-Path \(WindowsUnattend.doneMarker)",
             ])
             if output?.contains("True") == true { return }
             guard Date() < deadline else { throw MacVMError.timeout("Windows 安装超时") }
@@ -122,7 +128,7 @@ public enum WindowsInstaller {
     }
 
     /// 安装完成后卸下安装介质与数据盘并删除它们（安装盘含明文密码）。
-    public static func finishSetup(_ bundle: VMBundle) throws {
+    static func finishSetup(_ bundle: VMBundle) throws {
         var config = try bundle.loadConfig()
         config.installMedia = []
         config.disks.removeAll { $0.path == dataImageName }
@@ -150,11 +156,7 @@ public enum WindowsInstaller {
             try await WindowsGPUDriver.extract(gpuDriver, to: staging.appending(path: WindowsUnattend.gpuDriverFolder))
         }
 
-        let dmg = output.deletingPathExtension().appendingPathExtension("dmg")
-        try await Subprocess.run("/usr/bin/hdiutil", ["create", "-quiet", "-size", "64m", "-fs", "MS-DOS", "-fsargs", "-F 32",
-                                                      "-volname", WindowsUnattend.volumeLabel, "-layout", "NONE", "-format", "UDRW",
-                                                      "-srcfolder", staging.path, "-ov", dmg.path])
-        try FileManager.default.moveItem(at: dmg, to: output)
+        try await DiskImage.createFAT(from: staging, to: output, size: "64m", volumeName: WindowsUnattend.volumeLabel, fat32: true)
     }
 
     /// GPT + exFAT 的稀疏 raw 镜像，放 ISO 里的 install.wim 与 virtio-win 的 ARM64 驱动。
@@ -211,8 +213,7 @@ public enum WindowsInstaller {
         if FileManager.default.fileExists(atPath: cache.path) { return cache }
         try FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
         let partial = cache.appendingPathExtension("part")
-        try await Subprocess.run("/usr/bin/curl", ["-fL", "--retry", "3", "-C", "-", showProgress ? "--progress-bar" : "-sS", "-o", partial.path, virtioWinURL.absoluteString],
-                                 passthroughStderr: showProgress)
+        try await Subprocess.download(virtioWinURL, to: partial, showProgress: showProgress)
         try FileManager.default.moveItem(at: partial, to: cache)
         return cache
     }

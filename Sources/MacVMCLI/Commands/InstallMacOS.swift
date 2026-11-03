@@ -66,16 +66,11 @@ struct InstallMacOS: AsyncParsableCommand {
             if !noProvision, let pw = GuestCredentials.password(for: bundle) {
                 if interactive { FileHandle.standardError.write(Data("首次开机并配置 SSH（可能需要几分钟）…\n".utf8)) }
                 _ = try await Start.launch(bundle, timeout: 120)
-                let proxy = "\"\(SSHConfigCommand.executablePath)\" proxy \(name) --tcp --timeout 600"
+                let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: name, flags: ["--tcp", "--timeout", "600"])
                 try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: pw, proxyCommand: proxy, timeout: 900)
                 sshReady = true
-                var config = try bundle.loadConfig()
                 if AgentInstaller.binary(for: .macOS) != nil {
-                    try await AgentInstaller.installOverSSH(bundle: bundle, config: config, macvmPath: SSHConfigCommand.executablePath)
-                    if try await VMStatus.poll(timeout: 30, interval: 0.3, { AgentClient.isReachable(bundle) }) {
-                        config.guestAgent = true
-                        try bundle.saveConfig(config)
-                    }
+                    _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
                 }
             }
             return Result(vm: try VMStatus.summary(of: bundle), user: user,

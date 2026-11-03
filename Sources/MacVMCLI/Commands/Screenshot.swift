@@ -16,7 +16,7 @@ struct Screenshot: AsyncParsableCommand {
         try await Output.run(json: global.json, human: { (r: Result) in r.path }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             let url = URL(filePath: (output as NSString).expandingTildeInPath).standardizedFileURL
-            _ = try ControlClient.check(ControlClient.send(.screenshot(path: url.path), to: bundle), bundle: bundle)
+            try ControlClient.perform(.screenshot(path: url.path), on: bundle)
             return Result(path: url.path)
         }
     }

@@ -19,9 +19,7 @@ public struct HostCapabilities: Codable, Sendable {
 
     public static func current() -> HostCapabilities {
         let v = ProcessInfo.processInfo.operatingSystemVersion
-        let bridges = NetworkAttachments.bridgeableInterfaces.map(\.identifier)
-        var saveRestore = false
-        if #available(macOS 14, *) { saveRestore = true }
+        let bridges = NetworkAttachments.bridgeableInterfaces
         return HostCapabilities(
             hostOS: "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)",
             performanceCores: HostInfo.performanceCoreCount,
@@ -32,7 +30,7 @@ public struct HostCapabilities: Codable, Sendable {
             rosetta: VZLinuxRosettaDirectoryShare.availability == .installed,
             bridgedNetworking: Entitlements.has(Entitlements.bridgedNetworking) && !bridges.isEmpty,
             bridgeInterfaces: bridges,
-            saveRestore: saveRestore,
+            saveRestore: true,
             libraryPath: VMLibrary.default.root.path
         )
     }

@@ -45,11 +45,17 @@ public final class ControlServer: @unchecked Sendable {
             }
             response = await handle(request, runner: runner)
         } catch let error as MacVMError {
-            response = ControlResponse(ok: false, errorCode: error.code, message: error.message)
+            response = ControlResponse(failure: error)
         } catch {
             response = ControlResponse(ok: false, errorCode: "bad_request", message: "\(error)")
         }
-        if let data = try? JSONEncoder().encode(response) { try? client.writeLine(data) }
+        reply(response, to: client)
+    }
+
+    @discardableResult
+    private static func reply(_ response: ControlResponse, to client: UnixSocket) -> Bool {
+        guard let data = try? JSONEncoder().encode(response) else { return false }
+        return (try? client.writeLine(data)) != nil
     }
 
     /// 成功时先回 ok，再在专用线程上双向转发，直到任一方关闭。
@@ -58,11 +64,10 @@ public final class ControlServer: @unchecked Sendable {
         do {
             channel = try await runner.openGuestChannel(port: port)
         } catch {
-            let e = error as? MacVMError ?? .engine(error.localizedDescription)
-            if let data = try? JSONEncoder().encode(ControlResponse(ok: false, errorCode: e.code, message: e.message)) { try? client.writeLine(data) }
+            reply(ControlResponse(failure: error), to: client)
             return
         }
-        guard let data = try? JSONEncoder().encode(ControlResponse(ok: true)), (try? client.writeLine(data)) != nil else {
+        guard reply(ControlResponse(ok: true), to: client) else {
             channel.close()
             return
         }
@@ -94,52 +99,51 @@ public final class ControlServer: @unchecked Sendable {
             case .display(let width, let height): try runner.resizeDisplay(width: width, height: height)
             }
             return ControlResponse(ok: true, state: runner.stateLabel, pid: getpid(), canSuspend: runner.canSuspend)
-        } catch let error as MacVMError {
-            return ControlResponse(ok: false, state: runner.stateLabel, errorCode: error.code, message: error.message)
         } catch {
-            return ControlResponse(ok: false, state: runner.stateLabel, errorCode: MacVMError.engine("").code, message: error.localizedDescription)
+            return ControlResponse(failure: error, state: runner.stateLabel)
         }
     }
 }
 
 public enum ControlClient {
     public static func send(_ request: ControlRequest, to bundle: VMBundle, timeout: Int = 60) throws -> ControlResponse {
-        guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
-        let socket: UnixSocket
-        do { socket = try UnixSocket.connect(to: bundle.controlSocketURL.path) } catch {
-            throw MacVMError.notRunning(bundle.name)
-        }
-        socket.setTimeout(seconds: timeout)
-        try socket.writeLine(try JSONEncoder().encode(request))
-        guard let line = try socket.readLine() else {
-            throw MacVMError.io("控制连接被关闭")
-        }
-        return try JSONDecoder().decode(ControlResponse.self, from: line)
+        try exchange(request, over: connect(bundle, timeout: timeout), exact: false)
     }
 
-    /// 经运行虚拟机的进程连到客户机端口，返回已切换为字节管道的连接。
-    static func openGuestPort(_ bundle: VMBundle, port: UInt32) throws -> UnixSocket {
-        guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
-        let socket: UnixSocket
-        do { socket = try UnixSocket.connect(to: bundle.controlSocketURL.path) } catch { throw MacVMError.notRunning(bundle.name) }
-        socket.setTimeout(seconds: 30)
-        try socket.writeLine(JSONEncoder().encode(ControlRequest.connect(port: port)))
-        // 逐字节读：客户机服务可能紧跟着先说话，这些字节要留在 fd 里给调用方。
-        guard let line = try socket.readLine(exact: true) else { throw MacVMError.io("控制连接被关闭") }
-        let response = try JSONDecoder().decode(ControlResponse.self, from: line)
-        guard response.ok else { throw MacVMError.notRunning(response.message ?? "客户机端口 \(port) 不可达") }
-        socket.setTimeout(seconds: 0)
-        return socket
-    }
-
-    /// 把失败的响应转成对应的 `MacVMError`。
-    public static func check(_ response: ControlResponse, bundle: VMBundle) throws -> ControlResponse {
-        guard !response.ok else { return response }
+    /// 发出请求，失败的响应转成对应的 `MacVMError` 抛出。
+    public static func perform(_ request: ControlRequest, on bundle: VMBundle, timeout: Int = 60) throws {
+        let response = try send(request, to: bundle, timeout: timeout)
+        guard !response.ok else { return }
         let message = response.message ?? "未知错误"
         switch response.errorCode {
         case "not_running": throw MacVMError.notRunning(bundle.name)
         case "unsupported": throw MacVMError.unsupported(message)
         default: throw MacVMError.engine(message)
         }
+    }
+
+    /// 经运行虚拟机的进程连到客户机端口，返回已切换为字节管道的连接。
+    static func openGuestPort(_ bundle: VMBundle, port: UInt32) throws -> UnixSocket {
+        let socket = try connect(bundle, timeout: 30)
+        // 逐字节读：客户机服务可能紧跟着先说话，这些字节要留在 fd 里给调用方。
+        let response = try exchange(.connect(port: port), over: socket, exact: true)
+        guard response.ok else { throw MacVMError.notRunning(response.message ?? "客户机端口 \(port) 不可达") }
+        socket.setTimeout(seconds: 0)
+        return socket
+    }
+
+    private static func connect(_ bundle: VMBundle, timeout: Int) throws -> UnixSocket {
+        guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
+        let socket: UnixSocket
+        do { socket = try UnixSocket.connect(to: bundle.controlSocketURL.path) } catch { throw MacVMError.notRunning(bundle.name) }
+        socket.setTimeout(seconds: timeout)
+        return socket
+    }
+
+    private static func exchange(_ request: ControlRequest, over socket: UnixSocket, exact: Bool) throws -> ControlResponse {
+        guard let response = try socket.exchange(request, as: ControlResponse.self, exact: exact) else {
+            throw MacVMError.io("控制连接被关闭")
+        }
+        return response
     }
 }

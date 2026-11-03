@@ -2,7 +2,6 @@ use std::io;
 use std::mem::size_of;
 use std::ptr;
 use std::net::{IpAddr, Ipv4Addr};
-use std::process::Command;
 
 use windows_sys::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, NO_ERROR};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
@@ -12,6 +11,7 @@ use windows_sys::Win32::NetworkManagement::IpHelper::{
 use windows_sys::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR, SOCKADDR_IN};
 use super::wide;
+use crate::run;
 use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, REG_DWORD, RRF_RT_REG_DWORD, RegGetValueW, RegSetKeyValueW};
 use windows_sys::Win32::System::SystemInformation::{
     ComputerNameDnsHostname, GetComputerNameExW, GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX,
@@ -95,11 +95,6 @@ pub fn memory() -> (u64, u64) {
 pub fn uptime_ms() -> u64 {
     // SAFETY: 无参数。
     unsafe { GetTickCount64() }
-}
-
-fn run(program: &str, args: &[&str]) -> io::Result<()> {
-    let status = Command::new(program).args(args).status()?;
-    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
 }
 
 pub fn shutdown(reboot: bool) -> io::Result<()> {

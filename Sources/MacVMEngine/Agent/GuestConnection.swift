@@ -10,22 +10,14 @@ public enum GuestConnection {
             let socket = config.engine == .qemu
                 ? try ControlClient.openGuestPort(bundle, port: UInt32(port))
                 : try AgentClient.forward(bundle, port: port)
-            // socket 析构时关闭 fd，要在它存活期间复制。
-            let fd = withExtendedLifetime(socket) { dup(socket.fd) }
-            guard fd >= 0 else { throw MacVMError.io("复制连接失败：\(String(cString: strerror(errno)))") }
-            return fd
+            return try socket.duplicateDescriptor()
         }
         return try await connect(to: bundle, port: port, timeout: timeout)
     }
 
     public static func connect(to bundle: VMBundle, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
         guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
-        var ip: String?
-        _ = try await VMStatus.poll(timeout: timeout, interval: 0.5) {
-            ip = try VMStatus.summary(of: bundle).ipAddress
-            return ip != nil
-        }
-        guard let ip else { throw MacVMError.timeout("未找到 \(bundle.name) 的 IP 地址") }
+        guard let ip = try await VMStatus.waitForIPAddress(bundle, timeout: timeout, interval: 0.5) else { throw MacVMError.timeout("未找到 \(bundle.name) 的 IP 地址") }
 
         var fd: Int32 = -1
         _ = try await VMStatus.poll(timeout: timeout, interval: 0.5) {

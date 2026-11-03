@@ -8,17 +8,19 @@
 @import CocoaSpiceRenderer;
 #import "MacVMDisplay.h"
 
-static void debug_log(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
-static void debug_log(NSString *format, ...) {
-    if (!getenv("MACVM_SPICE_DEBUG")) {
-        return;
-    }
-    va_list args;
-    va_start(args, format);
-    NSString *line = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-    fprintf(stderr, "[MacVMDisplay] %s\n", line.UTF8String);
+// 设了 MACVM_SPICE_DEBUG 才输出；没设时参数不求值，可以放在每帧都走的路径上。
+static BOOL debug_enabled(void) {
+    static BOOL enabled;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ enabled = getenv("MACVM_SPICE_DEBUG") != NULL; });
+    return enabled;
 }
+
+#define debug_log(format, ...) do { \
+    if (debug_enabled()) { \
+        fprintf(stderr, "[MacVMDisplay] %s\n", [NSString stringWithFormat:format, ##__VA_ARGS__].UTF8String); \
+    } \
+} while (0)
 
 @interface MacVMSpiceView : MTKView <CSConnectionDelegate, MTKViewDelegate>
 @property (nonatomic) MacVMDisplayHandler handler;

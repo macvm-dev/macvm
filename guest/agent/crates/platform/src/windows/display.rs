@@ -24,8 +24,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplaySettingsW,
 };
 
-/// virtio-gpu 的 PCI 厂商与设备号，出现在适配器的 PnP ID 里。
-const VIRTIO_GPU: &str = "VEN_1AF4&DEV_1050";
+use super::{VIRTIO_GPU, until_nul};
 
 /// 只用 virtio-gpu 作主显示器、取 `width`×`height`，卸下其他显示器，并写入显示配置数据库。
 /// 驱动可能把过小的尺寸放大到它的下限，实际取驱动接受的尺寸。
@@ -173,6 +172,3 @@ fn current_size(name: &[u16]) -> Option<(u32, u32)> {
     (unsafe { EnumDisplaySettingsW(name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) } != 0).then_some((dm.dmPelsWidth, dm.dmPelsHeight))
 }
 
-fn until_nul(s: &[u16]) -> &[u16] {
-    &s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())]
-}

@@ -44,10 +44,9 @@ static HARDWARE_CURSOR_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// 轮询当前光标的间隔，即形状变化最多晚这么久到达宿主；位置由宿主自己画，不受影响。
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
-/// 按所在引擎设好在场 virtio-gpu 的硬件光标开关，返回是否改动（改动在下次开机生效）。
-pub fn configure_hardware_cursor() -> bool {
+/// 按所在引擎设好在场 virtio-gpu 的硬件光标开关；改动在下次开机生效。
+pub fn configure_hardware_cursor() {
     let enable = !on_vz();
-    let mut changed = false;
     for_each_present_virtio_gpu(|set, info| {
         let Some(key) = open_driver_key(set, info, KEY_QUERY_VALUE | KEY_SET_VALUE) else { return };
         let name = wide("HWCursor");
@@ -61,12 +60,11 @@ pub fn configure_hardware_cursor() -> bool {
                 HARDWARE_CURSOR_ACTIVE.store(true, Ordering::Relaxed);
             }
             if read != 0 || current != wanted {
-                changed |= RegSetValueExW(key, name.as_ptr(), 0, REG_DWORD, (&wanted as *const u32).cast(), size_of::<u32>() as u32) == 0;
+                RegSetValueExW(key, name.as_ptr(), 0, REG_DWORD, (&wanted as *const u32).cast(), size_of::<u32>() as u32);
             }
             RegCloseKey(key);
         }
     });
-    changed
 }
 
 /// 运行中换上了不支持硬件光标的驱动：此后光标由客户机画进画面，`watch_cursor` 随即结束。

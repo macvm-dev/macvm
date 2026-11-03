@@ -62,7 +62,7 @@ enum Detach {
         defer { argv.forEach { free($0) } }
         var pid: pid_t = 0
         let rc = posix_spawn(&pid, executable, &actions, &attr, argv, environ)
-        guard rc == 0 else { throw MacVMError.io("派生后台进程失败：\(String(cString: strerror(rc)))") }
+        guard rc == 0 else { throw MacVMError.posix("派生后台进程", code: rc) }
         return pid
     }
 

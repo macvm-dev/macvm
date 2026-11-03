@@ -2,6 +2,7 @@
 
 use std::fs::File;
 use std::io;
+use std::process::Command;
 
 #[cfg(unix)]
 mod unix;
@@ -12,6 +13,12 @@ pub use unix::*;
 mod windows;
 #[cfg(windows)]
 pub use windows::*;
+
+/// 运行命令并等它结束，非零退出算错误。
+pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<()> {
+    let status = Command::new(program).args(args).status()?;
+    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
+}
 
 pub struct ExecOptions<'a> {
     pub argv: &'a [String],

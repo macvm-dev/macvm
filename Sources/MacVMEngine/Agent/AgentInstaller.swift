@@ -40,7 +40,7 @@ public enum AgentInstaller {
     /// 登录时以最高权限在 `user` 的交互会话里运行的计划任务（剪贴板只在交互会话可用），
     /// 外加对所有网络生效的入站规则。代理自己只接受来自默认网关（宿主）的连接。
     static func windowsRegistration(source: String, user: String) -> String {
-        let quoted = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "''") + "'" }
+        let quoted = PowerShell.quote
         return """
         $exe = \(quoted(windowsPath))
         Stop-ScheduledTask -TaskName \(windowsTaskName) -ErrorAction SilentlyContinue
@@ -129,6 +129,18 @@ public enum AgentInstaller {
         return false
     }
 
+    /// `installOverSSH` 之后等代理上线，上线了才把 `guestAgent` 写回配置；放了显卡驱动包时同时写 `graphicsAcceleration`，
+    /// 客户机里有了这个驱动就只能用带 3D 的 QEMU 运行。
+    public static func installAndEnable(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> (online: Bool, gpuDriver: Bool) {
+        let gpuDriver = try await installOverSSH(bundle: bundle, config: config, macvmPath: macvmPath)
+        guard try await VMStatus.poll(timeout: 30, interval: 0.3, { AgentClient.isReachable(bundle) }) else { return (false, gpuDriver) }
+        var config = config
+        config.guestAgent = true
+        if gpuDriver { config.graphicsAcceleration = true }
+        try bundle.saveConfig(config)
+        return (true, gpuDriver)
+    }
+
     /// 多行脚本经 sshd 交给 PowerShell 时会按行拆开，编码成一条 `-EncodedCommand`（UTF-16LE 的 Base64）。
     static func encodedPowerShell(_ script: String) -> String {
         var bytes = Data()
@@ -137,9 +149,7 @@ public enum AgentInstaller {
     }
 
     static func sshArguments(bundle: VMBundle, user: String, macvmPath: String) -> [String] {
-        ["-q", "-T", "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes",
-         "-o", "ProxyCommand=\"\(macvmPath)\" proxy \(bundle.name) --tcp",
-         "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
-         "\(user)@\(SSHConfig.hostAlias(for: bundle.name))"]
+        let proxy = SSHConfig.proxyCommand(macvmPath: macvmPath, name: bundle.name, flags: ["--tcp"])
+        return ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: proxy) + ["\(user)@\(SSHConfig.hostAlias(for: bundle.name))"]
     }
 }

@@ -10,9 +10,8 @@ struct MachineDetailView: View {
     @State private var cloneName = ""
     @State private var showingClone = false
 
-    private var config: VMConfig? { model.config(of: vm.name) }
-
     var body: some View {
+        let config = model.config(of: vm.name)
         Form {
             Section {
                 HStack(spacing: 14) {
@@ -22,7 +21,7 @@ struct MachineDetailView: View {
                         Text("\(vm.os.label) · \(vm.state.label)").foregroundStyle(.secondary)
                     }
                     Spacer()
-                    controls
+                    controls(config)
                 }
             }
             Section("配置") {
@@ -61,7 +60,7 @@ struct MachineDetailView: View {
         }
     }
 
-    @ViewBuilder private var controls: some View {
+    @ViewBuilder private func controls(_ config: VMConfig?) -> some View {
         switch vm.state {
         case .stopped, .suspended:
             Button { openWindow(id: "machine", value: vm.name) } label: { Label(vm.state == .suspended ? "继续" : "启动", systemImage: "play.fill") }

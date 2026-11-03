@@ -53,10 +53,7 @@ public enum VMFactory {
         if options.image != nil, options.os != .linux {
             throw MacVMError.invalidConfig("云镜像只用于 Linux 客户机")
         }
-        try VMLibrary.validate(name: options.name)
-        if FileManager.default.fileExists(atPath: library.bundleURL(named: options.name).path) {
-            throw MacVMError.alreadyExists(options.name)
-        }
+        try ensureNameAvailable(options.name, in: library)
         // 先下载镜像再建包，下载中断不会留下半成品虚拟机。
         var imageDisk: URL?
         if let image = options.image {
@@ -66,9 +63,8 @@ public enum VMFactory {
         var network = options.network
         if network.macAddress == nil { network.macAddress = NetworkAttachments.randomMACAddress() }
 
-        let bundle = try prepareEmptyBundle(named: options.name, in: library)
-        var hasAgent = false
-        do {
+        return try await withNewBundle(named: options.name, in: library) { bundle in
+            var hasAgent = false
             var disks = [DiskConfig(path: bundle.diskURL.lastPathComponent)]
             if let imageDisk {
                 try Clone.file(from: imageDisk, to: bundle.diskURL)
@@ -112,13 +108,26 @@ public enum VMFactory {
             // 立即组装一次，让磁盘、网络、共享目录等配置错误在创建时就暴露。
             _ = try ConfigBuilder(bundle: bundle, config: config).build(validate: Entitlements.has(Entitlements.virtualization))
             return bundle
-        } catch {
+        }
+    }
+
+    /// 名称合法且未被占用。要在下载等耗时准备之前先查，免得白等一场才报错。
+    static func ensureNameAvailable(_ name: String, in library: VMLibrary) throws {
+        try VMLibrary.validate(name: name)
+        if FileManager.default.fileExists(atPath: library.bundleURL(named: name).path) { throw MacVMError.alreadyExists(name) }
+    }
+
+    /// 建一个空包交给 `body` 填充；`body` 抛错时删掉整个包，不留半成品。
+    static func withNewBundle<T>(named name: String, in library: VMLibrary, isolation: isolated (any Actor)? = #isolation,
+                                 _ body: (VMBundle) async throws -> T) async throws -> T {
+        let bundle = try prepareEmptyBundle(named: name, in: library)
+        do { return try await body(bundle) } catch {
             try? FileManager.default.removeItem(at: bundle.url)
             throw error
         }
     }
 
-    static func prepareEmptyBundle(named name: String, in library: VMLibrary) throws -> VMBundle {
+    private static func prepareEmptyBundle(named name: String, in library: VMLibrary) throws -> VMBundle {
         try VMLibrary.validate(name: name)
         try library.ensureRoot()
         let url = library.bundleURL(named: name)

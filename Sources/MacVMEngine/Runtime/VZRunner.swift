@@ -8,25 +8,23 @@ public import MacVMModel
 /// XPC 进程里执行，主线程只处理控制调用与回调，不承载 vCPU。
 @MainActor
 public final class VZRunner: NSObject, MachineRunner {
-    public typealias StopReason = MachineStopReason
-
     public let bundle: VMBundle
     public let config: VMConfig
     public let virtualMachine: VZVirtualMachine
     private let vzConfiguration: VZVirtualMachineConfiguration
-    public private(set) var stopReason: StopReason?
+    private let stopLatch: StopLatch
 
     /// 虚拟机停止后回调一次。
-    public var onStop: ((StopReason) -> Void)?
-
-    private let lock: BundleLock
-    private var stopWaiters: [CheckedContinuation<StopReason, Never>] = []
+    public var onStop: ((MachineStopReason) -> Void)? {
+        get { stopLatch.onStop }
+        set { stopLatch.onStop = newValue }
+    }
 
     public init(bundle: VMBundle, console: ConfigBuilder.Console = .none) throws {
         guard VZVirtualMachine.isSupported else {
             throw MacVMError.unsupported("本机不支持虚拟化（需要 Apple Silicon，且进程签名带 com.apple.security.virtualization）")
         }
-        lock = try BundleLock.acquire(bundle)
+        stopLatch = StopLatch(lock: try BundleLock.acquire(bundle))
         self.bundle = bundle
         config = try bundle.loadConfig()
         var builder = ConfigBuilder(bundle: bundle, config: config)
@@ -40,12 +38,13 @@ public final class VZRunner: NSObject, MachineRunner {
     /// 开机后等代理上线，请它把 virtio-gpu 设为唯一的主显示器、取 `WindowsSupport.displaySize`：
     /// 引导垫片的帧缓冲在 Windows 里是另一块显示器，常被选为主显示器，宿主却看不到它。
     private func fitGuestDisplayAfterBoot() {
-        guestDisplayFit = Task { [weak self] in
+        guard let mac = guestMAC else { return }
+        guestDisplayFit = Task.detached {
             let size = WindowsSupport.displaySize
             for _ in 0..<Self.guestDisplayAttempts {
-                guard let self, !Task.isCancelled else { return }
-                if let ip = guestIP,
-                   await Task.detached(operation: { Self.callAgent(ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) }).value {
+                guard !Task.isCancelled else { return }
+                if let ip = DHCPLeases.ipAddress(forMAC: mac),
+                   Self.callAgent(ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
                     return
                 }
                 try? await Task.sleep(for: Self.guestDisplayRetryInterval)
@@ -54,19 +53,20 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     private var guestDisplayFit: Task<Void, Never>?
-    private static let guestDisplayRetryInterval = Duration.seconds(1)
+    nonisolated private static let guestDisplayRetryInterval = Duration.seconds(1)
     /// 开机后等代理上线的最长次数（按 `guestDisplayRetryInterval` 计）。
-    private static let guestDisplayAttempts = 180
+    nonisolated private static let guestDisplayAttempts = 180
     /// 客户机切换显示设置要重建桌面，可能耗时数秒。
     nonisolated private static let displaySwitchTimeout = 20
 
-    private var guestIP: String? { config.networks.first?.macAddress.flatMap { DHCPLeases.ipAddress(forMAC: $0) } }
+    private var guestMAC: String? { config.networks.first?.macAddress }
+    /// 读 DHCP 租约文件，不要在主线程反复调用。
+    private var guestIP: String? { guestMAC.flatMap { DHCPLeases.ipAddress(forMAC: $0) } }
 
-    public var state: VZVirtualMachine.State { virtualMachine.state }
     public var stateLabel: String { virtualMachine.state.label }
 
     public var canSuspend: Bool {
-        guard config.supportsSuspend, #available(macOS 14, *) else { return false }
+        guard config.supportsSuspend else { return false }
         return (try? vzConfiguration.validateSaveRestoreSupport()) != nil
     }
 
@@ -75,14 +75,14 @@ public final class VZRunner: NSObject, MachineRunner {
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         var outcome = MachineStartOutcome.coldBoot
-        if bundle.hasSavedState, !recovery, #available(macOS 14, *) {
+        if bundle.hasSavedState, !recovery {
             do {
                 try await restore()
                 try? FileManager.default.removeItem(at: bundle.savedStateURL)
                 return .restored
             } catch {
                 try? FileManager.default.removeItem(at: bundle.savedStateURL)
-                outcome = .restoreFailed(Self.describe(error))
+                outcome = .restoreFailed(describeEngineError(error))
             }
         }
         if config.os == .macOS {
@@ -90,107 +90,81 @@ public final class VZRunner: NSObject, MachineRunner {
             options.startUpFromMacOSRecovery = recovery
             var provisioning = false
             if #available(macOS 27, *) { provisioning = try MacOSProvisioning.apply(to: options, bundle: bundle) }
-            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-                virtualMachine.start(options: options) { error in
-                    if let error { c.resume(throwing: error) } else { c.resume() }
-                }
-            }
+            try await virtualMachine.start(options: options)
             if provisioning { MacOSProvisioning.markApplied(bundle) }
         } else {
-            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-                virtualMachine.start { c.resume(with: $0) }
-            }
+            try await virtualMachine.start()
             if config.os == .windows, config.guestAgent { fitGuestDisplayAfterBoot() }
         }
         return outcome
     }
 
-    /// VZ 的错误把具体原因放在 underlying error 里，一并带上。
-    static func describe(_ error: any Error) -> String {
-        let ns = error as NSError
-        var parts = ["\(ns.domain)#\(ns.code) \(ns.localizedDescription)"]
-        if let reason = ns.localizedFailureReason { parts.append(reason) }
-        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError { parts.append(describe(underlying)) }
-        return parts.joined(separator: "；")
+    /// 向客户机发送关机请求（相当于按电源键），客户机可能忽略。
+    /// Windows 收不到 VZ 的电源键事件，改在后台请客户机代理关机，没有代理时经 SSH 执行关机命令，都不行才按电源键。
+    public func requestStop() throws {
+        guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
+        guard config.os == .windows, let mac = guestMAC else { return try pressPowerButton() }
+        let agent = config.guestAgent, user = config.guestUser
+        Task.detached { [weak self] in
+            if let ip = DHCPLeases.ipAddress(forMAC: mac) {
+                if agent, Self.callAgent(ip, .shutdown(reboot: false)) { return }
+                if let user, Self.sshShutdown(user: user, ip: ip) { return }
+            }
+            try? await self?.pressPowerButton()
+        }
     }
 
-    /// 向客户机发送关机请求（相当于按电源键），客户机可能忽略。
-    /// Windows 收不到 VZ 的电源键事件，改请客户机代理关机，没有代理时经 SSH 执行关机命令。
-    public func requestStop() throws {
-        if config.os == .windows, let ip = guestIP {
-            if config.guestAgent, Self.callAgent(ip, .shutdown(reboot: false)) { return }
-            if let user = config.guestUser {
-                let process = Process()
-                process.executableURL = URL(filePath: "/usr/bin/ssh")
-                process.arguments = ["-q", "-T", "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
-                                     "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10",
-                                     "\(user)@\(ip)", "shutdown /s /t 0"]
-                process.standardInput = FileHandle.nullDevice
-                process.standardOutput = FileHandle.nullDevice
-                process.standardError = FileHandle.nullDevice
-                if (try? process.run()) != nil { return }
-            }
-        }
-        guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
+    private func pressPowerButton() throws {
         do { try virtualMachine.requestStop() } catch {
             throw MacVMError.engine("请求关机失败：\(error.localizedDescription)")
         }
+    }
+
+    /// 发出 SSH 关机命令后即返回，返回是否成功启动了 ssh。
+    nonisolated private static func sshShutdown(user: String, ip: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/ssh")
+        process.arguments = ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: nil)
+            + ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "\(user)@\(ip)", "shutdown /s /t 0"]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        return (try? process.run()) != nil
     }
 
     /// 经 NAT 直连 Windows 客户机的代理发一个请求，返回是否成功。
     nonisolated private static func callAgent(_ ip: String, _ request: AgentProtocol.Request, timeout: Int = 3) -> Bool {
         let fd = GuestConnection.tcpConnect(ip, UInt16(AgentProtocol.port))
         guard fd >= 0 else { return false }
-        let socket = UnixSocket(fd: fd)
-        socket.setTimeout(seconds: timeout)
-        guard let data = try? JSONEncoder().encode(request), (try? socket.writeLine(data)) != nil,
-              let line = try? socket.readLine(),
-              let response = try? JSONDecoder().decode(AgentProtocol.Response.self, from: line) else { return false }
-        return response.ok
+        return AgentClient.call(request, over: UnixSocket(fd: fd), timeout: timeout)
     }
 
     /// 立即断电，未写回的客户机数据会丢失。
     public func forceStop() async throws {
         guard virtualMachine.canStop else { throw MacVMError.notRunning(bundle.name) }
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-            virtualMachine.stop { error in
-                if let error { c.resume(throwing: error) } else { c.resume() }
-            }
-        }
+        try await virtualMachine.stop()
         finish(.forced)
     }
 
     public func pause() async throws {
         guard virtualMachine.canPause else { throw MacVMError.notRunning(bundle.name) }
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-            virtualMachine.pause { c.resume(with: $0) }
-        }
+        try await virtualMachine.pause()
     }
 
     public func resume() async throws {
         guard virtualMachine.canResume else { throw MacVMError.notRunning(bundle.name) }
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-            virtualMachine.resume { c.resume(with: $0) }
-        }
+        try await virtualMachine.resume()
     }
 
     /// 暂停、把内存与设备状态写进包内后断电；下次 `start` 从该状态继续。
     public func suspend() async throws {
-        guard canSuspend, #available(macOS 14, *) else {
+        guard canSuspend else {
             throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
         }
         if virtualMachine.state == .running { try await pause() }
         let url = bundle.savedStateURL
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-            virtualMachine.saveMachineStateTo(url: url) { error in
-                if let error { c.resume(throwing: error) } else { c.resume() }
-            }
-        }
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-            virtualMachine.stop { error in
-                if let error { c.resume(throwing: error) } else { c.resume() }
-            }
-        }
+        try await virtualMachine.saveMachineStateTo(url: url)
+        try await virtualMachine.stop()
         finish(.suspended)
     }
 
@@ -220,7 +194,7 @@ public final class VZRunner: NSObject, MachineRunner {
                 throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址")
             }
             let fd = await Task.detached { GuestConnection.tcpConnect(ip, UInt16(port)) }.value
-            guard fd >= 0 else { throw MacVMError.io("连接 \(ip):\(port) 失败：\(String(cString: strerror(errno)))") }
+            guard fd >= 0 else { throw MacVMError.posix("连接 \(ip):\(port)") }
             return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
         }
         let connection = Unchecked(value: try await connectToGuest(port: port))
@@ -237,30 +211,17 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 等到虚拟机停止并返回原因。
-    public func waitUntilStopped() async -> StopReason {
-        if let stopReason { return stopReason }
-        return await withCheckedContinuation { stopWaiters.append($0) }
-    }
+    public func waitUntilStopped() async -> MachineStopReason { await stopLatch.wait() }
 
-    @available(macOS 14, *)
     private func restore() async throws {
         let url = bundle.savedStateURL
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-            virtualMachine.restoreMachineStateFrom(url: url) { error in
-                if let error { c.resume(throwing: error) } else { c.resume() }
-            }
-        }
+        try await virtualMachine.restoreMachineStateFrom(url: url)
         try await resume()
     }
 
-    private func finish(_ reason: StopReason) {
-        guard stopReason == nil else { return }
-        stopReason = reason
-        lock.release()
-        onStop?(reason)
-        let waiters = stopWaiters
-        stopWaiters.removeAll()
-        waiters.forEach { $0.resume(returning: reason) }
+    private func finish(_ reason: MachineStopReason) {
+        guestDisplayFit?.cancel()
+        stopLatch.fire(reason)
     }
 }
 

@@ -21,20 +21,29 @@ final class AppModel {
     private var configRevision = 0
     private var servers: [String: ControlServer] = [:]
     private var refreshTask: Task<Void, Never>?
+    /// 每次同步 `refresh` 加一；后台轮询读完时它变了，说明结果已比同步刷新的旧，丢弃。
+    private var refreshGeneration = 0
     let library = VMLibrary.default
 
     init() {
         refresh()
-        refreshTask = Task { [weak self] in
+        refreshTask = Task { [weak self, library] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
-                self?.refresh()
+                guard let generation = self?.refreshGeneration else { return }
+                let list = await Task.detached { VMStatus.summaries(in: library) }.value
+                guard let self, generation == refreshGeneration else { continue }
+                apply(list)
             }
         }
     }
 
     func refresh() {
-        let list = (try? library.all().compactMap { try? VMStatus.summary(of: $0) }) ?? []
+        refreshGeneration += 1
+        apply(VMStatus.summaries(in: library))
+    }
+
+    private func apply(_ list: [VMSummary]) {
         if list != machines { machines = list }
     }
 
@@ -55,8 +64,7 @@ final class AppModel {
         if let runner = runners[name] { return runner }
         do {
             let bundle = try library.bundle(named: name)
-            try await RunnerFactory.prepare(bundle)
-            let runner = try RunnerFactory.make(bundle)
+            let runner = try await RunnerFactory.make(bundle)
             let server = try ControlServer(runner: runner)
             runners[name] = runner
             servers[name] = server
@@ -79,7 +87,7 @@ final class AppModel {
                 if force { try await runner.forceStop() } else { try runner.requestStop() }
             } else {
                 let bundle = try library.bundle(named: name)
-                _ = try ControlClient.check(ControlClient.send(.stop(force: force), to: bundle), bundle: bundle)
+                try ControlClient.perform(.stop(force: force), on: bundle)
             }
         } catch { report(error) }
         refresh()
@@ -91,7 +99,7 @@ final class AppModel {
                 try await runner.suspend()
             } else {
                 let bundle = try library.bundle(named: name)
-                _ = try ControlClient.check(ControlClient.send(.suspend, to: bundle, timeout: 300), bundle: bundle)
+                try ControlClient.perform(.suspend, on: bundle, timeout: 300)
             }
         } catch { report(error) }
         refresh()
@@ -115,27 +123,31 @@ final class AppModel {
     }
 
     func setEngine(_ name: String, to engine: Engine) {
-        do {
-            let bundle = try library.bundle(named: name)
-            var config = try bundle.loadConfig()
-            try config.switchEngine(to: engine)
-            try bundle.saveConfig(config)
-        } catch { report(error) }
-        configRevision += 1
-        refresh()
+        updateConfig(name) { try $0.switchEngine(to: engine) }
     }
 
     /// 运行中也可改：只影响画面窗口向客户机请求的分辨率与缩放。
     func setRetina(_ name: String, _ retina: Bool) {
+        if updateConfig(name, { $0.display.retina = retina }) { QEMUDisplayView.displayPreferenceChanged(name) }
+    }
+
+    /// 返回是否已保存；失败时报告错误。
+    @discardableResult
+    private func updateConfig(_ name: String, _ change: (inout VMConfig) throws -> Void) -> Bool {
+        defer {
+            configRevision += 1
+            refresh()
+        }
         do {
             let bundle = try library.bundle(named: name)
             var config = try bundle.loadConfig()
-            config.display.retina = retina
+            try change(&config)
             try bundle.saveConfig(config)
-            QEMUDisplayView.displayPreferenceChanged(name)
-        } catch { report(error) }
-        configRevision += 1
-        refresh()
+            return true
+        } catch {
+            report(error)
+            return false
+        }
     }
 
     func clone(_ name: String, as newName: String) async {

@@ -45,8 +45,7 @@ public enum ImageCache {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
         let archive = root.appending(path: image.url.lastPathComponent + ".part")
-        try await Subprocess.run("/usr/bin/curl", ["-fL", "--retry", "3", "-C", "-", showProgress ? "--progress-bar" : "-sS", "-o", archive.path, image.url.absoluteString],
-                                 passthroughStderr: showProgress)
+        try await Subprocess.download(image.url, to: archive, showProgress: showProgress)
 
         let staging = root.appending(path: "\(image.id).staging", directoryHint: .isDirectory)
         try? FileManager.default.removeItem(at: staging)

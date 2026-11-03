@@ -114,13 +114,11 @@ struct Create: AsyncParsableCommand {
 
         say("开始安装 Windows（约 15–30 分钟，进度可用 macvm run \(name) --display 查看）…")
         _ = try await Start.launch(bundle, timeout: 120)
-        try await WindowsInstaller.waitUntilSetupComplete(bundle, proxyCommand: "\"\(SSHConfigCommand.executablePath)\" proxy \(name) --timeout 10")
-        say("安装完成，正在关机并卸下安装介质…")
-        _ = try ControlClient.send(.stop(force: false), to: bundle)
-        guard try await VMStatus.poll(timeout: 180, { BundleLock.holder(of: bundle) == nil }) else {
-            throw MacVMError.timeout("安装完成后客户机未关机")
+        let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: SSHConfigCommand.executablePath) {
+            say("安装完成，正在关机并卸下安装介质…")
+            _ = try ControlClient.send(.stop(force: false), to: bundle)
         }
-        try WindowsInstaller.finishSetup(bundle)
+        guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
         say("Windows 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
         return try VMStatus.summary(of: bundle)
     }

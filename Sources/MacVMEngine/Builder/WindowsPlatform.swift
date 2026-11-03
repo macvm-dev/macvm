@@ -46,10 +46,7 @@ public enum WindowsSupport {
             try FileManager.default.createDirectory(at: staging.appending(path: "EFI/BOOT"), withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: staging) }
             try FileManager.default.copyItem(at: loader, to: staging.appending(path: "EFI/BOOT/BOOTAA64.EFI"))
-            let dmg = image.deletingPathExtension().appendingPathExtension("dmg")
-            try await Subprocess.run("/usr/bin/hdiutil", ["create", "-quiet", "-size", "16m", "-fs", "MS-DOS", "-volname", "MACVMBOOT",
-                                                          "-layout", "NONE", "-format", "UDRW", "-srcfolder", staging.path, "-ov", dmg.path])
-            try FileManager.default.moveItem(at: dmg, to: image)
+            try await DiskImage.createFAT(from: staging, to: image, size: "16m", volumeName: "MACVMBOOT")
         }
         try? FileManager.default.removeItem(at: bundle.efiVariableStoreURL)
         _ = try VZEFIVariableStore(creatingVariableStoreAt: bundle.efiVariableStoreURL)

@@ -1,4 +1,5 @@
 import Foundation
+import MacVMModel
 
 /// 与客户机代理通信的消息类型，字段与编码由协议文档 agent.md 定义。
 public enum AgentProtocol {
@@ -111,6 +112,12 @@ public enum AgentProtocol {
         public let error: String?
         public let info: Info?
         public let text: String?
+
+        /// 失败的响应转成 `MacVMError.engine`；代理没给原因时用 `fallback`。
+        func checked(_ fallback: String = "未知错误") throws -> Response {
+            guard ok else { throw MacVMError.engine("客户机代理：\(error ?? fallback)") }
+            return self
+        }
     }
 
     /// `cursor-watch` 之后逐行推送的客户机光标；`bgra` 为 Base64 的逐像素 B G R A（非预乘），自上而下。

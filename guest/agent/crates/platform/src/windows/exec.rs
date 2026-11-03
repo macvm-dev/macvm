@@ -15,10 +15,8 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_INFORMATION, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
-use super::wide;
+use super::{CREATE_NO_WINDOW, wide};
 use crate::{ChildProcess, Exit, ExecOptions, Spawned, SpawnedIo};
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 代理以登录用户身份运行，只能以该身份执行。
 pub fn spawn(o: &ExecOptions) -> io::Result<Spawned> {

@@ -1,5 +1,8 @@
 use std::io;
+#[cfg(target_os = "macos")]
 use std::process::Command;
+
+use crate::run;
 
 pub fn os_name() -> &'static str {
     if cfg!(target_os = "macos") { "macos" } else { "linux" }
@@ -108,11 +111,6 @@ fn sysctl_u64(name: &str) -> u64 {
 pub(crate) fn is_root() -> bool {
     // SAFETY: 无副作用。
     unsafe { libc::geteuid() == 0 }
-}
-
-fn run(program: &str, args: &[&str]) -> io::Result<()> {
-    let status = Command::new(program).args(args).status()?;
-    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
 }
 
 pub fn shutdown(reboot: bool) -> io::Result<()> {

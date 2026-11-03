@@ -23,7 +23,7 @@ use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, RRF_RT_REG_SZ, RegCloseKey, RegGetValueW, RegQueryValueExW,
 };
 
-use super::wide;
+use super::{CREATE_NO_WINDOW, VIRTIO_GPU, until_nul, wide};
 
 /// 宿主放 viogpu3d 驱动包（含 `viogpu3d.inf`）的目录。
 pub const GPU_DRIVER_DIR: &str = r"C:\ProgramData\macvm\viogpu3d";
@@ -31,10 +31,6 @@ pub const GPU_DRIVER_DIR: &str = r"C:\ProgramData\macvm\viogpu3d";
 const PACKAGE_STAMP: &str = ".macvm-package";
 /// 开机时的安装与宿主推送可能同时发生，装驱动一次只做一个。
 static INSTALLING: Mutex<()> = Mutex::new(());
-/// 不创建控制台窗口（`CREATE_NO_WINDOW`）。
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-/// virtio-gpu 的 PCI 厂商与设备号。
-const VIRTIO_GPU: &str = "VEN_1AF4&DEV_1050";
 /// VZ 的 SMBIOS 制造商。
 const VZ_MANUFACTURER: &str = "Apple Inc.";
 
@@ -54,7 +50,7 @@ pub(super) fn on_vz() -> bool {
             &mut bytes,
         )
     };
-    status == 0 && String::from_utf16_lossy(&buf[..buf.iter().position(|&c| c == 0).unwrap_or(0)]) == VZ_MANUFACTURER
+    status == 0 && String::from_utf16_lossy(until_nul(&buf)) == VZ_MANUFACTURER
 }
 
 /// 对每块在场的 virtio-gpu 调用 `f`，传入设备信息集与设备。
@@ -191,7 +187,7 @@ fn installed_inf(key: HKEY) -> Option<Vec<u8>> {
     if status != 0 {
         return None;
     }
-    let name = String::from_utf16_lossy(&name[..name.iter().position(|&c| c == 0).unwrap_or(name.len())]);
+    let name = String::from_utf16_lossy(until_nul(&name));
     let windows = std::env::var_os("SystemRoot")?;
     std::fs::read(Path::new(&windows).join("INF").join(name)).ok()
 }

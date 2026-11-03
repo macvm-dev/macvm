@@ -21,17 +21,13 @@ struct Agent: AsyncParsableCommand {
                 "已安装 \(name) 的客户机代理" + (gpuDriver ? "；3D 显卡驱动已放进客户机，代理随即安装，重启客户机后桌面改用 GPU 合成" : "")
             }) {
                 let bundle = try VMLibrary.default.bundle(named: name)
-                var config = try bundle.loadConfig()
+                let config = try bundle.loadConfig()
                 var probe = config
                 probe.guestAgent = false
                 try await Wait.untilReady(bundle, config: probe, timeout: 300)
-                gpuDriver = try await AgentInstaller.installOverSSH(bundle: bundle, config: config, macvmPath: SSHConfigCommand.executablePath)
-                guard try await VMStatus.poll(timeout: 30, interval: 0.3, { AgentClient.isReachable(bundle) }) else {
-                    throw MacVMError.timeout("代理已安装但未响应")
-                }
-                config.guestAgent = true
-                if gpuDriver { config.graphicsAcceleration = true }
-                try bundle.saveConfig(config)
+                let result = try await AgentInstaller.installAndEnable(bundle: bundle, config: config, macvmPath: SSHConfigCommand.executablePath)
+                gpuDriver = result.gpuDriver
+                guard result.online else { throw MacVMError.timeout("代理已安装但未响应") }
                 return try AgentClient.info(bundle)
             }
         }

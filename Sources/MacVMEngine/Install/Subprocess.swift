@@ -31,4 +31,10 @@ enum Subprocess {
         }
         return String(decoding: out, as: UTF8.self)
     }
+
+    /// 用 curl 下载到 `destination`，已有部分内容时续传；`showProgress` 时进度条写到 stderr。
+    static func download(_ url: URL, to destination: URL, showProgress: Bool) async throws {
+        try await run("/usr/bin/curl", ["-fL", "--retry", "3", "-C", "-", showProgress ? "--progress-bar" : "-sS", "-o", destination.path, url.absoluteString],
+                      passthroughStderr: showProgress)
+    }
 }

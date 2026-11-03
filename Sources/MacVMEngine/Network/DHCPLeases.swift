@@ -4,10 +4,13 @@ public import Foundation
 public enum DHCPLeases {
     public static let defaultPath = "/var/db/dhcpd_leases"
 
-    public static func ipAddress(forMAC mac: String, hostname: String? = nil, leasesPath: String = defaultPath) -> String? {
-        guard let text = try? String(contentsOfFile: leasesPath, encoding: .utf8) else { return nil }
+    public static func ipAddress(forMAC mac: String, hostname: String? = nil) -> String? {
+        guard let text = read() else { return nil }
         return ipAddress(forMAC: mac, hostname: hostname, in: text)
     }
+
+    /// 租约表全文；文件不存在（从未有客户机走过内置 DHCP）时为 nil。
+    static func read() -> String? { try? String(contentsOfFile: defaultPath, encoding: .utf8) }
 
     /// 优先按 MAC 匹配。客户机若用 DUID 作客户端标识，租约里没有 MAC，再按 `hostname` 匹配；
     /// 主机名可能被已删除的同名虚拟机用过，所以这一步只认 `now` 时仍未过期的租约。

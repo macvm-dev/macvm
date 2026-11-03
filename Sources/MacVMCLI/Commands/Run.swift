@@ -41,8 +41,7 @@ struct Run: AsyncParsableCommand {
                 consoleMode = .none
             }
 
-            try await RunnerFactory.prepare(bundle)
-            let runner = try RunnerFactory.make(bundle, console: consoleMode, display: display)
+            let runner = try await RunnerFactory.make(bundle, console: consoleMode, display: display)
             let server = try ControlServer(runner: runner)
             defer { server.close() }
             let terminal = console ? RawTerminal() : nil

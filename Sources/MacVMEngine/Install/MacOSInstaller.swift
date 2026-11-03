@@ -44,10 +44,7 @@ public enum MacOSInstaller {
 
     public static func install(_ options: Options, in library: VMLibrary = .default, progress: @escaping @MainActor (Phase) -> Void = { _ in }) async throws -> VMBundle {
         guard VZVirtualMachine.isSupported else { throw MacVMError.unsupported("本机不支持虚拟化") }
-        try VMLibrary.validate(name: options.name)
-        if FileManager.default.fileExists(atPath: library.bundleURL(named: options.name).path) {
-            throw MacVMError.alreadyExists(options.name)
-        }
+        try VMFactory.ensureNameAvailable(options.name, in: library)
 
         let ipsw: URL
         switch options.source {
@@ -62,40 +59,40 @@ public enum MacOSInstaller {
             throw MacVMError.unsupported("主机 macOS 版本过旧，无法安装 \(image.operatingSystemVersion.label)（\(image.buildVersion)）")
         }
 
-        let bundle = try VMFactory.prepareEmptyBundle(named: options.name, in: library)
-        do {
-            try DiskImage.createSparse(at: bundle.diskURL, size: options.diskSize ?? HostInfo.defaultDiskSize(for: .macOS))
-            _ = try VZMacAuxiliaryStorage(creatingStorageAt: bundle.auxiliaryStorageURL, hardwareModel: requirements.hardwareModel, options: [])
-            try MachineIdentity.saveHardwareModel(requirements.hardwareModel, in: bundle)
-            try MachineIdentity.createMac(in: bundle)
+        return try await VMFactory.withNewBundle(named: options.name, in: library) { bundle in
+            do {
+                try DiskImage.createSparse(at: bundle.diskURL, size: options.diskSize ?? HostInfo.defaultDiskSize(for: .macOS))
+                _ = try VZMacAuxiliaryStorage(creatingStorageAt: bundle.auxiliaryStorageURL, hardwareModel: requirements.hardwareModel, options: [])
+                try MachineIdentity.saveHardwareModel(requirements.hardwareModel, in: bundle)
+                try MachineIdentity.createMac(in: bundle)
 
-            let config = VMConfig(
-                name: options.name, os: .macOS,
-                cpuCount: max(options.cpuCount ?? HostInfo.defaultCPUCount(), requirements.minimumSupportedCPUCount),
-                memorySize: max(options.memorySize ?? HostInfo.defaultMemorySize(for: .macOS), requirements.minimumSupportedMemorySize),
-                disks: [DiskConfig(path: bundle.diskURL.lastPathComponent)],
-                display: options.display,
-                networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],
-                guestUser: options.user
-            )
-            try bundle.saveConfig(config)
-            try MacOSProvisioning.schedule(.init(user: options.user, password: options.password ?? GuestCredentials.randomPassword()), in: bundle)
+                let config = VMConfig(
+                    name: options.name, os: .macOS,
+                    cpuCount: max(options.cpuCount ?? HostInfo.defaultCPUCount(), requirements.minimumSupportedCPUCount),
+                    memorySize: max(options.memorySize ?? HostInfo.defaultMemorySize(for: .macOS), requirements.minimumSupportedMemorySize),
+                    disks: [DiskConfig(path: bundle.diskURL.lastPathComponent)],
+                    display: options.display,
+                    networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],
+                    guestUser: options.user
+                )
+                try bundle.saveConfig(config)
+                try MacOSProvisioning.schedule(.init(user: options.user, password: options.password ?? GuestCredentials.randomPassword()), in: bundle)
 
-            let vz = try ConfigBuilder(bundle: bundle, config: config).build()
-            let vm = VZVirtualMachine(configuration: vz)
-            let installer = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: ipsw)
-            let observation = installer.progress.observe(\.fractionCompleted, options: [.initial, .new]) { p, _ in
-                let fraction = p.fractionCompleted
-                Task { @MainActor in progress(.installing(fraction)) }
+                let vz = try ConfigBuilder(bundle: bundle, config: config).build()
+                let vm = VZVirtualMachine(configuration: vz)
+                let installer = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: ipsw)
+                let observation = installer.progress.observe(\.fractionCompleted, options: [.initial, .new]) { p, _ in
+                    let fraction = p.fractionCompleted
+                    Task { @MainActor in progress(.installing(fraction)) }
+                }
+                defer { observation.invalidate() }
+                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+                    installer.install { c.resume(with: $0) }
+                }
+                return bundle
+            } catch {
+                throw MacVMError.engine("安装 macOS 失败：\(describeEngineError(error))")
             }
-            defer { observation.invalidate() }
-            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-                installer.install { c.resume(with: $0) }
-            }
-            return bundle
-        } catch {
-            try? FileManager.default.removeItem(at: bundle.url)
-            throw MacVMError.engine("安装 macOS 失败：\(VZRunner.describe(error))")
         }
     }
 
@@ -117,8 +114,7 @@ public enum MacOSInstaller {
         let target = ipswCache.appending(path: "\(build).ipsw")
         if FileManager.default.fileExists(atPath: target.path) { return target }
         let partial = ipswCache.appending(path: "\(build).ipsw.part")
-        try await Subprocess.run("/usr/bin/curl", ["-fL", "--retry", "3", "-C", "-", showProgress ? "--progress-bar" : "-sS", "-o", partial.path, url.absoluteString],
-                                 passthroughStderr: showProgress)
+        try await Subprocess.download(url, to: partial, showProgress: showProgress)
         try FileManager.default.moveItem(at: partial, to: target)
         return target
     }

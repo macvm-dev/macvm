@@ -46,7 +46,7 @@ public struct ConfigBuilder {
         vz.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
         vz.socketDevices = [VZVirtioSocketDeviceConfiguration()]
         // 显式的 XHCI 控制器只为运行时热插拔 U 盘，它会让通用平台虚拟机无法恢复，所以 headless 不挂。
-        if #available(macOS 15, *), !config.headless {
+        if !config.headless {
             vz.usbControllers = [VZXHCIControllerConfiguration()]
         }
 
@@ -81,7 +81,7 @@ public struct ConfigBuilder {
         if config.os == .windows {
             let boot = WindowsSupport.bootImageURL(bundle)
             guard FileManager.default.fileExists(atPath: boot.path) else {
-                throw MacVMError.invalidConfig("缺少 Windows 启动盘 \(WindowsSupport.bootImageName)，启动前应先调用 RunnerFactory.prepare")
+                throw MacVMError.invalidConfig("缺少 Windows 启动盘 \(WindowsSupport.bootImageName)，应经 RunnerFactory.make 创建运行器")
             }
             devices.append(VZVirtioBlockDeviceConfiguration(attachment: try diskAttachment(url: boot, readOnly: true, caching: .automatic, sync: .none)))
         }

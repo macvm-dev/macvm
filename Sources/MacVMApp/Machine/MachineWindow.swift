@@ -11,12 +11,12 @@ struct MachineWindow: View {
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
 
-    private var bundle: VMBundle? { try? model.library.bundle(named: name) }
-    private var config: VMConfig? { try? bundle?.loadConfig() }
     private var isRunning: Bool { model.summary(name)?.state == .running }
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
 
     var body: some View {
+        let bundle = try? model.library.bundle(named: name)
+        let config = try? bundle?.loadConfig()
         Group {
             if let vz = runner as? VZRunner {
                 VirtualMachineView(runner: vz)

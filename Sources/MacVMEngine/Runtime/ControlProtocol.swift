@@ -1,4 +1,5 @@
 import Foundation
+import MacVMModel
 
 /// 运行中虚拟机的控制 socket 协议：每个连接发一行 JSON 请求，收一行 JSON 响应。
 /// `connect` 成功响应之后，该连接变为到客户机 vsock 端口的原始字节管道。
@@ -70,5 +71,11 @@ public struct ControlResponse: Codable, Sendable, Equatable {
         self.canSuspend = canSuspend
         self.errorCode = errorCode
         self.message = message
+    }
+
+    /// 失败响应；不是 `MacVMError` 的错误按 `MacVMError.engine` 报。
+    init(failure error: any Error, state: String? = nil) {
+        let error = error as? MacVMError ?? .engine(error.localizedDescription)
+        self.init(ok: false, state: state, errorCode: error.code, message: error.message)
     }
 }

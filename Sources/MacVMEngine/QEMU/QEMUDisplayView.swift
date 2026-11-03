@@ -12,7 +12,7 @@ public final class QEMUDisplayView: NSView {
     private let vncPath: String
     private let spicePath: String
     private var backend: (any DisplayBackend)?
-    private var spice: SpiceDisplay?
+    private var spice: SpiceDisplay? { backend as? SpiceDisplay }
     private var cursorWatcher: AgentCursorWatcher?
     private var cursorWatchRetry: Timer?
     /// 代理正在推送光标形状，此时忽略 VNC 的光标。
@@ -57,7 +57,6 @@ public final class QEMUDisplayView: NSView {
         reconnect = nil
         backend?.close()
         backend = nil
-        spice = nil
         guestFit?.invalidate()
         guestFit = nil
         requestedGuestSize = nil
@@ -87,7 +86,6 @@ public final class QEMUDisplayView: NSView {
                 guard let self else { return }
                 backend?.close()
                 backend = nil
-                self.spice = nil
                 scheduleReconnect()
             }
             spice.onConnect = { [weak self] in
@@ -98,7 +96,6 @@ public final class QEMUDisplayView: NSView {
             spice.view.autoresizingMask = [.width, .height]
             addSubview(spice.view)
             spice.showGuestCursor(!agentCursorActive)
-            self.spice = spice
             backend = spice
             watchAgentCursor()
             return
@@ -246,10 +243,14 @@ public final class QEMUDisplayView: NSView {
         }
         guard let (image, hotspot) = guestCursorImage else { return }
         let scale = displayScale
+        guestCursorScale = scale
         let size = NSSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
         guestCursor = NSCursor(image: NSImage(cgImage: image, size: size), hotSpot: NSPoint(x: hotspot.x * scale, y: hotspot.y * scale))
         updateCursor()
     }
+
+    /// 图像光标按这个缩放比例建成；视图尺寸变了而比例没变时不必重建。
+    private var guestCursorScale: CGFloat?
 
     private var displayScale: CGFloat {
         guard framebufferSize.width > 0, framebufferSize.height > 0 else { return 1 }
@@ -274,7 +275,7 @@ public final class QEMUDisplayView: NSView {
 
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        rebuildGuestCursor()
+        if guestCursorImage != nil, displayScale != guestCursorScale { rebuildGuestCursor() }
         scheduleGuestFit()
     }
 
@@ -332,7 +333,7 @@ public final class QEMUDisplayView: NSView {
     private func sendGuestScale(_ percent: Int, then done: @escaping @MainActor (Bool) -> Void) {
         let bundle = bundle
         Task.detached { [weak self] in
-            let ok = (try? AgentClient.call(.displayScale(percent: percent), bundle: bundle, timeout: 10))?.ok == true
+            let ok = (try? AgentClient.call(.displayScale(percent: percent), bundle: bundle, timeout: 10)) != nil
             await MainActor.run {
                 guard let self else { return }
                 // 代理还没上线：等它上线或下次窗口变化时再试。

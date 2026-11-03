@@ -22,7 +22,7 @@ public final class BundleLock: @unchecked Sendable {
     /// 已被别的进程持有时抛 `alreadyRunning`。
     public static func acquire(_ bundle: VMBundle) throws -> BundleLock {
         let fd = open(bundle.lockURL.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
-        guard fd >= 0 else { throw MacVMError.io("打开 \(bundle.lockURL.path) 失败：\(String(cString: strerror(errno)))") }
+        guard fd >= 0 else { throw MacVMError.posix("打开 \(bundle.lockURL.path)") }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
             close(fd)
             throw MacVMError.alreadyRunning(bundle.name)

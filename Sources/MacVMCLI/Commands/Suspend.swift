@@ -18,9 +18,8 @@ struct Suspend: AsyncParsableCommand {
     func run() async throws {
         try await Output.run(json: global.json, human: { (_: Empty) in "\(name) 已挂起" }) {
             let bundle = try VMLibrary.default.bundle(named: name)
-            _ = try ControlClient.check(ControlClient.send(.suspend, to: bundle, timeout: timeout), bundle: bundle)
-            let stopped = try await VMStatus.poll(timeout: 30) { BundleLock.holder(of: bundle) == nil }
-            guard stopped else { throw MacVMError.timeout("挂起后进程未退出") }
+            try ControlClient.perform(.suspend, on: bundle, timeout: timeout)
+            guard try await VMStatus.waitUntilStopped(bundle, timeout: 30) else { throw MacVMError.timeout("挂起后进程未退出") }
             return Empty()
         }
     }

@@ -169,12 +169,13 @@ pub struct ExitStatus {
     pub signal: Option<i32>,
 }
 
+/// 帧头与载荷一次写出：连接开了 TCP_NODELAY 时，分两次写会把 5 字节的帧头单独发成一个包。
 pub fn write_frame(w: &mut impl Write, kind: FrameKind, payload: &[u8]) -> io::Result<()> {
-    let mut header = [0u8; 5];
-    header[0] = kind as u8;
-    header[1..].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-    w.write_all(&header)?;
-    w.write_all(payload)
+    let mut frame = Vec::with_capacity(5 + payload.len());
+    frame.push(kind as u8);
+    frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    frame.extend_from_slice(payload);
+    w.write_all(&frame)
 }
 
 /// 对端正常关闭时返回 `Ok(None)`。

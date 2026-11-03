@@ -7,21 +7,22 @@ public final class QEMURunner: MachineRunner {
     public let bundle: VMBundle
     public let config: VMConfig
     public private(set) var stateLabel = "stopped"
-    public var onStop: ((MachineStopReason) -> Void)?
+    public var onStop: ((MachineStopReason) -> Void)? {
+        get { stopLatch.onStop }
+        set { stopLatch.onStop = newValue }
+    }
 
     private let qemu: QEMUInstallation
-    private let lock: BundleLock
+    private let stopLatch: StopLatch
     private let display: Bool
     private var process: Process?
     private var qmp: QMPClient?
-    private var stopReason: MachineStopReason?
-    private var stopWaiters: [CheckedContinuation<MachineStopReason, Never>] = []
     private var gpuDriverSync: Task<Void, Never>?
 
     /// `display` 为 true 时由 QEMU 自己开一个 Cocoa 窗口显示画面。
     public init(bundle: VMBundle, display: Bool = false) throws {
         qemu = try QEMUInstallation.require()
-        lock = try BundleLock.acquire(bundle)
+        stopLatch = StopLatch(lock: try BundleLock.acquire(bundle))
         self.bundle = bundle
         self.display = display
         config = try bundle.loadConfig()
@@ -39,30 +40,26 @@ public final class QEMURunner: MachineRunner {
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         try RuntimeDirectory.ensure()
+        var outcome = MachineStartOutcome.coldBoot
         if bundle.hasSavedState, !recovery {
             do {
                 try await launch(incoming: bundle.savedStateURL)
                 try await waitForMigration()
                 try await qmp?.execute("cont")
-                try? FileManager.default.removeItem(at: bundle.savedStateURL)
-                stateLabel = "running"
-                syncGuestGPUDriver()
-                return .restored
+                outcome = .restored
             } catch {
                 await terminate()
-                try? FileManager.default.removeItem(at: bundle.savedStateURL)
-                try await launch(incoming: nil)
-                stateLabel = "running"
-                pressKeysForInstallMedia()
-                syncGuestGPUDriver()
-                return .restoreFailed(VZRunner.describe(error))
+                outcome = .restoreFailed(describeEngineError(error))
             }
+            try? FileManager.default.removeItem(at: bundle.savedStateURL)
         }
-        try await launch(incoming: nil)
+        if case .restored = outcome {} else {
+            try await launch(incoming: nil)
+            pressKeysForInstallMedia()
+        }
         stateLabel = "running"
-        pressKeysForInstallMedia()
         syncGuestGPUDriver()
-        return .coldBoot
+        return outcome
     }
 
     /// 装了代理的 Windows 请代理关机：它对 ACPI 电源键时常没有反应。代理不可用时再按电源键。
@@ -77,11 +74,7 @@ public final class QEMURunner: MachineRunner {
 
     nonisolated private static func askAgentToShutDown(socketPath: String, reboot: Bool) -> Bool {
         guard let socket = try? UnixSocket.connect(to: socketPath) else { return false }
-        socket.setTimeout(seconds: 3)
-        guard let data = try? JSONEncoder().encode(AgentProtocol.Request.shutdown(reboot: reboot)), (try? socket.writeLine(data)) != nil,
-              let line = try? socket.readLine(),
-              let response = try? JSONDecoder().decode(AgentProtocol.Response.self, from: line) else { return false }
-        return response.ok
+        return AgentClient.call(.shutdown(reboot: reboot), over: socket, timeout: 3)
     }
 
     public func forceStop() async throws {
@@ -122,10 +115,7 @@ public final class QEMURunner: MachineRunner {
         finish(.suspended)
     }
 
-    public func waitUntilStopped() async -> MachineStopReason {
-        if let stopReason { return stopReason }
-        return await withCheckedContinuation { stopWaiters.append($0) }
-    }
+    public func waitUntilStopped() async -> MachineStopReason { await stopLatch.wait() }
 
     public func screenshot(to url: URL) async throws {
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }
@@ -145,10 +135,7 @@ public final class QEMURunner: MachineRunner {
         guard QEMUCommand.forwardedPorts.contains(port) else {
             throw MacVMError.unsupported("QEMU 引擎只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")
         }
-        let socket = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
-        // socket 析构时关闭 fd，要在它存活期间复制。
-        let fd = withExtendedLifetime(socket) { dup(socket.fd) }
-        guard fd >= 0 else { throw MacVMError.io("复制连接失败：\(String(cString: strerror(errno)))") }
+        let fd = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path).duplicateDescriptor()
         return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
     }
 
@@ -246,15 +233,7 @@ public final class QEMURunner: MachineRunner {
         finish(status == 0 ? .guestShutdown : .error("QEMU 退出码 \(status)"))
     }
 
-    private func finish(_ reason: MachineStopReason) {
-        guard stopReason == nil else { return }
-        stopReason = reason
-        lock.release()
-        onStop?(reason)
-        let waiters = stopWaiters
-        stopWaiters.removeAll()
-        waiters.forEach { $0.resume(returning: reason) }
-    }
+    private func finish(_ reason: MachineStopReason) { stopLatch.fire(reason) }
 
     /// 开了 3D 加速的 Windows：代理上线后把自带的驱动包推过去。驱动要与自带 QEMU 的图形组件配套，
     /// 升级 App 换了图形组件而客户机还是旧驱动时，桌面合成会崩溃；换了驱动就重启客户机，桌面合成才用上新驱动。
@@ -264,10 +243,15 @@ public final class QEMURunner: MachineRunner {
         let name = bundle.name
         gpuDriverSync?.cancel()
         gpuDriverSync = Task.detached {
+            let payload: WindowsGPUDriver.Payload
+            do { payload = try WindowsGPUDriver.Payload(contentsOf: zip) } catch {
+                FileHandle.standardError.write(Data("macvm: 为 \(name) 读取显卡驱动包失败：\(error)\n".utf8))
+                return
+            }
             // 代理在客户机登录后才启动，开机慢时要等好几分钟。
             for _ in 0..<Self.agentWaitAttempts {
                 do {
-                    if try WindowsGPUDriver.push(zip, to: socket) {
+                    if try WindowsGPUDriver.push(payload, to: socket) {
                         let rebooting = Self.askAgentToShutDown(socketPath: socket, reboot: true)
                         let next = rebooting ? "正在重启客户机" : "重启客户机失败，请手动重启"
                         FileHandle.standardError.write(Data("macvm: 已为 \(name) 更新显卡驱动，\(next)\n".utf8))

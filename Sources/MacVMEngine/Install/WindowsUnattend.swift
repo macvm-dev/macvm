@@ -172,7 +172,6 @@ enum WindowsUnattend {
     /// 而系统自带的 sshd 入站规则只对专用网络生效，因此改为对所有网络生效。
     /// PowerShell 的全局配置把控制台输出设为 UTF-8，经 SSH 取回的中文才不乱码。
     static func setupScript(_ o: Options) -> String {
-        let key = o.sshPublicKey.replacingOccurrences(of: "'", with: "''")
         return #"""
         $ErrorActionPreference = 'Continue'
         Start-Transcript -Path C:\macvm-setup.log -Append
@@ -188,7 +187,7 @@ enum WindowsUnattend {
         Start-Service sshd
         New-ItemProperty -Path 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell -Value 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -PropertyType String -Force
         $keys = 'C:\ProgramData\ssh\administrators_authorized_keys'
-        Set-Content -Path $keys -Value '\#(key)' -Encoding ascii
+        Set-Content -Path $keys -Value \#(PowerShell.quote(o.sshPublicKey)) -Encoding ascii
         icacls $keys /inheritance:r /grant 'Administrators:F' /grant 'SYSTEM:F'
         if (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue) {
           Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Profile Any -Enabled True
@@ -210,5 +209,12 @@ enum WindowsUnattend {
     private static func xml(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+    }
+}
+
+public enum PowerShell {
+    /// 单引号字面量：内容原样，不展开变量与转义。
+    public static func quote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "''") + "'"
     }
 }

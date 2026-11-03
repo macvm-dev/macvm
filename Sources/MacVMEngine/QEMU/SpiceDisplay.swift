@@ -17,8 +17,6 @@ extension VNCClient: DisplayBackend {
         sendPointer(buttons: buttons | (up ? 8 : 16), x: x, y: y)
         sendPointer(buttons: buttons, x: x, y: y)
     }
-
-    func sendKey(qnum: UInt32, down: Bool) { sendKey(scancode: qnum, down: down) }
 }
 
 /// 经 libMacVMDisplay（CocoaSpice）显示 SPICE 画面：GL 画面在 QEMU 与本进程间经 IOSurface 共享，不拷像素。
@@ -117,24 +115,28 @@ final class SpiceDisplay: DisplayBackend {
 
         @MainActor private static var loaded: [URL: Library] = [:]
 
+        private struct MissingSymbol: Error {}
+
+        /// 函数类型由各属性的声明决定；缺任何一个符号都失败。
+        private init(_ lib: UnsafeMutableRawPointer) throws {
+            func symbol<T>(_ name: String) throws -> T {
+                guard let address = dlsym(lib, name) else { throw MissingSymbol() }
+                return unsafeBitCast(address, to: T.self)
+            }
+            create = try symbol("MacVMDisplayCreate")
+            close = try symbol("MacVMDisplayClose")
+            key = try symbol("MacVMDisplayKey")
+            pointer = try symbol("MacVMDisplayPointer")
+            scroll = try symbol("MacVMDisplayScroll")
+            showGuestCursor = try symbol("MacVMDisplayShowGuestCursor")
+            setFrozen = try symbol("MacVMDisplaySetFrozen")
+            freezeOnResize = try symbol("MacVMDisplayFreezeOnResize")
+            thawWhenIdle = try symbol("MacVMDisplayThawWhenIdle")
+        }
+
         @MainActor static func load(_ url: URL) -> Library? {
             if let cached = loaded[url] { return cached }
-            guard let lib = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else { return nil }
-            func symbol<T>(_ name: String, _: T.Type) -> T? {
-                dlsym(lib, name).map { unsafeBitCast($0, to: T.self) }
-            }
-            guard let create = symbol("MacVMDisplayCreate", (@convention(c) (UnsafePointer<CChar>, Handler, UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?).self),
-                  let close = symbol("MacVMDisplayClose", (@convention(c) (UnsafeMutableRawPointer) -> Void).self),
-                  let key = symbol("MacVMDisplayKey", (@convention(c) (UnsafeMutableRawPointer, Int32, Bool) -> Void).self),
-                  let pointer = symbol("MacVMDisplayPointer", (@convention(c) (UnsafeMutableRawPointer, Double, Double, UInt32) -> Void).self),
-                  let scroll = symbol("MacVMDisplayScroll", (@convention(c) (UnsafeMutableRawPointer, Bool, UInt32) -> Void).self),
-                  let showGuestCursor = symbol("MacVMDisplayShowGuestCursor", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self),
-                  let setFrozen = symbol("MacVMDisplaySetFrozen", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self),
-                  let freezeOnResize = symbol("MacVMDisplayFreezeOnResize", (@convention(c) (UnsafeMutableRawPointer) -> Void).self),
-                  let thawWhenIdle = symbol("MacVMDisplayThawWhenIdle", (@convention(c) (UnsafeMutableRawPointer, Double, Double) -> Void).self)
-            else { return nil }
-            let library = Library(create: create, close: close, key: key, pointer: pointer, scroll: scroll, showGuestCursor: showGuestCursor, setFrozen: setFrozen,
-                                  freezeOnResize: freezeOnResize, thawWhenIdle: thawWhenIdle)
+            guard let lib = dlopen(url.path, RTLD_NOW | RTLD_LOCAL), let library = try? Library(lib) else { return nil }
             loaded[url] = library
             return library
         }

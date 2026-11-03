@@ -24,9 +24,7 @@ public enum NetworkAttachments {
     }
 
     /// 主机上可桥接的网卡；实际桥接还需要 entitlement。
-    public static var bridgeableInterfaces: [(identifier: String, name: String)] {
-        VZBridgedNetworkInterface.networkInterfaces.map { ($0.identifier, $0.localizedDisplayName ?? $0.identifier) }
-    }
+    public static var bridgeableInterfaces: [String] { VZBridgedNetworkInterface.networkInterfaces.map(\.identifier) }
 
     public static func randomMACAddress() -> String {
         VZMACAddress.randomLocallyAdministered().string

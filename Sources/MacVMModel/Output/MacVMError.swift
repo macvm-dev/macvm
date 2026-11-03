@@ -84,6 +84,13 @@ extension MacVMError {
     }
 }
 
+extension MacVMError {
+    /// 系统调用失败：`what 失败：<strerror(code)>`。
+    public static func posix(_ what: String, code: Int32 = errno) -> MacVMError {
+        .io("\(what) 失败：\(String(cString: strerror(code)))")
+    }
+}
+
 extension MacVMError: LocalizedError {
     public var errorDescription: String? { message }
 }

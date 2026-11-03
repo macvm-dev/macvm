@@ -6,8 +6,7 @@ public enum VMClone {
     public static func clone(_ source: VMBundle, as name: String, in library: VMLibrary = .default) async throws -> VMBundle {
         if BundleLock.holder(of: source) != nil { throw MacVMError.alreadyRunning(source.name) }
         var config = try source.loadConfig()
-        let target = try VMFactory.prepareEmptyBundle(named: name, in: library)
-        do {
+        return try await VMFactory.withNewBundle(named: name, in: library) { target in
             for file in BundleFiles.stateFiles(of: source, config: config) {
                 try Clone.file(from: source.url.appending(path: file), to: target.url.appending(path: file))
             }
@@ -25,9 +24,6 @@ public enum VMClone {
             }
             try target.saveConfig(config)
             return target
-        } catch {
-            try? FileManager.default.removeItem(at: target.url)
-            throw error
         }
     }
 }

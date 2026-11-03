@@ -24,6 +24,41 @@ public enum MachineStartOutcome: Sendable {
     case restoreFailed(String)
 }
 
+/// 运行器的停止信号：只在首次 `fire` 时记下原因、释放包锁、回调 `onStop` 并唤醒所有等待者。
+@MainActor
+final class StopLatch {
+    private(set) var reason: MachineStopReason?
+    var onStop: ((MachineStopReason) -> Void)?
+    private let lock: BundleLock
+    private var waiters: [CheckedContinuation<MachineStopReason, Never>] = []
+
+    init(lock: BundleLock) { self.lock = lock }
+
+    func fire(_ reason: MachineStopReason) {
+        guard self.reason == nil else { return }
+        self.reason = reason
+        lock.release()
+        onStop?(reason)
+        let waiters = waiters
+        self.waiters.removeAll()
+        waiters.forEach { $0.resume(returning: reason) }
+    }
+
+    func wait() async -> MachineStopReason {
+        if let reason { return reason }
+        return await withCheckedContinuation { waiters.append($0) }
+    }
+}
+
+/// 把 Virtualization 等框架的 NSError 连同 underlying error 里的具体原因展开成一行。
+func describeEngineError(_ error: any Error) -> String {
+    let ns = error as NSError
+    var parts = ["\(ns.domain)#\(ns.code) \(ns.localizedDescription)"]
+    if let reason = ns.localizedFailureReason { parts.append(reason) }
+    if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError { parts.append(describeEngineError(underlying)) }
+    return parts.joined(separator: "；")
+}
+
 /// 到客户机内某个端口的双向字节通道；用完调用 `close`。
 public struct GuestChannel: Sendable {
     public let fileDescriptor: Int32
@@ -59,8 +94,8 @@ extension MachineRunner {
 }
 
 public enum RunnerFactory {
-    /// 创建运行器前需要的异步准备，目前只有 VZ 引擎的 Windows 客户机需要。
-    public static func prepare(_ bundle: VMBundle) async throws {
+    /// 组装 VZ 配置之前要做的异步准备，只有 VZ 引擎的 Windows 客户机需要。
+    static func prepare(_ bundle: VMBundle) async throws {
         let config = try bundle.loadConfig()
         if config.os == .windows, config.engine == .vz {
             try await WindowsSupport.prepareForVZ(bundle)
@@ -68,8 +103,9 @@ public enum RunnerFactory {
     }
 
     @MainActor
-    public static func make(_ bundle: VMBundle, console: ConfigBuilder.Console = .none, display: Bool = false) throws -> any MachineRunner {
-        switch try bundle.loadConfig().engine {
+    public static func make(_ bundle: VMBundle, console: ConfigBuilder.Console = .none, display: Bool = false) async throws -> any MachineRunner {
+        try await prepare(bundle)
+        return switch try bundle.loadConfig().engine {
         case .vz: try VZRunner(bundle: bundle, console: console)
         case .qemu: try QEMURunner(bundle: bundle, display: display)
         }

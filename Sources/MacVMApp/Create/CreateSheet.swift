@@ -20,6 +20,8 @@ struct CreateSheet: View {
     @State private var choosingFile = false
     @State private var rosetta = false
     @State private var productKey = ""
+    /// 表单打开时探测一次，免得每敲一个字都去找一遍 QEMU。
+    @State private var hasQEMU = QEMUInstallation.locate() != nil
 
     private let maxMemoryGB = Int(HostInfo.physicalMemory >> 30)
 
@@ -44,7 +46,7 @@ struct CreateSheet: View {
                 }
                 if os == .windows {
                     TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
-                    Text(QEMUInstallation.locate() == nil
+                    Text(!hasQEMU
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
                          : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -101,7 +103,7 @@ struct CreateSheet: View {
     private var finalName: String { name.isEmpty ? defaultName : name }
     private var isValid: Bool {
         (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
-            && (os != .windows || QEMUInstallation.locate() != nil)
+            && (os != .windows || hasQEMU)
             && (os != .windows || productKey.isEmpty || (try? WindowsInstaller.normalizeProductKey(productKey)) != nil)
     }
 
@@ -144,11 +146,11 @@ struct CreateSheet: View {
                     model.activity[name] = "正在安装 Windows…"
                     guard await model.start(name) != nil else { return }
                     openWindow(id: "machine", value: name)
-                    try await WindowsInstaller.waitUntilSetupComplete(bundle, proxyCommand: "\"\(CLILocation.path)\" proxy \(name) --timeout 10")
-                    model.activity[name] = "正在完成安装…"
-                    await model.stop(name)
-                    _ = try await VMStatus.poll(timeout: 180) { BundleLock.holder(of: bundle) == nil }
-                    try WindowsInstaller.finishSetup(bundle)
+                    let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: CLILocation.path) {
+                        model.activity[name] = "正在完成安装…"
+                        await model.stop(name)
+                    }
+                    guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
                 case (_, .cloudImage(let id)):
                     model.activity[name] = "正在下载镜像…"
                     let options = VMFactory.Options(name: name, os: .linux, cpuCount: cpus, memorySize: memory, diskSize: disk,

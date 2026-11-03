@@ -10,7 +10,7 @@ struct List: AsyncParsableCommand {
 
     func run() async throws {
         try await Output.run(json: global.json, human: Self.table) {
-            try VMLibrary.default.all().compactMap { try? VMStatus.summary(of: $0) }
+            VMStatus.summaries(in: VMLibrary.default)
         }
     }
 

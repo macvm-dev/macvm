@@ -21,9 +21,8 @@ struct Stop: AsyncParsableCommand {
     func run() async throws {
         try await Output.run(json: global.json, human: { (_: Empty) in "\(name) 已停止" }) {
             let bundle = try VMLibrary.default.bundle(named: name)
-            _ = try ControlClient.check(ControlClient.send(.stop(force: force), to: bundle), bundle: bundle)
-            let stopped = try await VMStatus.poll(timeout: TimeInterval(timeout)) { BundleLock.holder(of: bundle) == nil }
-            guard stopped else { throw MacVMError.timeout("客户机 \(timeout) 秒内未关机，可用 --force 断电") }
+            try ControlClient.perform(.stop(force: force), on: bundle)
+            guard try await VMStatus.waitUntilStopped(bundle, timeout: TimeInterval(timeout)) else { throw MacVMError.timeout("客户机 \(timeout) 秒内未关机，可用 --force 断电") }
             return Empty()
         }
     }

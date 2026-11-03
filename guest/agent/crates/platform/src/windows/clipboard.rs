@@ -45,7 +45,7 @@ pub fn clipboard_get() -> io::Result<String> {
 }
 
 pub fn clipboard_set(text: &str) -> io::Result<()> {
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide = super::wide(text);
     let _guard = Opened::open()?;
     // SAFETY: 分配可移动全局内存并写入 UTF-16；SetClipboardData 成功后所有权归系统。
     unsafe {

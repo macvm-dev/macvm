@@ -14,17 +14,17 @@ final class UnixSocket: @unchecked Sendable {
         unlink(path)
         let socket = try make()
         try withAddress(path) { addr, len in
-            guard bind(socket.fd, addr, len) == 0 else { throw posixError("bind \(path)") }
+            guard bind(socket.fd, addr, len) == 0 else { throw MacVMError.posix("bind \(path)") }
         }
         chmod(path, 0o600)
-        guard Darwin.listen(socket.fd, 16) == 0 else { throw posixError("listen \(path)") }
+        guard Darwin.listen(socket.fd, 16) == 0 else { throw MacVMError.posix("listen \(path)") }
         return socket
     }
 
     static func connect(to path: String) throws -> UnixSocket {
         let socket = try make()
         try withAddress(path) { addr, len in
-            guard Darwin.connect(socket.fd, addr, len) == 0 else { throw posixError("connect \(path)") }
+            guard Darwin.connect(socket.fd, addr, len) == 0 else { throw MacVMError.posix("connect \(path)") }
         }
         return socket
     }
@@ -43,7 +43,7 @@ final class UnixSocket: @unchecked Sendable {
                 let n = Darwin.write(fd, raw.baseAddress! + offset, raw.count - offset)
                 if n < 0 {
                     if errno == EINTR { continue }
-                    throw Self.posixError("write")
+                    throw MacVMError.posix("write")
                 }
                 offset += n
             }
@@ -59,18 +59,20 @@ final class UnixSocket: @unchecked Sendable {
     /// 读到换行为止（不含换行）；对端关闭且没有剩余数据时返回 nil。
     /// `exact` 时逐字节读，不越过换行，之后的字节留在 fd 里，供把 fd 交给别人直接转发的调用方用。
     func readLine(limit: Int = 1 << 20, exact: Bool = false) throws -> Data? {
+        var scanned = buffer.startIndex
+        var chunk = [UInt8](repeating: 0, count: exact ? 1 : 4096)
         while true {
-            if let nl = buffer.firstIndex(of: 0x0A) {
+            if let nl = buffer[scanned...].firstIndex(of: 0x0A) {
                 let line = buffer[buffer.startIndex..<nl]
                 buffer.removeSubrange(buffer.startIndex...nl)
                 return Data(line)
             }
+            scanned = buffer.endIndex
             guard buffer.count < limit else { throw MacVMError.io("控制消息超长") }
-            var chunk = [UInt8](repeating: 0, count: exact ? 1 : 4096)
             let n = Darwin.read(fd, &chunk, chunk.count)
             if n < 0 {
                 if errno == EINTR { continue }
-                throw Self.posixError("read")
+                throw MacVMError.posix("read")
             }
             if n == 0 {
                 guard !buffer.isEmpty else { return nil }
@@ -83,19 +85,44 @@ final class UnixSocket: @unchecked Sendable {
 
     /// 读满 `count` 字节，先取 `readLine` 缓冲中剩余的数据；对端提前关闭时返回 nil。
     func readExact(_ count: Int) throws -> Data? {
-        while buffer.count < count {
-            var chunk = [UInt8](repeating: 0, count: max(4096, count - buffer.count))
-            let n = Darwin.read(fd, &chunk, chunk.count)
+        var out = Data(count: count)
+        let complete = try out.withUnsafeMutableBytes { try readExact(into: $0) }
+        return complete ? out : nil
+    }
+
+    /// 读满 `destination`，先取 `readLine` 缓冲中剩余的数据；对端提前关闭时返回 false。
+    func readExact(into destination: UnsafeMutableRawBufferPointer) throws -> Bool {
+        let buffered = min(buffer.count, destination.count)
+        if buffered > 0 {
+            buffer.copyBytes(to: destination.bindMemory(to: UInt8.self), from: buffer.startIndex..<buffer.startIndex + buffered)
+            buffer.removeFirst(buffered)
+        }
+        var filled = buffered
+        while filled < destination.count {
+            let n = Darwin.read(fd, destination.baseAddress! + filled, destination.count - filled)
             if n < 0 {
                 if errno == EINTR { continue }
-                throw Self.posixError("read")
+                throw MacVMError.posix("read")
             }
-            if n == 0 { return nil }
-            buffer.append(contentsOf: chunk[0..<n])
+            if n == 0 { return false }
+            filled += n
         }
-        let out = buffer.prefix(count)
-        buffer.removeFirst(count)
-        return Data(out)
+        return true
+    }
+
+    /// 发一行 JSON 请求、读一行 JSON 响应；对端不回话就关闭时返回 nil。
+    /// `exact` 时不越过响应行读取，响应之后对端发来的字节留在 fd 里。
+    func exchange<Response: Decodable>(_ request: some Encodable, as: Response.Type, exact: Bool = false) throws -> Response? {
+        try writeLine(JSONEncoder().encode(request))
+        guard let line = try readLine(exact: exact) else { return nil }
+        return try JSONDecoder().decode(Response.self, from: line)
+    }
+
+    /// 复制出一个独立的 fd 交给调用方关闭；本对象析构时只关闭自己的那个。
+    func duplicateDescriptor() throws -> Int32 {
+        let copy = dup(fd)
+        guard copy >= 0 else { throw MacVMError.posix("复制连接") }
+        return copy
     }
 
     /// 取出 `readLine` 之后缓冲里尚未消费的字节，转交给原始字节转发。
@@ -112,7 +139,7 @@ final class UnixSocket: @unchecked Sendable {
 
     private static func make() throws -> UnixSocket {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw posixError("socket") }
+        guard fd >= 0 else { throw MacVMError.posix("socket") }
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         disableSigpipe(fd)
         return UnixSocket(fd: fd)
@@ -141,7 +168,4 @@ final class UnixSocket: @unchecked Sendable {
         }
     }
 
-    static func posixError(_ what: String) -> MacVMError {
-        .io("\(what) 失败：\(String(cString: strerror(errno)))")
-    }
 }

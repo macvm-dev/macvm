@@ -57,13 +57,9 @@ struct Exec: AsyncParsableCommand {
     /// Windows 客户机的 sshd 默认 shell 是 PowerShell：以调用运算符执行，参数用单引号字面量。
     static func powerShellCommand(_ argv: [String], cwd: String?) -> String? {
         var parts: [String] = []
-        if let cwd { parts.append("Set-Location -LiteralPath \(powerShellQuote(cwd))") }
-        if !argv.isEmpty { parts.append("& " + argv.map(powerShellQuote).joined(separator: " ") + "; exit $LASTEXITCODE") }
+        if let cwd { parts.append("Set-Location -LiteralPath \(PowerShell.quote(cwd))") }
+        if !argv.isEmpty { parts.append("& " + argv.map(PowerShell.quote).joined(separator: " ") + "; exit $LASTEXITCODE") }
         return parts.isEmpty ? nil : parts.joined(separator: "; ")
-    }
-
-    static func powerShellQuote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
     static func shellQuote(_ s: String) -> String {
@@ -90,16 +86,13 @@ struct SSH: AsyncParsableCommand {
         guard let user = config.guestUser else {
             throw MacVMError.unsupported("不知道 \(config.name) 的登录用户（从安装介质安装的虚拟机需自行配置 SSH）")
         }
-        let proxy = "\"\(SSHConfigCommand.executablePath)\" proxy \(config.name)"
+        let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: config.name)
         // 未装代理时 sshd 走 NAT 网络；先确保虚拟机在运行，免得 ssh 的连接超时先于开机完成。
-        var args = ["ssh", "-q", tty ? "-tt" : "-T",
-                    "-i", SSHKeys.privateKeyURL.path, "-o", "IdentitiesOnly=yes",
-                    "-o", "ProxyCommand=\(proxy)",
-                    "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
-                    "\(user)@\(SSHConfig.hostAlias(for: config.name))"]
+        var args = ["ssh", "-q", tty ? "-tt" : "-T"] + SSHConfig.keyArguments(proxyCommand: proxy)
+            + ["\(user)@\(SSHConfig.hostAlias(for: config.name))"]
         if let remoteCommand { args += ["--", remoteCommand] }
         let argv = args.map { strdup($0) } + [nil]
         execv("/usr/bin/ssh", argv)
-        throw MacVMError.io("无法执行 ssh：\(String(cString: strerror(errno)))")
+        throw MacVMError.posix("执行 ssh")
     }
 }

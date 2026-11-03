@@ -29,7 +29,7 @@ struct Display: AsyncParsableCommand {
         try await Output.run(json: global.json, human: { (r: Result) in "\(r.width)x\(r.height)" }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             let (width, height) = Self.parse(size)!
-            _ = try ControlClient.check(ControlClient.send(.display(width: width, height: height), to: bundle), bundle: bundle)
+            try ControlClient.perform(.display(width: width, height: height), on: bundle)
             return Result(width: width, height: height)
         }
     }

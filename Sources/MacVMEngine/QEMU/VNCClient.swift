@@ -14,6 +14,9 @@ final class VNCClient: @unchecked Sendable {
     private let writeLock = NSLock()
     private var context: CGContext?
     private var closed = false
+    /// 读线程放下的最新一帧，主线程取走前再来的帧直接覆盖它，主线程忙时不积压过时的帧。
+    private let frameLock = NSLock()
+    private var pendingFrame: CGImage?
 
     private enum Encoding: Int32 {
         case raw = 0
@@ -56,12 +59,12 @@ final class VNCClient: @unchecked Sendable {
         send(m)
     }
 
-    /// QEMU 扩展按键事件：`scancode` 为 qnum（第 1 套扫描码，E0 前缀键为 0x80 | 第二字节）。
-    func sendKey(scancode: UInt32, down: Bool) {
+    /// QEMU 扩展按键事件，直接带 qnum。
+    func sendKey(qnum: UInt32, down: Bool) {
         var m = Data([255, 0])
         m.append(be: UInt16(down ? 1 : 0))
         m.append(be: UInt32(0))
-        m.append(be: scancode)
+        m.append(be: qnum)
         send(m)
     }
 
@@ -135,22 +138,44 @@ final class VNCClient: @unchecked Sendable {
             case nil: throw VNCError.protocol
             }
         }
-        if let image = context?.makeImage() {
-            let size = CGSize(width: image.width, height: image.height), onFrame = onFrame
-            Task { @MainActor in onFrame?(image, size) }
+        if let image = context?.makeImage(), post(image) {
+            let onFrame = onFrame
+            Task { @MainActor [self] in
+                guard let image = takeFrame() else { return }
+                onFrame?(image, CGSize(width: image.width, height: image.height))
+            }
         }
         requestUpdate(incremental: true)
     }
 
+    /// 放下最新一帧，返回是否需要派主线程来取（已有一次在途时不必）。
+    private func post(_ image: CGImage) -> Bool {
+        frameLock.lock()
+        defer { frameLock.unlock() }
+        let idle = pendingFrame == nil
+        pendingFrame = image
+        return idle
+    }
+
+    private func takeFrame() -> CGImage? {
+        frameLock.lock()
+        defer { frameLock.unlock() }
+        defer { pendingFrame = nil }
+        return pendingFrame
+    }
+
+    /// 像素直接读进位图上下文；矩形越界时读出丢弃。
     private func readRaw(x: Int, y: Int, width: Int, height: Int) throws {
         let rowBytes = width * 4
-        let pixels = try read(rowBytes * height)
-        guard let context, let base = context.data, x + width <= context.width, y + height <= context.height else { return }
+        guard let context, let base = context.data, x + width <= context.width, y + height <= context.height else {
+            _ = try read(rowBytes * height)
+            return
+        }
         let stride = context.bytesPerRow
-        pixels.withUnsafeBytes { src in
-            for row in 0..<height {
-                (base + (y + row) * stride + x * 4).copyMemory(from: src.baseAddress! + row * rowBytes, byteCount: rowBytes)
-            }
+        if x == 0, rowBytes == stride {
+            try read(into: base + y * stride, count: rowBytes * height)
+        } else {
+            for row in 0..<height { try read(into: base + (y + row) * stride + x * 4, count: rowBytes) }
         }
     }
 
@@ -181,6 +206,10 @@ final class VNCClient: @unchecked Sendable {
         guard count > 0 else { return Data() }
         guard let data = try socket.readExact(count) else { throw VNCError.closed }
         return data
+    }
+
+    private func read(into destination: UnsafeMutableRawPointer, count: Int) throws {
+        guard try socket.readExact(into: UnsafeMutableRawBufferPointer(start: destination, count: count)) else { throw VNCError.closed }
     }
 
     private enum VNCError: Error { case `protocol`, closed }

@@ -8,18 +8,21 @@ public enum AgentClient {
     static func open(_ request: AgentProtocol.Request, bundle: VMBundle, timeout: Int = 30) throws -> (AgentProtocol.Response, UnixSocket) {
         let socket = try ControlClient.openGuestPort(bundle, port: AgentProtocol.port)
         socket.setTimeout(seconds: timeout)
-
-        try socket.writeLine(JSONEncoder().encode(request))
         let exact = if case .forward = request { true } else { false }
-        guard let line = try socket.readLine(exact: exact) else { throw MacVMError.io("客户机代理关闭了连接") }
-        let response = try JSONDecoder().decode(AgentProtocol.Response.self, from: line)
+        guard let response = try socket.exchange(request, as: AgentProtocol.Response.self, exact: exact) else {
+            throw MacVMError.io("客户机代理关闭了连接")
+        }
         return (response, socket)
     }
 
     static func call(_ request: AgentProtocol.Request, bundle: VMBundle, timeout: Int = 30) throws -> AgentProtocol.Response {
-        let (response, _) = try open(request, bundle: bundle, timeout: timeout)
-        guard response.ok else { throw MacVMError.engine("客户机代理：\(response.error ?? "未知错误")") }
-        return response
+        try open(request, bundle: bundle, timeout: timeout).0.checked()
+    }
+
+    /// 在已连到代理的 `socket` 上发一个请求，返回代理是否接受；任何失败都算不接受。
+    static func call(_ request: AgentProtocol.Request, over socket: UnixSocket, timeout: Int) -> Bool {
+        socket.setTimeout(seconds: timeout)
+        return (try? socket.exchange(request, as: AgentProtocol.Response.self))?.ok == true
     }
 
     public static func info(_ bundle: VMBundle, timeout: Int = 5) throws -> AgentProtocol.Info {
@@ -29,15 +32,10 @@ public enum AgentClient {
 
     public static func isReachable(_ bundle: VMBundle) -> Bool { (try? info(bundle, timeout: 2)) != nil }
 
-    public static func shutdown(_ bundle: VMBundle, reboot: Bool = false) throws { _ = try call(.shutdown(reboot: reboot), bundle: bundle) }
-    public static func setTime(_ bundle: VMBundle, to date: Date = Date()) throws { _ = try call(.setTime(unixMs: Int64(date.timeIntervalSince1970 * 1000)), bundle: bundle) }
-    public static func clipboard(_ bundle: VMBundle) throws -> String { try call(.clipboardGet, bundle: bundle).text ?? "" }
-    public static func setClipboard(_ bundle: VMBundle, text: String) throws { _ = try call(.clipboardSet(text: text), bundle: bundle) }
-
     /// 客户机本地 TCP 端口的字节管道；返回的 socket 交给调用方转发。
     static func forward(_ bundle: VMBundle, port: UInt16) throws -> UnixSocket {
         let (response, socket) = try open(.forward(port: port), bundle: bundle)
-        guard response.ok else { throw MacVMError.engine("客户机代理：\(response.error ?? "端口转发失败")") }
+        _ = try response.checked("端口转发失败")
         socket.setTimeout(seconds: 0)
         return socket
     }
@@ -45,7 +43,7 @@ public enum AgentClient {
     /// 执行命令，标准输入输出接到本进程，返回客户机命令的退出码。
     public static func exec(_ bundle: VMBundle, request: AgentProtocol.ExecRequest) throws -> Int32 {
         let (response, socket) = try open(.exec(request), bundle: bundle)
-        guard response.ok else { throw MacVMError.engine("客户机代理：\(response.error ?? "执行失败")") }
+        _ = try response.checked("执行失败")
         socket.setTimeout(seconds: 0)
         return try ExecSession(socket: socket, tty: request.tty == true).run()
     }

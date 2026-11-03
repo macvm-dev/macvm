@@ -12,23 +12,39 @@ public enum SSHConfig {
 
     public static func hostAlias(for name: String) -> String { hostPrefix + name }
 
-    /// 客户机主机密钥随重建而变，而连接只经本机 proxy 到达，所以不做主机密钥校验。
+    /// `macvm proxy <name>` 作为 ssh 的 ProxyCommand，`flags` 接在后面。
+    public static func proxyCommand(macvmPath: String, name: String, flags: [String] = []) -> String {
+        (["\"\(macvmPath)\"", "proxy", name] + flags).joined(separator: " ")
+    }
+
+    /// 客户机主机密钥随重建而变，而连接只到达本机的虚拟机，所以不做主机密钥校验。
+    private static let hostKeyOptions = [("StrictHostKeyChecking", "no"), ("UserKnownHostsFile", "/dev/null"), ("LogLevel", "ERROR")]
+
+    /// 不含 IdentityFile：命令行上用 `-i` 传，路径里有空格也不会被 ssh 的选项解析拆开。
+    private static func keyOptions(proxyCommand: String?) -> [(String, String)] {
+        [("IdentitiesOnly", "yes")] + (proxyCommand.map { [("ProxyCommand", $0)] } ?? []) + hostKeyOptions
+    }
+
+    private static func arguments(_ options: [(String, String)]) -> [String] { options.flatMap { ["-o", "\($0)=\($1)"] } }
+
+    /// 不校验主机密钥的 ssh 命令行选项，供用密码登录的连接使用。
+    public static var hostKeyArguments: [String] { arguments(hostKeyOptions) }
+
+    /// 用 macvm 专用密钥登录、不校验主机密钥的 ssh 命令行选项；`proxyCommand` 为 nil 时直连。
+    public static func keyArguments(proxyCommand: String?) -> [String] {
+        ["-i", SSHKeys.privateKeyURL.path] + arguments(keyOptions(proxyCommand: proxyCommand))
+    }
+
     public static func render(_ configs: [VMConfig], macvmPath: String) -> String {
         var out = "# 由 macvm 生成，会被覆盖。\n"
         for config in configs {
-            out += """
-
-            Host \(hostAlias(for: config.name))
-              HostName \(config.name)
-            \(config.guestUser.map { "  User \($0)\n" } ?? "")  IdentityFile \(SSHKeys.privateKeyURL.path)
-              IdentitiesOnly yes
-              ProxyCommand "\(macvmPath)" proxy \(config.name)
-              StrictHostKeyChecking no
-              UserKnownHostsFile /dev/null
-              LogLevel ERROR
-              ServerAliveInterval 30
-
-            """
+            out += "\nHost \(hostAlias(for: config.name))\n  HostName \(config.name)\n"
+            if let user = config.guestUser { out += "  User \(user)\n" }
+            out += "  IdentityFile \(SSHKeys.privateKeyURL.path)\n"
+            for (key, value) in keyOptions(proxyCommand: proxyCommand(macvmPath: macvmPath, name: config.name)) {
+                out += "  \(key) \(value)\n"
+            }
+            out += "  ServerAliveInterval 30\n"
         }
         return out
     }

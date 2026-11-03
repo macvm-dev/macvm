@@ -56,7 +56,7 @@ public enum RuntimeDirectory {
     public static func ensure() throws {
         let path = url.path
         if mkdir(path, 0o700) != 0 && errno != EEXIST {
-            throw MacVMError.io("创建 \(path) 失败：\(String(cString: strerror(errno)))")
+            throw MacVMError.posix("创建 \(path)")
         }
         var st = stat()
         guard lstat(path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR, st.st_uid == getuid() else {
