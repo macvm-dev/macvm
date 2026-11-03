@@ -179,6 +179,8 @@ build_libraries() {
   unpack epoxy.tar.gz epoxy "$native/patches/epoxy-dylibs.patch"
   meson_build "$sources/epoxy" -Dtests=false -Dglx=no -Degl=yes -Dx11=false "-Dc_args=-I$prefix/include"
   unpack virglrenderer.tar.gz virglrenderer
+  # virglrenderer 与 DXMT 经 directx-native 约定 Direct3D 后端的接口，两边用同一份；Meson 优先用已在 subprojects 下的源码。
+  unpack directx-native.tar.gz virglrenderer/subprojects/directx-native
   meson_build "$sources/virglrenderer" -Dtests=false -Dvtest=false -Dvenus=false -Dneptune=true -Dcheck-gl-errors=false \
     -Drender-server-mode=process "-Dc_args=-I$prefix/include"
 
@@ -193,6 +195,7 @@ build_libraries() {
   cmake --install "$sources/llvm-project/build"
   unpack directx.tar.gz directx-headers
   unpack dxmt.tar.gz dxmt "$native/patches/dxmt-shared-resource-initialization.patch" "$native/patches/dxmt-shared-resource-tests.patch"
+  unpack directx-native.tar.gz dxmt/subprojects/directx-native
   if [ ! -e "$sources/dxmt/include/native/directx/d3d11.h" ]; then
     rmdir "$sources/dxmt/include/native/directx"
     ln -s ../../../directx-headers "$sources/dxmt/include/native/directx"
@@ -345,6 +348,7 @@ for pattern in ('LICENSE*', 'COPYING*'):
 if direct3d:
     shutil.copy2(source / 'llvm-project/llvm/LICENSE.TXT', target / 'LLVM-LICENSE.TXT')
     shutil.copy2(source / 'dxmt/src/util/dxvk.LICENSE', target / 'DXVK-LICENSE')
+shutil.copy2(source / 'virglrenderer/subprojects/directx-native/LICENSE', target / 'directx-native-LICENSE')
 PY
   local license
   for license in glib/LGPL-2.1-or-later.txt pixman/COPYING pcre2/LICENCE.md openssl/LICENSE.txt gettext/COPYING libslirp/COPYRIGHT; do
@@ -370,7 +374,7 @@ libslirp and gettext's libintl. The firmware in share/ is EDK II as it comes wit
 source. The licences are in licenses/.
 EOF
   [ "$direct3d" != yes ] || printf '\n%s\n' "lib/libdxmt-native.dylib is DXMT (LGPL 2.1), built with LLVM 15. share/viogpu3d-arm64x-signed.zip
-is the Windows driver from github.com/osy/kvm-guest-drivers-windows v0.3." >> "$out/README.txt"
+is the Windows driver from github.com/osy/kvm-guest-drivers-windows v0.5." >> "$out/README.txt"
 
   # 先 ad-hoc 签名以便本机直接运行；打包进 App 时再正式签名。
   for file in "$out"/lib/*.dylib "$out/bin/virgl_render_server"; do codesign --force --sign - "$file" 2>/dev/null; done

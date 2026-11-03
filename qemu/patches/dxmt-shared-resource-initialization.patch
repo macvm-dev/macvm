@@ -67,7 +67,7 @@ index b76df64a5..2abdb0257 100644
 +        auto src = reinterpret_cast<const uint8_t *>(data.pSysMem);
 +        size_t row_bytes = std::min<size_t>((size_t)finalDesc.Width * format_desc.BytesPerTexel, data.SysMemPitch);
 +        for (unsigned row = 0; dst && src && row < finalDesc.Height; row++)
-+          memcpy(dst + row * pod.stride, src + (size_t)row * data.SysMemPitch, row_bytes);
++          memcpy(dst + row * pod.planes[0].pitch, src + (size_t)row * data.SysMemPitch, row_bytes);
 +      }
 +      texture->rename(std::move(shm_allocation));
        *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
