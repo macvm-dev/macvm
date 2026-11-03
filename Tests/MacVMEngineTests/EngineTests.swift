@@ -111,6 +111,17 @@ struct QEMUCommandTests {
         #expect(args.contains("mac=02:00:00:00:00:01"))
     }
 
+    @Test func installedWindowsUsesVirtioGPU() throws {
+        let bundle = VMBundle(url: URL(filePath: "/vms/win.macvm"))
+        var config = VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30,
+                              disks: [DiskConfig(path: "disk.img", bus: .nvme)], installMedia: ["/isos/win.iso"])
+        #expect(try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments().contains("ramfb"))
+        config.installMedia = []
+        let args = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments()
+        #expect(args.contains("virtio-gpu-pci") && !args.contains("ramfb"))
+        #expect(args.contains("unix:" + QEMUCommand.vncSocket(bundle).path))
+    }
+
     @Test func rejectsDirectorySharing() {
         let bundle = VMBundle(url: URL(filePath: "/vms/a.macvm"))
         let config = VMConfig(name: "a", os: .linux, engine: .qemu, cpuCount: 2, memorySize: 1 << 30, disks: [],
@@ -160,5 +171,17 @@ struct MoreControlProtocolTests {
     @Test(arguments: [ControlRequest.connect(port: 6100), .screenshot(path: "/tmp/a.png"), .display(width: 2560, height: 1600)])
     func roundTrip(request: ControlRequest) throws {
         #expect(try JSONDecoder().decode(ControlRequest.self, from: JSONEncoder().encode(request)) == request)
+    }
+}
+
+struct CursorShapeTests {
+    @Test func decodesFixtures() throws {
+        let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../protocol/fixtures/cursors.jsonl")
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        let shapes = try lines.map { try JSONDecoder().decode(AgentProtocol.CursorShape.self, from: Data($0.utf8)) }
+        #expect(shapes.count == 2)
+        let image = try #require(Data(base64Encoded: shapes[0].bgra).flatMap { cursorImage(bgra: $0, width: shapes[0].width, height: shapes[0].height) })
+        #expect(image.width == 2 && image.height == 1 && shapes[0].hot_x == 1)
+        #expect(shapes[1].hidden && cursorImage(bgra: Data(), width: 0, height: 0) == nil)
     }
 }

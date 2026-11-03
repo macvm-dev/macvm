@@ -26,6 +26,8 @@ fn main() {
             std::process::exit(1);
         }
     };
+    #[cfg(windows)]
+    platform::configure_hardware_cursor();
     let config = Arc::new(config);
     loop {
         match listener.accept() {
@@ -84,6 +86,7 @@ fn serve(mut conn: Conn, config: &Config) -> io::Result<()> {
         Request::ClipboardSet { text } => reply(&mut conn, platform::clipboard_set(&text).map(|_| Response::ok())),
         Request::Mount { tag, path, read_only } => reply(&mut conn, platform::mount_virtiofs(&tag, &path, read_only).map(|_| Response::ok())),
         Request::Display { width, height } => reply(&mut conn, platform::set_display(width, height).map(|_| Response::ok())),
+        Request::CursorWatch => watch_cursor(conn),
         Request::Forward { port } => match TcpStream::connect(("127.0.0.1", port)) {
             Ok(tcp) => {
                 tcp.set_nodelay(true).ok();
@@ -106,6 +109,26 @@ fn info() -> Info {
         mem_total,
         mem_available,
         uptime_ms: platform::uptime_ms(),
+    }
+}
+
+/// 首个形状之前先回 ok；平台不支持时回错误。之后每行一个 `CursorShape`，宿主断开即结束。
+fn watch_cursor(mut conn: Conn) -> io::Result<()> {
+    let mut started = false;
+    let result = platform::watch_cursor(|image| {
+        if !started {
+            proto::write_json_line(&mut conn, &Response::ok())?;
+            started = true;
+        }
+        let shape = match image {
+            None => proto::CursorShape { hidden: true, ..Default::default() },
+            Some(i) => proto::CursorShape { hidden: false, width: i.width, height: i.height, hot_x: i.hot_x, hot_y: i.hot_y, bgra: proto::base64(&i.bgra) },
+        };
+        proto::write_json_line(&mut conn, &shape)
+    });
+    match result {
+        Err(e) if !started => proto::write_json_line(&mut conn, &Response::error(e.to_string())),
+        _ => Ok(()),
     }
 }
 

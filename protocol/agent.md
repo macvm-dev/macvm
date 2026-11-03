@@ -25,6 +25,7 @@
 | `clipboard-set` | `text` | `{"ok":true}` |
 | `mount` | `tag`，`path`，`read_only`（布尔） | `{"ok":true}`（仅 Linux：挂载 virtio-fs） |
 | `display` | `width`，`height`（像素） | `{"ok":true}`（仅 Windows：设定主显示器与分辨率） |
+| `cursor-watch` | — | `{"ok":true}`，随后每当客户机光标变化发一行光标形状，直到连接关闭（仅 Windows） |
 
 `info` 的内容：
 
@@ -35,6 +36,15 @@
 `os` 取值 `linux`、`macos`、`windows`。内存单位为字节。
 
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
+
+`cursor-watch`：客户机用硬件光标时（QEMU 的 virtio-gpu），宿主用代理推送的形状作宿主光标。连上后先发当前光标，之后只在光标句柄或显隐变化时发：
+
+```json
+{"width":32,"height":32,"hot_x":0,"hot_y":0,"bgra":"…"}
+{"hidden":true,"width":0,"height":0,"hot_x":0,"hot_y":0}
+```
+
+`bgra` 为逐像素 B G R A（非预乘 alpha）、自上而下的 Base64；`hidden` 为 true 时其余字段无意义，省略时为 false。客户机本次开机自绘光标（VZ 下，或未开硬件光标）时回错误响应。
 
 `exec` 经目标用户的登录 shell 执行 `argv`，环境与 SSH 登录一致；`user` 省略时为代理启动参数 `--user` 指定的用户，代理不是 root 时只能以自身身份执行。
 

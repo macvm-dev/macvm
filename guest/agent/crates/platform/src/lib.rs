@@ -45,3 +45,12 @@ pub struct Spawned {
     pub io: SpawnedIo,
     pub child: Box<dyn ChildProcess>,
 }
+
+/// 客户机光标图像：自上而下逐像素 B G R A，非预乘。
+pub struct CursorImage {
+    pub width: u32,
+    pub height: u32,
+    pub hot_x: u32,
+    pub hot_y: u32,
+    pub bgra: Vec<u8>,
+}

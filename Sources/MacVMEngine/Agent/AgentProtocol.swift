@@ -35,6 +35,7 @@ public enum AgentProtocol {
         case clipboardSet(text: String)
         case mount(tag: String, path: String, readOnly: Bool)
         case display(width: Int, height: Int)
+        case cursorWatch
 
         private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height }
 
@@ -56,6 +57,7 @@ public enum AgentProtocol {
             case .clipboardSet(let text): try c.encode("clipboard-set", forKey: .op); try c.encode(text, forKey: .text)
             case .mount(let tag, let path, let ro):
                 try c.encode("mount", forKey: .op); try c.encode(tag, forKey: .tag); try c.encode(path, forKey: .path); try c.encode(ro, forKey: .read_only)
+            case .cursorWatch: try c.encode("cursor-watch", forKey: .op)
             case .display(let width, let height):
                 try c.encode("display", forKey: .op); try c.encode(width, forKey: .width); try c.encode(height, forKey: .height)
             }
@@ -75,6 +77,7 @@ public enum AgentProtocol {
                 self = .mount(tag: try c.decode(String.self, forKey: .tag), path: try c.decode(String.self, forKey: .path),
                               readOnly: try c.decodeIfPresent(Bool.self, forKey: .read_only) ?? false)
             case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
+            case "cursor-watch": self = .cursorWatch
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }
@@ -100,6 +103,28 @@ public enum AgentProtocol {
         public let error: String?
         public let info: Info?
         public let text: String?
+    }
+
+    /// `cursor-watch` 之后逐行推送的客户机光标；`bgra` 为 Base64 的逐像素 B G R A（非预乘），自上而下。
+    struct CursorShape: Decodable {
+        var hidden = false
+        var width = 0
+        var height = 0
+        var hot_x = 0
+        var hot_y = 0
+        var bgra = ""
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+            width = try c.decodeIfPresent(Int.self, forKey: .width) ?? 0
+            height = try c.decodeIfPresent(Int.self, forKey: .height) ?? 0
+            hot_x = try c.decodeIfPresent(Int.self, forKey: .hot_x) ?? 0
+            hot_y = try c.decodeIfPresent(Int.self, forKey: .hot_y) ?? 0
+            bgra = try c.decodeIfPresent(String.self, forKey: .bgra) ?? ""
+        }
+
+        private enum CodingKeys: String, CodingKey { case hidden, width, height, hot_x, hot_y, bgra }
     }
 
     enum FrameKind: UInt8 {

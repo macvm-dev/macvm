@@ -3,10 +3,17 @@ public import MacVMModel
 
 /// 显示 QEMU 虚拟机画面并转发键鼠的视图，连接 `QEMUCommand.vncSocket` 上的 VNC。
 /// 不要求虚拟机在本进程运行：`macvm start` 在后台运行的虚拟机同样能显示。
-/// 客户机分辨率由客户机决定，画面按比例缩放进视图。
+/// 客户机分辨率由客户机决定，画面按比例缩放进视图。客户机有硬件光标（virtio-gpu）时用它的形状作宿主光标，
+/// 跟手且无延迟；没有时（ramfb）客户机把光标画进画面，宿主光标隐藏。光标形状优先取客户机代理推送的
+/// （`AgentCursorWatcher`）：viogpudo 上传形状与切换光标之间没有同步，VNC 收到的常是上一个形状。
 public final class QEMUDisplayView: NSView {
+    private let bundle: VMBundle
     private let socketPath: String
     private var client: VNCClient?
+    private var cursorWatcher: AgentCursorWatcher?
+    private var cursorWatchRetry: Timer?
+    /// 代理正在推送光标形状，此时忽略 VNC 的光标。
+    private var agentCursorActive = false
     private var framebufferSize = CGSize.zero
     private var reconnect: Timer?
     private var buttons: UInt8 = 0
@@ -14,6 +21,7 @@ public final class QEMUDisplayView: NSView {
     private var pressedModifiers: Set<UInt16> = []
 
     public init(bundle: VMBundle) {
+        self.bundle = bundle
         socketPath = QEMUCommand.vncSocket(bundle).path
         super.init(frame: .zero)
         wantsLayer = true
@@ -46,6 +54,12 @@ public final class QEMUDisplayView: NSView {
         client?.onClose = nil
         client?.close()
         client = nil
+        cursorWatchRetry?.invalidate()
+        cursorWatchRetry = nil
+        cursorWatcher?.onClose = nil
+        cursorWatcher?.close()
+        cursorWatcher = nil
+        agentCursorActive = false
     }
 
     private func connect() {
@@ -53,8 +67,15 @@ public final class QEMUDisplayView: NSView {
         do {
             let client = try VNCClient(path: socketPath)
             client.onFrame = { [weak self] image, size in
-                self?.framebufferSize = size
-                self?.layer?.contents = image
+                guard let self else { return }
+                let resized = framebufferSize != size
+                framebufferSize = size
+                layer?.contents = image
+                if resized { rebuildGuestCursor() }
+            }
+            client.onCursor = { [weak self] image, hotspot in
+                guard let self, !agentCursorActive else { return }
+                setGuestCursor(image, hotspot: hotspot)
             }
             client.onClose = { [weak self] in
                 self?.client = nil
@@ -62,6 +83,7 @@ public final class QEMUDisplayView: NSView {
             }
             self.client = client
             client.start()
+            watchAgentCursor()
         } catch {
             scheduleReconnect()
         }
@@ -80,17 +102,82 @@ public final class QEMUDisplayView: NSView {
 
     // MARK: - 光标
 
-    /// 客户机自己在画面里画光标，指针在视图里且窗口在前台时隐藏宿主光标，免得出现两个。
+    /// 代理未就绪（客户机还在开机）或连接断开时过一会儿重试；代理明确不提供时不再重试，直到画面重连。
+    private func watchAgentCursor() {
+        guard cursorWatcher == nil, cursorWatchRetry == nil, window != nil else { return }
+        let watcher = AgentCursorWatcher(bundle: bundle)
+        watcher.onShape = { [weak self] image, hotspot in
+            guard let self else { return }
+            agentCursorActive = true
+            setGuestCursor(image, hotspot: hotspot)
+        }
+        watcher.onClose = { [weak self] retry in
+            guard let self else { return }
+            cursorWatcher = nil
+            agentCursorActive = false
+            guard retry, window != nil else { return }
+            cursorWatchRetry = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.cursorWatchRetry = nil
+                    self?.watchAgentCursor()
+                }
+            }
+        }
+        cursorWatcher = watcher
+        watcher.start()
+    }
+
+    /// 指针在视图里且窗口在前台时：有客户机光标形状就设为宿主光标，否则隐藏宿主光标（客户机自己画），免得出现两个。
     /// `NSCursor.hide` 按次数计、作用于整个应用，所以只在状态变化时调用一次并在离开、失焦、移除时恢复。
     private var cursorHidden = false
     private var keyObservers: [any NSObjectProtocol] = []
+    private var guestCursorImage: (image: CGImage, hotspot: CGPoint)?
+    private var guestCursor: NSCursor?
+    /// 客户机隐藏了光标（如全屏视频、输入时）。
+    private var guestCursorHidden = false
+
+    private func setGuestCursor(_ image: CGImage?, hotspot: CGPoint) {
+        if let image {
+            guestCursorImage = (image, hotspot)
+            guestCursorHidden = false
+        } else {
+            guestCursorHidden = true
+        }
+        rebuildGuestCursor()
+    }
+
+    /// 光标按画面的缩放比例显示，与客户机里看到的大小一致。
+    private func rebuildGuestCursor() {
+        guard let (image, hotspot) = guestCursorImage else { return }
+        let scale = displayScale
+        let size = NSSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        guestCursor = NSCursor(image: NSImage(cgImage: image, size: size), hotSpot: NSPoint(x: hotspot.x * scale, y: hotspot.y * scale))
+        updateCursor()
+    }
+
+    private var displayScale: CGFloat {
+        guard framebufferSize.width > 0, framebufferSize.height > 0 else { return 1 }
+        return min(bounds.width / framebufferSize.width, bounds.height / framebufferSize.height)
+    }
 
     private func updateCursor() {
         let inside = window.map { bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
-        let hide = inside && window?.isKeyWindow == true
-        guard hide != cursorHidden else { return }
-        cursorHidden = hide
-        if hide { NSCursor.hide() } else { NSCursor.unhide() }
+        let active = inside && window?.isKeyWindow == true
+        let hide = active && (guestCursor == nil || guestCursorHidden)
+        if hide != cursorHidden {
+            cursorHidden = hide
+            if hide { NSCursor.hide() } else { NSCursor.unhide() }
+        }
+        if active, !hide, let guestCursor { guestCursor.set() }
+    }
+
+    public override func cursorUpdate(with event: NSEvent) {
+        if let guestCursor, !guestCursorHidden { guestCursor.set() } else { super.cursorUpdate(with: event) }
+    }
+
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        rebuildGuestCursor()
     }
 
     public override func mouseEntered(with event: NSEvent) { updateCursor() }
@@ -115,7 +202,7 @@ public final class QEMUDisplayView: NSView {
     public override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect], owner: self))
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
 

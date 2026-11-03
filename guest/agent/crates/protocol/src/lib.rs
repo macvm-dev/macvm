@@ -30,6 +30,43 @@ pub enum Request {
     },
     /// 宿主改变了显示输出尺寸，客户机桌面跟着切换。
     Display { width: u32, height: u32 },
+    /// 成功响应后，代理每当客户机光标变化就发一行 `CursorShape`，直到连接关闭。
+    CursorWatch,
+}
+
+/// 客户机当前光标：`bgra` 为逐像素 B G R A（非预乘）的 Base64，自上而下；`hidden` 时其余字段无意义。
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CursorShape {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hidden: bool,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    #[serde(default)]
+    pub hot_x: u32,
+    #[serde(default)]
+    pub hot_y: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bgra: String,
+}
+
+/// 标准 Base64（带填充）。
+pub fn base64(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = u32::from(b[0]) << 16 | u32::from(b[1]) << 8 | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -201,6 +238,16 @@ mod tests {
     }
 
     #[test]
+    fn cursor_shapes_round_trip() {
+        let text = std::fs::read_to_string(format!("{FIXTURES}/cursors.jsonl")).unwrap();
+        for line in text.lines().filter(|l| !l.is_empty()) {
+            let shape: CursorShape = serde_json::from_str(line).unwrap_or_else(|e| panic!("{line}: {e}"));
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(serde_json::to_value(&shape).unwrap(), value, "{line}");
+        }
+    }
+
+    #[test]
     fn frames_round_trip() {
         let mut buf = Vec::new();
         write_frame(&mut buf, FrameKind::Stdout, b"hello").unwrap();
@@ -209,5 +256,16 @@ mod tests {
         assert_eq!(read_frame(&mut r).unwrap(), Some((FrameKind::Stdout, b"hello".to_vec())));
         assert_eq!(read_frame(&mut r).unwrap(), Some((FrameKind::StdinEof, vec![])));
         assert_eq!(read_frame(&mut r).unwrap(), None);
+    }
+}
+
+#[cfg(test)]
+mod base64_tests {
+    #[test]
+    fn encodes_with_padding() {
+        assert_eq!(super::base64(b""), "");
+        assert_eq!(super::base64(b"f"), "Zg==");
+        assert_eq!(super::base64(b"fo"), "Zm8=");
+        assert_eq!(super::base64(b"foobar"), "Zm9vYmFy");
     }
 }

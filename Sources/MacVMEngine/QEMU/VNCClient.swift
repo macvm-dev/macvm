@@ -2,9 +2,12 @@ import CoreGraphics
 import Foundation
 
 /// RFB 3.8 客户端，只实现显示 QEMU 画面所需的部分：无认证、Raw 编码、桌面尺寸变化、
-/// QEMU 扩展按键事件（直接发扫描码，与键盘布局无关）。读在专用线程，回调在主线程。
+/// QEMU 扩展按键事件（直接发扫描码，与键盘布局无关）、Alpha 光标（客户机硬件光标的形状）。
+/// 读在专用线程，回调在主线程。
 final class VNCClient: @unchecked Sendable {
     var onFrame: (@MainActor (CGImage, CGSize) -> Void)?
+    /// 客户机硬件光标的形状与热点（像素）；尺寸为零表示隐藏光标。
+    var onCursor: (@MainActor (CGImage?, CGPoint) -> Void)?
     var onClose: (@MainActor () -> Void)?
 
     private let socket: UnixSocket
@@ -17,6 +20,7 @@ final class VNCClient: @unchecked Sendable {
         case desktopSize = -223
         case qemuExtendedKey = -258
         case extendedDesktopSize = -308
+        case alphaCursor = -314
     }
 
     init(path: String) throws {
@@ -91,7 +95,7 @@ final class VNCClient: @unchecked Sendable {
         format.append(contentsOf: [16, 8, 0, 0, 0, 0])
         send(format)
 
-        let encodings: [Encoding] = [.raw, .desktopSize, .extendedDesktopSize, .qemuExtendedKey]
+        let encodings: [Encoding] = [.raw, .desktopSize, .extendedDesktopSize, .qemuExtendedKey, .alphaCursor]
         var setEncodings = Data([2, 0])
         setEncodings.append(be: UInt16(encodings.count))
         for e in encodings { setEncodings.append(be: UInt32(bitPattern: e.rawValue)) }
@@ -127,6 +131,7 @@ final class VNCClient: @unchecked Sendable {
                 _ = try read(screens * 16)
                 resize(width: w, height: hgt)
             case .qemuExtendedKey: break // 服务端确认支持扩展按键，无载荷
+            case .alphaCursor: try readAlphaCursor(hotspot: CGPoint(x: x, y: y), width: w, height: hgt)
             case nil: throw VNCError.protocol
             }
         }
@@ -147,6 +152,14 @@ final class VNCClient: @unchecked Sendable {
                 (base + (y + row) * stride + x * 4).copyMemory(from: src.baseAddress! + row * rowBytes, byteCount: rowBytes)
             }
         }
+    }
+
+    /// 载荷为一个编码号（只会是 Raw）加逐像素 32 位小端 ARGB（内存中 B G R A，非预乘）。
+    private func readAlphaCursor(hotspot: CGPoint, width: Int, height: Int) throws {
+        guard Int32(bitPattern: try read(4).be32(at: 0)) == Encoding.raw.rawValue else { throw VNCError.protocol }
+        let image = cursorImage(bgra: try read(width * height * 4), width: width, height: height)
+        let onCursor = onCursor
+        Task { @MainActor [image] in onCursor?(image, hotspot) }
     }
 
     private func resize(width: Int, height: Int) {
@@ -186,4 +199,13 @@ private extension Data {
     func be32(at offset: Int) -> UInt32 {
         UInt32(be16(at: offset)) << 16 | UInt32(be16(at: offset + 2))
     }
+}
+
+/// 逐像素 B G R A（非预乘）、自上而下的光标图；尺寸为零或数据不足时为 nil。
+func cursorImage(bgra: Data, width: Int, height: Int) -> CGImage? {
+    guard width > 0, height > 0, bgra.count >= width * height * 4, let provider = CGDataProvider(data: bgra as CFData) else { return nil }
+    return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                   bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.first.rawValue),
+                   provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
 }

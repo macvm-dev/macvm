@@ -17,6 +17,10 @@ struct QEMUCommand {
     /// 画面经此 Unix socket 以 VNC 提供，`QEMUDisplayView` 连上它显示并转发键鼠。
     static func vncSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).vnc") }
 
+    /// 装好的 Windows 用 virtio-gpu：viogpudo 的硬件光标经 VNC 交给宿主作系统光标，Windows 也能直接从它启动。
+    /// 安装阶段的 WinPE 没有 viogpudo，只能用 ramfb 的线性帧缓冲；Linux 云镜像内核不带 DRM 驱动，同样用 ramfb。
+    var graphicsDevice: String { config.os == .windows && config.installMedia.isEmpty ? "virtio-gpu-pci" : "ramfb" }
+
     func arguments() throws -> [String] {
         var a: [String] = [
             "-name", config.name,
@@ -29,8 +33,7 @@ struct QEMUCommand {
             "-m", "\(config.memorySize >> 20)M",
             "-drive", "if=pflash,format=raw,readonly=on,file=\(qemu.firmwareCode.path)",
             "-drive", "if=pflash,format=raw,file=\(QEMUInstallation.varsURL(bundle).path)",
-            // Windows 启动阶段需要线性帧缓冲，virtio-gpu 的 GOP 只支持 Blt。
-            "-device", "ramfb",
+            "-device", graphicsDevice,
             "-device", "qemu-xhci,id=usb",
             "-device", "usb-kbd,bus=usb.0",
             "-device", "usb-tablet,bus=usb.0",
@@ -74,7 +77,6 @@ struct QEMUCommand {
         }
 
         a += ["-qmp", "unix:\(Self.qmpSocket(bundle).path),server=on,wait=off"]
-        // ramfb 没有硬件光标，客户机自己在画面里画光标；cocoa 默认在指针进入窗口时藏起宿主光标，免得出现两个。
         a += ["-display", display ? "cocoa" : "none", "-vnc", "unix:\(Self.vncSocket(bundle).path)", "-monitor", "none", "-serial", "none"]
         if let incoming { a += ["-incoming", "file:\(incoming.path)"] }
         return a

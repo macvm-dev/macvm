@@ -40,6 +40,7 @@
 | 客户机端口访问 | vsock、NAT IP | 只有 22 与代理端口，经 Unix socket 转发 |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 上的 VNC，应用可接上 `macvm start` 启动的虚拟机；`run --display` 另开 QEMU 窗口 |
 | Windows 分辨率 | 固定 1024x768，随窗口缩放 | 由客户机设定 |
+| Windows 光标 | 客户机自绘 | 宿主系统光标（硬件光标；换到 qemu 后第二次开机起生效） |
 
 Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改用 vz 运行。
 
