@@ -13,7 +13,7 @@
 | 命令 | 作用 |
 | --- | --- |
 | `create <名> [--image ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu]` | 创建 Linux / Windows 虚拟机；Windows 从原版 ISO 无人值守部署 |
-| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高]` | 修改已停止虚拟机的配置，可切换引擎 |
+| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off]` | 修改已停止虚拟机的配置，可切换引擎；只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效） |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `install-macos <名> [--ipsw 文件]` | 安装 macOS 虚拟机并开通 SSH 与代理 |
@@ -39,7 +39,7 @@
 | 共享目录（virtio-fs） | 支持 | 不支持 |
 | 客户机端口访问 | vsock、NAT IP | 只有 22 与代理端口，经 Unix socket 转发 |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 截不到）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
-| Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600）；否则由客户机设定 |
+| Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600；`--retina on` 时按屏幕像素，并把 Windows 缩放比例调到相同倍数；总像素不超过约 780 万）；否则由客户机设定 |
 | Windows 光标 | 客户机自绘 | 宿主系统光标（硬件光标；换到 qemu 后第二次开机起生效） |
 | Windows 3D | 无 | 自带的 QEMU 下装 viogpu3d（Direct3D 11.1，桌面合成用 GPU）；装上后只能用自带的 QEMU 运行，不能再改用 vz |
 

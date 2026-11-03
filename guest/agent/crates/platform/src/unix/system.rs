@@ -173,6 +173,11 @@ pub fn set_display(_width: u32, _height: u32) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机需要代理切换分辨率"))
 }
 
+/// Linux 与 macOS 客户机的缩放由桌面环境按显示器决定。
+pub fn set_display_scale(_percent: u32) -> io::Result<()> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机由代理设置缩放比例"))
+}
+
 pub fn mount_virtiofs(tag: &str, path: &str, read_only: bool) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {

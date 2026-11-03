@@ -1,0 +1,16 @@
+Default the EDID refresh rate to 60 Hz rather than 75 Hz. The preferred mode has
+to fit the 16-bit pixel clock of an EDID detailed timing for Windows to offer it,
+and at 60 Hz that holds up to about 7.8 million pixels (a full-screen Retina
+window on a 16-inch MacBook) rather than 6.2 million.
+
+--- a/hw/display/edid-generate.c
++++ b/hw/display/edid-generate.c
+@@ -387,7 +387,7 @@
+     uint8_t *dta = NULL;
+     uint8_t *did = NULL;
+     uint32_t width_mm, height_mm;
+-    uint32_t refresh_rate = info->refresh_rate ? info->refresh_rate : 75000;
++    uint32_t refresh_rate = info->refresh_rate ? info->refresh_rate : 60000;
+     uint32_t dpi = 100; /* if no width_mm/height_mm */
+     uint32_t large_screen = 0;
+ 

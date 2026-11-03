@@ -10,7 +10,7 @@ struct MachineDetailView: View {
     @State private var cloneName = ""
     @State private var showingClone = false
 
-    private var config: VMConfig? { try? model.library.bundle(named: vm.name).loadConfig() }
+    private var config: VMConfig? { model.config(of: vm.name) }
 
     var body: some View {
         Form {
@@ -32,6 +32,10 @@ struct MachineDetailView: View {
                         Text("QEMU（声音、挂起）").tag(Engine.qemu)
                     }
                     .disabled(vm.state != .stopped || !config.installMedia.isEmpty)
+                    if config.engine == .qemu {
+                        Toggle("高分辨率（Retina）", isOn: Binding(get: { config.display.retina }, set: { model.setRetina(vm.name, $0) }))
+                            .help("窗口里的分辨率按屏幕像素而不是点数，更清晰；Windows 同时把缩放比例调到相同倍数。运行中切换立即生效。")
+                    }
                 }
                 LabeledContent("CPU", value: "\(vm.cpuCount) 核")
                 LabeledContent("内存", value: ByteSize.format(vm.memorySize))

@@ -17,6 +17,8 @@ final class AppModel {
     var activity: [String: String] = [:]
 
     private(set) var runners: [String: any MachineRunner] = [:]
+    /// 经本模型改过配置就加一；`config(of:)` 读它，好让展示配置的视图在改动后重绘。
+    private var configRevision = 0
     private var servers: [String: ControlServer] = [:]
     private var refreshTask: Task<Void, Never>?
     let library = VMLibrary.default
@@ -37,6 +39,11 @@ final class AppModel {
     }
 
     func summary(_ name: String) -> VMSummary? { machines.first { $0.name == name } }
+
+    func config(of name: String) -> VMConfig? {
+        _ = configRevision
+        return try? library.bundle(named: name).loadConfig()
+    }
 
     func isRunningHere(_ name: String) -> Bool { runners[name] != nil }
 
@@ -114,6 +121,20 @@ final class AppModel {
             try config.switchEngine(to: engine)
             try bundle.saveConfig(config)
         } catch { report(error) }
+        configRevision += 1
+        refresh()
+    }
+
+    /// 运行中也可改：只影响画面窗口向客户机请求的分辨率与缩放。
+    func setRetina(_ name: String, _ retina: Bool) {
+        do {
+            let bundle = try library.bundle(named: name)
+            var config = try bundle.loadConfig()
+            config.display.retina = retina
+            try bundle.saveConfig(config)
+            QEMUDisplayView.displayPreferenceChanged(name)
+        } catch { report(error) }
+        configRevision += 1
         refresh()
     }
 

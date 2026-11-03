@@ -61,6 +61,7 @@ public final class QEMUDisplayView: NSView {
         guestFit?.invalidate()
         guestFit = nil
         requestedGuestSize = nil
+        requestedGuestScale = nil
         cursorWatchRetry?.invalidate()
         cursorWatchRetry = nil
         cursorWatcher?.onClose = nil
@@ -145,7 +146,11 @@ public final class QEMUDisplayView: NSView {
         let watcher = AgentCursorWatcher(bundle: bundle)
         watcher.onShape = { [weak self] image, hotspot in
             guard let self else { return }
-            if !agentCursorActive { spice?.showGuestCursor(false) }
+            if !agentCursorActive {
+                spice?.showGuestCursor(false)
+                // 代理刚上线，补上之前没送达的缩放比例。
+                scheduleGuestFit()
+            }
             agentCursorActive = true
             setGuestCursor(image, hotspot: hotspot)
         }
@@ -224,9 +229,11 @@ public final class QEMUDisplayView: NSView {
 
     private var guestFit: Timer?
     private var requestedGuestSize: (Int, Int)?
+    private var requestedGuestScale: Int?
+    private var preferenceObserver: (any NSObjectProtocol)?
     /// 拖动窗口时每帧都在变，停下来这么久再请客户机切换。
     private static let guestFitDelay: TimeInterval = 0.4
-    /// 客户机显示的最小尺寸，再小 Windows 的界面就排不开了。
+    /// 客户机显示的最小尺寸（点数），再小 Windows 的界面就排不开了。
     private static let minimumGuestSize = (width: 800, height: 600)
 
     private func scheduleGuestFit() {
@@ -238,16 +245,41 @@ public final class QEMUDisplayView: NSView {
     }
 
     /// 经控制通道请运行这台虚拟机的进程转告 QEMU；虚拟机可能在别的进程里运行（`macvm start`）。
+    /// 开了 `DisplayConfig.retina` 时按屏幕像素请求，Windows 再经代理把缩放比例调到屏幕倍数，界面大小与点数模式相同。
     private func fitGuestToView() {
-        guard spice != nil, window != nil else { return }
+        guard spice != nil, let window else { return }
+        let config = try? bundle.loadConfig()
+        let factor = config?.display.retina == true ? window.backingScaleFactor : 1
         // 偶数宽高，部分驱动要求宽度对齐。
-        let width = max(Int(bounds.width) & ~1, Self.minimumGuestSize.width)
-        let height = max(Int(bounds.height) & ~1, Self.minimumGuestSize.height)
-        guard requestedGuestSize.map({ $0 != (width, height) }) ?? true else { return }
-        requestedGuestSize = (width, height)
+        let (width, height) = QEMUCommand.fittingEDID((max(Int(bounds.width * factor) & ~1, Int(CGFloat(Self.minimumGuestSize.width) * factor)),
+                                                       max(Int(bounds.height * factor) & ~1, Int(CGFloat(Self.minimumGuestSize.height) * factor))))
         let bundle = bundle
-        Task.detached { _ = try? ControlClient.send(.display(width: width, height: height), to: bundle, timeout: 5) }
+        if requestedGuestSize.map({ $0 != (width, height) }) ?? true {
+            requestedGuestSize = (width, height)
+            Task.detached { _ = try? ControlClient.send(.display(width: width, height: height), to: bundle, timeout: 5) }
+        }
+        // 客户机的推荐缩放按固定 DPI 算，与分辨率无关，所以缩放比例不必等分辨率切换完。
+        let percent = Int((factor * 100).rounded())
+        guard config?.os == .windows, config?.guestAgent == true, requestedGuestScale != percent else { return }
+        requestedGuestScale = percent
+        Task.detached { [weak self] in
+            guard (try? AgentClient.call(.displayScale(percent: percent), bundle: bundle, timeout: 10))?.ok != true else { return }
+            // 代理还没上线：等它上线（光标推送开始）或下次窗口变化时再试。
+            await MainActor.run { if self?.requestedGuestScale == percent { self?.requestedGuestScale = nil } }
+        }
     }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        scheduleGuestFit()
+    }
+
+    /// 改了 `DisplayConfig.retina` 后调用，已打开的这台虚拟机的画面立即按新设置请求分辨率。
+    public static func displayPreferenceChanged(_ name: String) {
+        NotificationCenter.default.post(name: preferenceChanged, object: nil, userInfo: ["name": name])
+    }
+
+    private static let preferenceChanged = Notification.Name("MacVMDisplayPreferenceChanged")
 
     public override func mouseEntered(with event: NSEvent) { updateCursor() }
     public override func mouseExited(with event: NSEvent) { updateCursor() }
@@ -260,7 +292,14 @@ public final class QEMUDisplayView: NSView {
             cursorHidden = false
             NSCursor.unhide()
         }
+        if let preferenceObserver { NotificationCenter.default.removeObserver(preferenceObserver) }
+        preferenceObserver = nil
         guard let newWindow else { return }
+        let name = bundle.name
+        preferenceObserver = NotificationCenter.default.addObserver(forName: Self.preferenceChanged, object: nil, queue: .main) { [weak self] note in
+            guard note.userInfo?["name"] as? String == name else { return }
+            MainActor.assumeIsolated { self?.scheduleGuestFit() }
+        }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: newWindow, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.updateCursor() }

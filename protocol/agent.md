@@ -25,6 +25,7 @@
 | `clipboard-set` | `text` | `{"ok":true}` |
 | `mount` | `tag`，`path`，`read_only`（布尔） | `{"ok":true}`（仅 Linux：挂载 virtio-fs） |
 | `display` | `width`，`height`（像素） | `{"ok":true}`（仅 Windows：设定主显示器与分辨率） |
+| `display-scale` | `percent`（整数，100 为不缩放） | `{"ok":true}`（仅 Windows：设定所有显示器的缩放比例） |
 | `cursor-watch` | — | `{"ok":true}`，随后每当客户机光标变化发一行光标形状，直到连接关闭（仅 Windows） |
 
 `info` 的内容：
@@ -36,6 +37,8 @@
 `os` 取值 `linux`、`macos`、`windows`。内存单位为字节。
 
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
+
+`display-scale`：只用于 Windows。代理把每个活动显示器的缩放比例设为 Windows 支持的档位里不超过 `percent` 的最大一档，立即生效并记入当前用户的设置。宿主在高分辨率（Retina）画面下按窗口所在屏幕的像素倍数发送，关掉时发 100。
 
 `cursor-watch`：客户机用硬件光标时（QEMU 的 virtio-gpu），宿主用代理推送的形状作宿主光标。连上后先发当前光标，之后只在光标句柄或显隐变化时发：
 

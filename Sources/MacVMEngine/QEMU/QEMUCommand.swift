@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import MacVMModel
 
@@ -28,11 +29,37 @@ struct QEMUCommand {
     var graphicsDevice: String {
         if usesSpice {
             // hostmem 只是给客户机映射 GPU 资源的地址窗口，用多少占多少。
-            var device = "virtio-ramfb-gl,id=gpu,blob=true,hostmem=\(config.memorySize / 2),xres=\(config.display.width),yres=\(config.display.height)"
+            // Windows 的 viogpu3d 只提供不超过开机时这个尺寸的模式，分辨率跟随窗口（含 Retina）时就到不了更大；
+            // 取本机最大屏幕的像素尺寸，窗口放在哪块屏幕上都够用。
+            let initial = Self.fittingEDID(Self.largestHostDisplay().map { (max($0.width, config.display.width), max($0.height, config.display.height)) }
+                ?? (config.display.width, config.display.height))
+            var device = "virtio-ramfb-gl,id=gpu,blob=true,hostmem=\(config.memorySize / 2),xres=\(initial.0),yres=\(initial.1)"
             if config.os == .windows, qemu.direct3D { device += ",neptune=true" }
             return device
         }
         return config.os == .windows && config.installMedia.isEmpty ? "virtio-gpu-pci" : "ramfb"
+    }
+
+    /// Windows 只采用 EDID 详细时序描述得了的首选模式：像素时钟只有 16 位（单位 10 kHz），按 QEMU 生成时序的消隐比例
+    /// 与自带 QEMU 的 EDID 刷新率（60 Hz）算，宽×高最多这么多像素；超过时 QEMU 改用 DisplayID 描述，Windows 不认。
+    static let maximumGuestPixels = 7_800_000
+
+    /// 超过 `maximumGuestPixels` 时按比例缩小，保持宽高比与偶数宽高。
+    static func fittingEDID(_ size: (Int, Int)) -> (Int, Int) {
+        let pixels = size.0 * size.1
+        guard pixels > maximumGuestPixels else { return size }
+        let scale = (Double(maximumGuestPixels) / Double(pixels)).squareRoot()
+        return (Int(Double(size.0) * scale) & ~1, Int(Double(size.1) * scale) & ~1)
+    }
+
+    /// 当前接着的显示器里像素最多的那块的像素尺寸；没有显示器（如远程登录的无头 Mac）时为 nil。
+    static func largestHostDisplay() -> (width: Int, height: Int)? {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return nil }
+        return ids.compactMap { CGDisplayCopyDisplayMode($0) }.map { (width: $0.pixelWidth, height: $0.pixelHeight) }
+            .max { $0.width * $0.height < $1.width * $1.height }
     }
 
     func arguments() throws -> [String] {

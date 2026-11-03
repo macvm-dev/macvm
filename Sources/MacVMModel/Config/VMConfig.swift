@@ -156,11 +156,22 @@ public struct DisplayConfig: Codable, Sendable, Equatable {
     public var width: Int
     public var height: Int
     public var pixelsPerInch: Int
+    /// 客户机分辨率跟随窗口时按屏幕像素而不是点数（QEMU 引擎）；Windows 同时把缩放比例调到屏幕倍数，界面大小不变而更清晰。
+    public var retina: Bool
 
-    public init(width: Int = 1920, height: Int = 1200, pixelsPerInch: Int = 144) {
+    public init(width: Int = 1920, height: Int = 1200, pixelsPerInch: Int = 144, retina: Bool = false) {
         self.width = width
         self.height = height
         self.pixelsPerInch = pixelsPerInch
+        self.retina = retina
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        width = try c.decode(Int.self, forKey: .width)
+        height = try c.decode(Int.self, forKey: .height)
+        pixelsPerInch = try c.decode(Int.self, forKey: .pixelsPerInch)
+        retina = try c.decodeIfPresent(Bool.self, forKey: .retina) ?? false
     }
 }
 

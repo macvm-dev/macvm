@@ -36,8 +36,9 @@ public enum AgentProtocol {
         case mount(tag: String, path: String, readOnly: Bool)
         case display(width: Int, height: Int)
         case cursorWatch
+        case displayScale(percent: Int)
 
-        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height }
+        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent }
 
         public func encode(to encoder: any Encoder) throws {
             if case .exec(let req) = self {
@@ -58,6 +59,7 @@ public enum AgentProtocol {
             case .mount(let tag, let path, let ro):
                 try c.encode("mount", forKey: .op); try c.encode(tag, forKey: .tag); try c.encode(path, forKey: .path); try c.encode(ro, forKey: .read_only)
             case .cursorWatch: try c.encode("cursor-watch", forKey: .op)
+            case .displayScale(let percent): try c.encode("display-scale", forKey: .op); try c.encode(percent, forKey: .percent)
             case .display(let width, let height):
                 try c.encode("display", forKey: .op); try c.encode(width, forKey: .width); try c.encode(height, forKey: .height)
             }
@@ -78,6 +80,7 @@ public enum AgentProtocol {
                               readOnly: try c.decodeIfPresent(Bool.self, forKey: .read_only) ?? false)
             case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
             case "cursor-watch": self = .cursorWatch
+            case "display-scale": self = .displayScale(percent: try c.decode(Int.self, forKey: .percent))
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }

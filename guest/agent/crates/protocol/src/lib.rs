@@ -30,6 +30,8 @@ pub enum Request {
     },
     /// 宿主改变了显示输出尺寸，客户机桌面跟着切换。
     Display { width: u32, height: u32 },
+    /// 桌面缩放比例（百分比），取不超过它的最接近档位。
+    DisplayScale { percent: u32 },
     /// 成功响应后，代理每当客户机光标变化就发一行 `CursorShape`，直到连接关闭。
     CursorWatch,
 }

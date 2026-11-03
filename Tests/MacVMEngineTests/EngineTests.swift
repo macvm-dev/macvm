@@ -134,7 +134,11 @@ struct QEMUCommandTests {
         let args = try QEMUCommand(bundle: bundle, config: config, qemu: bundled).arguments()
         let joined = args.joined(separator: " ")
         // 安装期与装好后是同一个设备，Windows 不会因换设备重新识别显卡。
-        #expect(joined.contains("virtio-ramfb-gl,id=gpu,blob=true,hostmem=2147483648,xres=1920,yres=1200,neptune=true"))
+        let device = try #require(args.first { $0.hasPrefix("virtio-ramfb-gl,id=gpu,blob=true,hostmem=2147483648,") })
+        #expect(device.hasSuffix(",neptune=true"))
+        // 初始尺寸不小于配置，本机有更大的屏幕时取屏幕的。
+        let xres = try #require(device.split(separator: ",").first { $0.hasPrefix("xres=") }.flatMap { Int($0.dropFirst(5)) })
+        #expect(xres >= config.display.width)
         #expect(joined.contains("-spice unix=on,addr=\(QEMUCommand.spiceSocket(bundle).path),disable-ticketing=on,gl=on"))
         #expect(!args.contains("-vnc") && args.starts(with: ["-L", "/q/share"]))
         #expect(joined.contains("-bios /code.fd -drive if=pflash,unit=1,"))
@@ -142,6 +146,13 @@ struct QEMUCommandTests {
         #expect(bundled.environment["RENDER_SERVER_EXEC_PATH"] == "/q/bin/virgl_render_server")
         config.os = .linux
         #expect(!(try QEMUCommand(bundle: bundle, config: config, qemu: bundled).arguments().joined().contains("neptune")))
+    }
+
+    @Test func guestSizeFitsEDID() {
+        #expect(QEMUCommand.fittingEDID((2560, 1600)) == (2560, 1600))
+        let (w, h) = QEMUCommand.fittingEDID((5120, 2880))
+        #expect(w * h <= QEMUCommand.maximumGuestPixels && w % 2 == 0 && h % 2 == 0)
+        #expect(abs(Double(w) / Double(h) - 16.0 / 9.0) < 0.01)
     }
 
     @Test func rejectsDirectorySharing() {

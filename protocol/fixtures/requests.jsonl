@@ -10,3 +10,4 @@
 {"op":"mount","tag":"src","path":"/Users/ethan/src","read_only":false}
 {"op":"display","width":1920,"height":1200}
 {"op":"cursor-watch"}
+{"op":"display-scale","percent":200}
