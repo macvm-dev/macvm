@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import MacVMModel
 
 /// 经运行虚拟机的进程（控制 socket 的 `connect`）连到客户机代理。
