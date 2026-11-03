@@ -1,15 +1,17 @@
 public import AppKit
 public import MacVMModel
 
-/// 显示 QEMU 虚拟机画面并转发键鼠的视图，连接 `QEMUCommand.vncSocket` 上的 VNC。
-/// 不要求虚拟机在本进程运行：`macvm start` 在后台运行的虚拟机同样能显示。
-/// 客户机分辨率由客户机决定，画面按比例缩放进视图。客户机有硬件光标（virtio-gpu）时用它的形状作宿主光标，
-/// 跟手且无延迟；没有时（ramfb）客户机把光标画进画面，宿主光标隐藏。光标形状优先取客户机代理推送的
-/// （`AgentCursorWatcher`）：viogpudo 上传形状与切换光标之间没有同步，VNC 收到的常是上一个形状。
+/// 显示 QEMU 虚拟机画面并转发键鼠的视图：虚拟机提供 SPICE（`QEMUCommand.spiceSocket`）且有显示库时用 SPICE，
+/// 否则连 `QEMUCommand.vncSocket` 上的 VNC。不要求虚拟机在本进程运行：`macvm start` 在后台运行的虚拟机同样能显示。
+/// 客户机分辨率由客户机决定，画面按比例缩放进视图。光标形状优先取客户机代理推送的（`AgentCursorWatcher`），
+/// 用作宿主光标，跟手且无延迟；viogpudo 上传形状与切换光标之间没有同步，VNC 收到的常是上一个形状。
+/// 没有代理时，VNC 用它转来的硬件光标形状，SPICE 把光标画进画面；客户机自己画光标时宿主光标隐藏。
 public final class QEMUDisplayView: NSView {
     private let bundle: VMBundle
-    private let socketPath: String
-    private var client: VNCClient?
+    private let vncPath: String
+    private let spicePath: String
+    private var backend: (any DisplayBackend)?
+    private var spice: SpiceDisplay?
     private var cursorWatcher: AgentCursorWatcher?
     private var cursorWatchRetry: Timer?
     /// 代理正在推送光标形状，此时忽略 VNC 的光标。
@@ -22,7 +24,8 @@ public final class QEMUDisplayView: NSView {
 
     public init(bundle: VMBundle) {
         self.bundle = bundle
-        socketPath = QEMUCommand.vncSocket(bundle).path
+        vncPath = QEMUCommand.vncSocket(bundle).path
+        spicePath = QEMUCommand.spiceSocket(bundle).path
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
@@ -51,9 +54,9 @@ public final class QEMUDisplayView: NSView {
     public func disconnect() {
         reconnect?.invalidate()
         reconnect = nil
-        client?.onClose = nil
-        client?.close()
-        client = nil
+        backend?.close()
+        backend = nil
+        spice = nil
         cursorWatchRetry?.invalidate()
         cursorWatchRetry = nil
         cursorWatcher?.onClose = nil
@@ -63,9 +66,32 @@ public final class QEMUDisplayView: NSView {
     }
 
     private func connect() {
-        guard client == nil else { return }
+        guard backend == nil else { return }
+        if let library = Self.displayLibrary, let spice = SpiceDisplay(socketPath: spicePath, library: library) {
+            spice.onResize = { [weak self] size in
+                guard let self else { return }
+                let resized = framebufferSize != size
+                framebufferSize = size
+                if resized { rebuildGuestCursor() }
+            }
+            spice.onClose = { [weak self] in
+                guard let self else { return }
+                backend?.close()
+                backend = nil
+                self.spice = nil
+                scheduleReconnect()
+            }
+            spice.view.frame = bounds
+            spice.view.autoresizingMask = [.width, .height]
+            addSubview(spice.view)
+            spice.showGuestCursor(!agentCursorActive)
+            self.spice = spice
+            backend = spice
+            watchAgentCursor()
+            return
+        }
         do {
-            let client = try VNCClient(path: socketPath)
+            let client = try VNCClient(path: vncPath)
             client.onFrame = { [weak self] image, size in
                 guard let self else { return }
                 let resized = framebufferSize != size
@@ -78,16 +104,19 @@ public final class QEMUDisplayView: NSView {
                 setGuestCursor(image, hotspot: hotspot)
             }
             client.onClose = { [weak self] in
-                self?.client = nil
+                self?.backend = nil
                 self?.scheduleReconnect()
             }
-            self.client = client
+            backend = client
             client.start()
             watchAgentCursor()
         } catch {
             scheduleReconnect()
         }
     }
+
+    /// 自带 QEMU 的显示库；没有时只能用 VNC。
+    private static let displayLibrary = QEMUInstallation.locate()?.displayLibrary
 
     /// 虚拟机还在启动或刚重启时 socket 尚不可用，过一会儿再连。
     private func scheduleReconnect() {
@@ -108,6 +137,7 @@ public final class QEMUDisplayView: NSView {
         let watcher = AgentCursorWatcher(bundle: bundle)
         watcher.onShape = { [weak self] image, hotspot in
             guard let self else { return }
+            if !agentCursorActive { spice?.showGuestCursor(false) }
             agentCursorActive = true
             setGuestCursor(image, hotspot: hotspot)
         }
@@ -115,6 +145,7 @@ public final class QEMUDisplayView: NSView {
             guard let self else { return }
             cursorWatcher = nil
             agentCursorActive = false
+            spice?.showGuestCursor(true)
             guard retry, window != nil else { return }
             cursorWatchRetry = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -219,9 +250,9 @@ public final class QEMUDisplayView: NSView {
         return (UInt16(x), UInt16(y))
     }
 
-    private func sendPointer(_ event: NSEvent, buttons extra: UInt8 = 0) {
+    private func sendPointer(_ event: NSEvent) {
         guard let (x, y) = framebufferPoint(event) else { return }
-        client?.sendPointer(buttons: buttons | extra, x: x, y: y)
+        backend?.sendPointer(buttons: buttons, x: x, y: y)
     }
 
     private func setButton(_ bit: UInt8, down: Bool, _ event: NSEvent) {
@@ -246,14 +277,13 @@ public final class QEMUDisplayView: NSView {
     public override func otherMouseDown(with event: NSEvent) { setButton(2, down: true, event) }
     public override func otherMouseUp(with event: NSEvent) { setButton(2, down: false, event) }
 
-    /// 滚轮在 VNC 里是按键 4（上）与 5（下）的一次按下松开；触控板的连续滚动累计到一格再发。
+    /// 触控板的连续滚动累计到一格再发。
     public override func scrollWheel(with event: NSEvent) {
         let step: CGFloat = event.hasPreciseScrollingDeltas ? 12 : 1
         scrollAccumulator += event.scrollingDeltaY
+        guard let (x, y) = framebufferPoint(event) else { return }
         while abs(scrollAccumulator) >= step {
-            let bit: UInt8 = scrollAccumulator > 0 ? 8 : 16
-            sendPointer(event, buttons: bit)
-            sendPointer(event)
+            backend?.scroll(up: scrollAccumulator > 0, buttons: buttons, x: x, y: y)
             scrollAccumulator -= scrollAccumulator > 0 ? step : -step
         }
     }
@@ -293,7 +323,7 @@ public final class QEMUDisplayView: NSView {
 
     private func sendKey(_ keyCode: UInt16, down: Bool) {
         guard let scancode = Self.scancodes[keyCode] else { return }
-        client?.sendKey(scancode: scancode, down: down)
+        backend?.sendKey(qnum: scancode, down: down)
     }
 
     /// NSEvent 设备相关修饰键位（IOKit 的 NX_DEVICE*KEYMASK）。

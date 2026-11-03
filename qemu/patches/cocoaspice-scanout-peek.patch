@@ -1,0 +1,23 @@
+CocoaSpice: peek the IOSurface ID from the scanout descriptor rather than read
+it, so that the next client connecting to the same scanout can read it too.
+
+--- a/Sources/CocoaSpice/CSDisplay.m
++++ b/Sources/CocoaSpice/CSDisplay.m
+@@ -26,6 +26,7 @@
+ #import <spice-client.h>
+ #import <spice/protocol.h>
+ #import <IOSurface/IOSurfaceRef.h>
++#include <sys/socket.h>
+ #import <mach/vm_page_size.h>
+ 
+ @interface CSDisplay ()
+@@ -478,7 +479,8 @@
+         return;
+     }
+ 
+-    if (read(scanout.fd, &iosurfaceid, sizeof(iosurfaceid)) != sizeof(iosurfaceid)) {
++    // Peeked, not read: a client connecting later gets the same descriptor.
++    if (recv(scanout.fd, &iosurfaceid, sizeof(iosurfaceid), MSG_PEEK) != sizeof(iosurfaceid)) {
+         SPICE_DEBUG("[CocoaSpice] Failed to read scanout fd: %d", scanout.fd);
+         perror("read");
+         return;

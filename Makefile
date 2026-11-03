@@ -4,7 +4,7 @@ ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 
-.PHONY: build sign test lint agent firmware app release clean
+.PHONY: build sign test lint agent firmware qemu app release clean
 
 build:
 	swift build -c $(CONFIG)
@@ -26,6 +26,9 @@ agent:
 
 firmware:
 	scripts/build-firmware.sh
+
+qemu:
+	scripts/build-qemu.sh
 
 app:
 	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" scripts/bundle-app.sh

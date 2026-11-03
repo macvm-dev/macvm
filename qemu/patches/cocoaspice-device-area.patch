@@ -1,0 +1,16 @@
+CocoaSpice: recompute the visible area once a Metal device arrives, so that a GL
+scanout received before the first renderer is not left with an empty area.
+
+--- a/Sources/CocoaSpice/CSDisplay.m
++++ b/Sources/CocoaSpice/CSDisplay.m
+@@ -266,7 +266,9 @@
+         } else {
+             [self rebuildCanvasTexture];
+         }
+-        [self rebuildDisplayVertices];
++        // A scanout that arrived before the device set no primary area, so the
++        // visible area worked out from the monitors config was empty: redo it.
++        cs_update_monitor_area(SPICE_CHANNEL(self.channel), NULL, (__bridge void *)self);
+     }];
+     // possibly retrigger cursor rebuild
+     self.cursor.display = self;

@@ -14,6 +14,7 @@
 | `guest/agent` | 客户机代理（Cargo workspace） |
 | `guest/firmware` | UEFI 引导程序 macvm-boot（Rust）：在 VZ 上启动 Windows 用的帧缓冲垫片 |
 | `protocol` | 宿主与代理之间的协议定义与黄金样例 |
+| `qemu` | App 自带 QEMU 的源码清单、补丁与 SPICE 显示库（`make qemu` 编译，产物在 `.build/qemu`） |
 | `packaging` | Info.plist、entitlements、图标 |
 | `scripts` | Makefile 调用的脚本 |
 | `docs` | 架构与 CLI 契约文档 |

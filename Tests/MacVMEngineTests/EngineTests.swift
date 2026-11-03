@@ -122,6 +122,25 @@ struct QEMUCommandTests {
         #expect(args.contains("unix:" + QEMUCommand.vncSocket(bundle).path))
     }
 
+    @Test func bundledQEMUUsesSpiceGL() throws {
+        var bundled = qemu
+        bundled.dataDirectory = URL(filePath: "/q/share")
+        bundled.displayLibrary = URL(filePath: "/q/lib/libMacVMDisplay.dylib")
+        bundled.direct3D = true
+        let bundle = VMBundle(url: URL(filePath: "/vms/win.macvm"))
+        var config = VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30,
+                              disks: [DiskConfig(path: "disk.img", bus: .nvme)], installMedia: ["/isos/win.iso"])
+        let args = try QEMUCommand(bundle: bundle, config: config, qemu: bundled).arguments()
+        let joined = args.joined(separator: " ")
+        // 安装期与装好后是同一个设备，Windows 不会因换设备重新识别显卡。
+        #expect(joined.contains("virtio-ramfb-gl,id=gpu,blob=true,hostmem=2147483648,xres=1920,yres=1200,neptune=true"))
+        #expect(joined.contains("-spice unix=on,addr=\(QEMUCommand.spiceSocket(bundle).path),disable-ticketing=on,gl=on"))
+        #expect(!args.contains("-vnc") && args.starts(with: ["-L", "/q/share"]))
+        #expect(joined.contains("-bios /code.fd -drive if=pflash,unit=1,"))
+        config.os = .linux
+        #expect(!(try QEMUCommand(bundle: bundle, config: config, qemu: bundled).arguments().joined().contains("neptune")))
+    }
+
     @Test func rejectsDirectorySharing() {
         let bundle = VMBundle(url: URL(filePath: "/vms/a.macvm"))
         let config = VMConfig(name: "a", os: .linux, engine: .qemu, cpuCount: 2, memorySize: 1 << 30, disks: [],

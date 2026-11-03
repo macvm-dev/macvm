@@ -1,0 +1,20 @@
+CocoaSpice: present the current GL scanout as soon as a renderer attaches,
+instead of waiting for the guest to change the screen.
+
+--- a/Sources/CocoaSpice/CSDisplay.m
++++ b/Sources/CocoaSpice/CSDisplay.m
+@@ -270,6 +270,14 @@
+         // A scanout that arrived before the device set no primary area, so the
+         // visible area worked out from the monitors config was empty: redo it.
+         cs_update_monitor_area(SPICE_CHANNEL(self.channel), NULL, (__bridge void *)self);
++        // The server only sends a draw when the guest changes the screen, so a
++        // client attaching to an idle scanout would show nothing until then:
++        // present what the scanout already holds.
++        if (self.isGLEnabled && self.glTexture) {
++            [self copyScanoutRect:CGRectMake(0, 0, self.glTexture.width, self.glTexture.height) withCompletion:^{
++                [self invalidate];
++            }];
++        }
+     }];
+     // possibly retrigger cursor rebuild
+     self.cursor.display = self;

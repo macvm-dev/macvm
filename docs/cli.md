@@ -32,13 +32,13 @@
 
 | | vz（默认） | qemu |
 | --- | --- | --- |
-| 依赖 | 无 | `brew install qemu` |
+| 依赖 | 无 | App 自带（macOS 27 起）；否则 `brew install qemu` |
 | 资源占用 | 最低 | 多一个 QEMU 进程 |
 | macOS 客户机 | 支持 | 不支持 |
 | Windows 声音 / 挂起 | 无 | 有 |
 | 共享目录（virtio-fs） | 支持 | 不支持 |
 | 客户机端口访问 | vsock、NAT IP | 只有 22 与代理端口，经 Unix socket 转发 |
-| 画面 | 只能在运行它的进程里显示 | 经 Unix socket 上的 VNC，应用可接上 `macvm start` 启动的虚拟机；`run --display` 另开 QEMU 窗口 |
+| 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 截不到）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Windows 分辨率 | 固定 1024x768，随窗口缩放 | 由客户机设定 |
 | Windows 光标 | 客户机自绘 | 宿主系统光标（硬件光标；换到 qemu 后第二次开机起生效） |
 

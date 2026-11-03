@@ -1,0 +1,29 @@
+Share the IOSurface ID over a socket pair instead of a pipe, so that a SPICE
+client connecting after the first one can still read it (by peeking).
+
+--- a/ui/spice-display.c
++++ b/ui/spice-display.c
+@@ -1012,8 +1012,10 @@
+     if (!ssd->iosurface) {
+         return -1;
+     }
+-    if (pipe(fds) < 0) {
+-        error_report("spice_iosurface_create_fd: failed to create pipe");
++    /* A socket rather than a pipe: each SPICE client that connects later gets
++     * the same descriptor, and peeks the ID instead of consuming it. */
++    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
++        error_report("spice_iosurface_create_fd: failed to create socket pair");
+         return -1;
+     }
+     if (ssd->surface_send_fd > -1) {
+@@ -1025,7 +1027,9 @@
+     ssd->surface_send_fd = fds[1];
+     *fourcc = 'BGRA';
+     surfaceid = IOSurfaceGetID(ssd->iosurface);
+-    write(ssd->surface_send_fd, &surfaceid, sizeof(surfaceid));
++    if (write(ssd->surface_send_fd, &surfaceid, sizeof(surfaceid)) != sizeof(surfaceid)) {
++        error_report("spice_iosurface_create_fd: failed to send the surface ID");
++    }
+     return fds[0];
+ }
+ 
