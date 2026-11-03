@@ -152,8 +152,7 @@ public final class QEMUDisplayView: NSView {
             guard let self else { return }
             if !agentCursorActive {
                 spice?.showGuestCursor(false)
-                // 代理刚上线，补上之前没送达的缩放比例。
-                scheduleGuestFit()
+                agentCameOnline()
             }
             agentCursorActive = true
             arrowUntilAgentReturns = false
@@ -173,8 +172,8 @@ public final class QEMUDisplayView: NSView {
             updateCursor()
             spice?.showGuestCursor(true)
             guard retry, window != nil else {
-                // 代理在线但不提供光标（客户机自己画光标），同样补上缩放比例。
-                scheduleGuestFit()
+                // 代理在线但不提供光标（客户机自己画光标）。
+                agentCameOnline()
                 return
             }
             cursorWatchRetry = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
@@ -186,6 +185,13 @@ public final class QEMUDisplayView: NSView {
         }
         cursorWatcher = watcher
         watcher.start()
+    }
+
+    /// 代理（重新）上线：客户机可能刚开机或重启过，画面连接没断但分辨率与缩放比例已回到开机时的值，都重新请求一遍。
+    private func agentCameOnline() {
+        requestedGuestSize = nil
+        requestedGuestScale = nil
+        scheduleGuestFit()
     }
 
     /// 指针在视图里且窗口在前台时：有客户机光标形状就设为宿主光标，否则隐藏宿主光标（客户机自己画），免得出现两个。

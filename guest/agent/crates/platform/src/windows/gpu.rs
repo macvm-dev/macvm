@@ -10,11 +10,11 @@ use std::path::Path;
 use std::ptr;
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DRV, GUID_DEVCLASS_DISPLAY, HDEVINFO, SP_DEVINFO_DATA, SPDRP_HARDWAREID,
+    DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DRV, GUID_DEVCLASS_DISPLAY, HDEVINFO, INSTALLFLAG_FORCE, SP_DEVINFO_DATA, SPDRP_HARDWAREID,
     SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceInstanceIdW,
     SetupDiGetDeviceRegistryPropertyW, SetupDiOpenDevRegKey, UpdateDriverForPlugAndPlayDevicesW,
 };
-use windows_sys::Win32::Foundation::{INVALID_HANDLE_VALUE, GetLastError};
+use windows_sys::Win32::Foundation::{GetLastError, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, RRF_RT_REG_SZ, RegCloseKey, RegGetValueW, RegQueryValueExW,
 };
@@ -85,20 +85,22 @@ pub(super) fn is_3d_driver(key: HKEY) -> bool {
     unsafe { RegQueryValueExW(key, wide("UserModeDriverName").as_ptr(), ptr::null(), ptr::null_mut(), ptr::null_mut(), ptr::null_mut()) == 0 }
 }
 
-/// QEMU 下有驱动包时，把在场且还没用上它的 virtio-gpu 换成 viogpu3d；返回是否换了。
+/// QEMU 下有驱动包时，把在场且还没用上这个包的 virtio-gpu 换成它；返回是否换了。以宿主带的包为准，
+/// 比已装的旧也强制换上：驱动要与宿主的图形栈配套。
 /// 换上后画面立即由它驱动，桌面合成改用 GPU 要等下次开机。
 pub fn install_gpu_driver() -> io::Result<bool> {
     let inf = Path::new(GPU_DRIVER_DIR).join("viogpu3d.inf");
-    if on_vz() || !inf.exists() {
+    if on_vz() {
         return Ok(false);
     }
+    let Ok(package) = std::fs::read(&inf) else { return Ok(false) };
     let mut pending = Vec::new();
     for_each_present_virtio_gpu(|set, info| {
         if let Some(key) = open_driver_key(set, info, KEY_QUERY_VALUE) {
-            let has_3d = is_3d_driver(key);
+            let current = installed_inf(key);
             // SAFETY: 键由 open_driver_key 打开，只关一次。
             unsafe { RegCloseKey(key) };
-            if has_3d {
+            if current.as_deref() == Some(package.as_slice()) {
                 return;
             }
         }
@@ -107,17 +109,35 @@ pub fn install_gpu_driver() -> io::Result<bool> {
         }
     });
     let inf = wide(&inf.to_string_lossy());
+    let mut changed = false;
     for id in &pending {
         let mut reboot = 0;
         // SAFETY: 字符串以 NUL 结尾；只影响在场且硬件号相同的设备。
-        if unsafe { UpdateDriverForPlugAndPlayDevicesW(ptr::null_mut(), wide(id).as_ptr(), inf.as_ptr(), 0, &mut reboot) } == 0 {
+        if unsafe { UpdateDriverForPlugAndPlayDevicesW(ptr::null_mut(), wide(id).as_ptr(), inf.as_ptr(), INSTALLFLAG_FORCE, &mut reboot) } == 0 {
             return Err(io::Error::from_raw_os_error(unsafe { GetLastError() } as i32));
         }
+        changed = true;
     }
-    if !pending.is_empty() {
+    if changed {
         super::cursor::hardware_cursor_lost();
     }
-    Ok(!pending.is_empty())
+    Ok(changed)
+}
+
+/// 设备当前驱动的 INF 内容。Windows 安装驱动时把 INF 原样复制为 `%windir%\INF` 下的 oemN.inf，驱动键的 InfPath 记着文件名。
+fn installed_inf(key: HKEY) -> Option<Vec<u8>> {
+    let mut name = [0u16; 64];
+    let mut bytes = (name.len() * 2) as u32;
+    // SAFETY: 缓冲区与长度（字节）一致。
+    let status = unsafe {
+        RegQueryValueExW(key, wide("InfPath").as_ptr(), ptr::null(), ptr::null_mut(), name.as_mut_ptr().cast(), &mut bytes)
+    };
+    if status != 0 {
+        return None;
+    }
+    let name = String::from_utf16_lossy(&name[..name.iter().position(|&c| c == 0).unwrap_or(name.len())]);
+    let windows = std::env::var_os("SystemRoot")?;
+    std::fs::read(Path::new(&windows).join("INF").join(name)).ok()
 }
 
 /// 设备的第一个硬件号（最具体的那个，含子系统号与版本）。
