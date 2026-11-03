@@ -40,6 +40,14 @@ static void debug_log(NSString *format, ...) {
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.clearColor = MTLClearColorMake(0, 0, 0, 1);
     self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    // 有新帧才画（渲染器随即请求重绘），不按刷新率轮询：新帧不必等下一个节拍，空闲时也不占 CPU。
+    self.paused = YES;
+    self.enableSetNeedsDisplay = YES;
+    // 窗口里的画面本来就由系统合成器按刷新率合成，图层不必再等垂直同步、也不必多排一张，
+    // 客户机画的光标因此少落后一到两帧。
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    layer.maximumDrawableCount = 2;
+    layer.displaySyncEnabled = NO;
     _renderer = [[CSMetalRenderer alloc] initWithMetalKitView:self];
     self.delegate = _renderer;
     _showsGuestCursor = YES;
@@ -67,6 +75,7 @@ static void debug_log(NSString *format, ...) {
 }
 
 - (void)close {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
     _handler = NULL;
     _connection.delegate = nil;
     [_connection disconnect];
@@ -110,6 +119,24 @@ static void debug_log(NSString *format, ...) {
     [_display removeObserver:self forKeyPath:@"displaySize"];
     [_display removeRenderer:_renderer];
     _display = nil;
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center removeObserver:self name:NSWindowDidEnterFullScreenNotification object:nil];
+    [center removeObserver:self name:NSWindowDidExitFullScreenNotification object:nil];
+    if (self.window) {
+        [center addObserver:self selector:@selector(updateDisplaySync) name:NSWindowDidEnterFullScreenNotification object:self.window];
+        [center addObserver:self selector:@selector(updateDisplaySync) name:NSWindowDidExitFullScreenNotification object:self.window];
+    }
+    [self updateDisplaySync];
+}
+
+// 全屏时系统可能让画面跳过合成器直接上屏，不等垂直同步就会撕裂。
+- (void)updateDisplaySync {
+    BOOL fullScreen = (self.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+    ((CAMetalLayer *)self.layer).displaySyncEnabled = fullScreen;
 }
 
 - (void)setFrameSize:(NSSize)size {

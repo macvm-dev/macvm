@@ -1,0 +1,84 @@
+CocoaSpice: when the view is paused and draws on demand, request a draw as
+soon as a new frame, viewport or drawable size arrives instead of polling
+every display refresh.
+
+--- a/Sources/CocoaSpiceRenderer/CSMetalRenderer.m
++++ b/Sources/CocoaSpiceRenderer/CSMetalRenderer.m
+@@ -109,6 +109,9 @@
+ 
+     // The command Queue from which we'll obtain command buffers
+     id<MTLCommandQueue> _commandQueue;
++
++    // The view we draw into, to request a draw when it only draws on demand
++    __weak MTKView *_view;
+ }
+ 
+ @synthesize device = _device;
+@@ -125,6 +128,7 @@
+         NSError *error = NULL;
+         
+         _device = mtkView.device;
++        _view = mtkView;
+         [self _setViewportCGSize:mtkView.drawableSize];
+         _renderCompletions = [NSMutableArray array];
+         _viewportScale = 1.0f;
+@@ -203,6 +207,8 @@
+     // Save the size of the drawable as we'll pass these
+     //   values to our vertex shader when we draw
+     [self _setViewportCGSize:size];
++    // the new drawable holds nothing until the next draw
++    [self _setNeedsUpdate];
+ }
+ 
+ - (void)setViewportOrigin:(CGPoint)viewportOrigin {
+@@ -210,7 +216,7 @@
+         _viewportOrigin = viewportOrigin;
+         dispatch_async(dispatch_get_main_queue(), ^{
+             self.renderViewportOrigin = viewportOrigin;
+-            self.renderNeedsUpdate = YES;
++            [self _setNeedsUpdate];
+         });
+     }
+ }
+@@ -220,11 +226,22 @@
+         _viewportScale = viewportScale;
+         dispatch_async(dispatch_get_main_queue(), ^{
+             self.renderViewportScale = viewportScale;
+-            self.renderNeedsUpdate = YES;
++            [self _setNeedsUpdate];
+         });
+     }
+ }
+ 
++/// Must be called from main thread. A view that is paused and draws on
++/// demand (enableSetNeedsDisplay) draws as soon as there is something new
++/// instead of polling every display refresh.
++- (void)_setNeedsUpdate {
++    self.renderNeedsUpdate = YES;
++    MTKView *view = _view;
++    if (view.isPaused && view.enableSetNeedsDisplay) {
++        view.needsDisplay = YES;
++    }
++}
++
+ /// Must be called from main thread
+ - (void)_addDrawCompletion:(completionCallback_t)completion {
+     [self.renderCompletions addObject:completion];
+@@ -358,7 +375,7 @@
+             [self _addDrawCompletion:completion];
+         }
+         self.renderSourceData = sourceData;
+-        self.renderNeedsUpdate = YES;
++        [self _setNeedsUpdate];
+     });
+ }
+ 
+@@ -377,7 +394,7 @@
+             [self _addDrawCompletion:completion];
+         }
+         self.renderSourceData = sourceData;
+-        self.renderNeedsUpdate = YES;
++        [self _setNeedsUpdate];
+     });
+ }
+ 
