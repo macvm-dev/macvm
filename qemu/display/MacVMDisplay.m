@@ -34,6 +34,9 @@ static void debug_log(NSString *format, ...) {
     BOOL _frozen;
     BOOL _freezeOnResize;
     CGSize _freezeFromSize;
+    /// 冻结期间最近一次有新帧要画的时间。
+    CFTimeInterval _lastFrozenFrame;
+    NSTimer *_thawTimer;
 }
 
 - (instancetype)initWithSocket:(NSURL *)socket {
@@ -78,6 +81,8 @@ static void debug_log(NSString *format, ...) {
 }
 
 - (void)close {
+    [_thawTimer invalidate];
+    _thawTimer = nil;
     [NSNotificationCenter.defaultCenter removeObserver:self];
     _handler = NULL;
     _connection.delegate = nil;
@@ -152,11 +157,32 @@ static void debug_log(NSString *format, ...) {
 }
 
 - (void)setFrozen:(BOOL)frozen {
+    [_thawTimer invalidate];
+    _thawTimer = nil;
     _frozen = frozen;
     _freezeOnResize = NO;
     if (!frozen) {
         self.needsDisplay = YES;
     }
+}
+
+- (void)thawWhenIdle:(CFTimeInterval)idle limit:(CFTimeInterval)limit {
+    if (!_frozen) {
+        [self setFrozen:NO];
+        return;
+    }
+    [_thawTimer invalidate];
+    CFTimeInterval deadline = CACurrentMediaTime() + limit;
+    _lastFrozenFrame = CACurrentMediaTime();
+    __weak MacVMSpiceView *weakSelf = self;
+    _thawTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
+        MacVMSpiceView *view = weakSelf;
+        CFTimeInterval now = CACurrentMediaTime();
+        if (!view || now - view->_lastFrozenFrame >= idle || now >= deadline) {
+            [view setFrozen:NO];
+            [timer invalidate];
+        }
+    }];
 }
 
 - (void)freezeOnResize {
@@ -173,7 +199,9 @@ static void debug_log(NSString *format, ...) {
         _freezeOnResize = NO;
         _frozen = YES;
     }
-    if (!_frozen) {
+    if (_frozen) {
+        _lastFrozenFrame = CACurrentMediaTime();
+    } else {
         [_renderer drawInMTKView:view];
     }
 }
@@ -323,4 +351,8 @@ void MacVMDisplaySetFrozen(void *view, bool frozen) {
 
 void MacVMDisplayFreezeOnResize(void *view) {
     [view_of(view) freezeOnResize];
+}
+
+void MacVMDisplayThawWhenIdle(void *view, double idle, double limit) {
+    [view_of(view) thawWhenIdle:idle limit:limit];
 }

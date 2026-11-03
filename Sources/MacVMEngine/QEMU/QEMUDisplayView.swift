@@ -187,7 +187,7 @@ public final class QEMUDisplayView: NSView {
         watcher.start()
     }
 
-    /// 代理（重新）上线：客户机可能刚开机或重启过，画面连接没断但分辨率与缩放比例已回到开机时的值，都重新请求一遍。
+    /// 代理（重新）上线：客户机可能刚开机或重启过，画面连接没断但分辨率与缩放比例可能已回到开机时的值，重新核对一遍。
     private func agentCameOnline() {
         requestedGuestSize = nil
         requestedGuestScale = nil
@@ -309,7 +309,10 @@ public final class QEMUDisplayView: NSView {
         let bundle = bundle
         if requestedGuestSize.map({ $0 != (width, height) }) ?? true {
             requestedGuestSize = (width, height)
-            Task.detached { _ = try? ControlClient.send(.display(width: width, height: height), to: bundle, timeout: 5) }
+            // 客户机已是这个尺寸（画面重连、客户机重启后沿用了原来的模式）就不发：同样的模式重设一遍画面也会黑一下。
+            if (Int(framebufferSize.width), Int(framebufferSize.height)) != (width, height) {
+                Task.detached { _ = try? ControlClient.send(.display(width: width, height: height), to: bundle, timeout: 5) }
+            }
         }
         let percent = Int((factor * 100).rounded())
         guard config?.os == .windows, config?.guestAgent == true, requestedGuestScale != percent else { return }
@@ -342,8 +345,9 @@ public final class QEMUDisplayView: NSView {
     /// 缩放比例随分辨率一起变化的过渡：分辨率生效后才发缩放比例，其间画面冻结；客户机迟迟不切换时到期也照发、放开。
     private var scaleTransition: (size: (Int, Int), percent: Int, scaleSent: Bool)?
     private var scaleTransitionTimer: Timer?
-    /// 缩放比例生效后，客户机各程序按新比例重绘界面所需的时间。
-    private static let scaleRedrawDelay: TimeInterval = 0.3
+    /// 缩放比例生效后，客户机连续这么久没有新帧即视为重绘完毕；一直有新帧（如有动画）时最多等 `guestRedrawLimit`。
+    private static let guestRedrawIdle: TimeInterval = 0.25
+    private static let guestRedrawLimit: TimeInterval = 1.5
     private static let scaleTransitionTimeout: TimeInterval = 3
 
     private func sendTransitionScale() {
@@ -351,8 +355,17 @@ public final class QEMUDisplayView: NSView {
         scaleTransition?.scaleSent = true
         scheduleScaleTransitionEnd(after: Self.scaleTransitionTimeout)
         sendGuestScale(transition.percent) { [weak self] _ in
-            self?.scheduleScaleTransitionEnd(after: Self.scaleRedrawDelay)
+            self?.finishScaleTransition()
         }
+    }
+
+    /// 客户机按新比例重绘桌面时中途会出整屏黑的帧，等它画完再放开画面。
+    private func finishScaleTransition() {
+        scaleTransitionTimer?.invalidate()
+        scaleTransitionTimer = nil
+        guard scaleTransition != nil else { return }
+        scaleTransition = nil
+        spice?.thawWhenIdle(idle: Self.guestRedrawIdle, limit: Self.guestRedrawLimit)
     }
 
     private func scheduleScaleTransitionEnd(after delay: TimeInterval) {

@@ -91,6 +91,9 @@ final class SpiceDisplay: DisplayBackend {
     /// 画面尺寸下次变化时自动冻结，停在变化前的最后一帧，直到 `setFrozen(false)`。
     func freezeOnResize() { library.freezeOnResize(handle) }
 
+    /// 冻结中的画面等客户机连续 `idle` 秒没有新帧再放开，最多再等 `limit` 秒。
+    func thawWhenIdle(idle: TimeInterval, limit: TimeInterval) { library.thawWhenIdle(handle, idle, limit) }
+
     func close() {
         guard !closed else { return }
         closed = true
@@ -110,6 +113,7 @@ final class SpiceDisplay: DisplayBackend {
         let showGuestCursor: @convention(c) (UnsafeMutableRawPointer, Bool) -> Void
         let setFrozen: @convention(c) (UnsafeMutableRawPointer, Bool) -> Void
         let freezeOnResize: @convention(c) (UnsafeMutableRawPointer) -> Void
+        let thawWhenIdle: @convention(c) (UnsafeMutableRawPointer, Double, Double) -> Void
 
         @MainActor private static var loaded: [URL: Library] = [:]
 
@@ -126,10 +130,11 @@ final class SpiceDisplay: DisplayBackend {
                   let scroll = symbol("MacVMDisplayScroll", (@convention(c) (UnsafeMutableRawPointer, Bool, UInt32) -> Void).self),
                   let showGuestCursor = symbol("MacVMDisplayShowGuestCursor", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self),
                   let setFrozen = symbol("MacVMDisplaySetFrozen", (@convention(c) (UnsafeMutableRawPointer, Bool) -> Void).self),
-                  let freezeOnResize = symbol("MacVMDisplayFreezeOnResize", (@convention(c) (UnsafeMutableRawPointer) -> Void).self)
+                  let freezeOnResize = symbol("MacVMDisplayFreezeOnResize", (@convention(c) (UnsafeMutableRawPointer) -> Void).self),
+                  let thawWhenIdle = symbol("MacVMDisplayThawWhenIdle", (@convention(c) (UnsafeMutableRawPointer, Double, Double) -> Void).self)
             else { return nil }
             let library = Library(create: create, close: close, key: key, pointer: pointer, scroll: scroll, showGuestCursor: showGuestCursor, setFrozen: setFrozen,
-                                  freezeOnResize: freezeOnResize)
+                                  freezeOnResize: freezeOnResize, thawWhenIdle: thawWhenIdle)
             loaded[url] = library
             return library
         }

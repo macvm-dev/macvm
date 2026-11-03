@@ -29,3 +29,5 @@ void MacVMDisplayShowGuestCursor(void *view, bool shows);
 void MacVMDisplaySetFrozen(void *view, bool frozen);
 /// 画面尺寸下次变化时自动冻结，停在变化前的最后一帧，直到 `MacVMDisplaySetFrozen(view, false)`。
 void MacVMDisplayFreezeOnResize(void *view);
+/// 冻结中的画面等客户机连续 `idle` 秒没有新帧（重绘完了）再放开，最多再等 `limit` 秒。
+void MacVMDisplayThawWhenIdle(void *view, double idle, double limit);
