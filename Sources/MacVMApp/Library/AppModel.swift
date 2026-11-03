@@ -42,14 +42,14 @@ final class AppModel {
 
     // MARK: - 运行
 
-    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。QEMU 引擎的画面在 QEMU 自己的窗口里。
+    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。
     @discardableResult
     func start(_ name: String) async -> (any MachineRunner)? {
         if let runner = runners[name] { return runner }
         do {
             let bundle = try library.bundle(named: name)
             try await RunnerFactory.prepare(bundle)
-            let runner = try RunnerFactory.make(bundle, display: true)
+            let runner = try RunnerFactory.make(bundle)
             let server = try ControlServer(runner: runner)
             runners[name] = runner
             servers[name] = server

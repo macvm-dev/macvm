@@ -133,7 +133,7 @@ public final class QEMURunner: MachineRunner {
         if (try? UnixSocket.connect(to: qmpPath)) != nil {
             throw MacVMError.engine("\(bundle.name) 上次的 QEMU 进程仍在运行，先结束它（ps 中 -name \(bundle.name) 的 qemu-system-aarch64）")
         }
-        for path in [QEMUCommand.qmpSocket(bundle)] + QEMUCommand.forwardedPorts.map({ QEMUCommand.portSocket(bundle, port: $0) }) {
+        for path in [QEMUCommand.qmpSocket(bundle), QEMUCommand.vncSocket(bundle)] + QEMUCommand.forwardedPorts.map({ QEMUCommand.portSocket(bundle, port: $0) }) {
             unlink(path.path)
         }
         var command = QEMUCommand(bundle: bundle, config: config, qemu: qemu)

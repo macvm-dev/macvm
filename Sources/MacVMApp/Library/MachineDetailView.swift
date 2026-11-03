@@ -70,7 +70,8 @@ struct MachineDetailView: View {
             } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
         case .running:
-            if model.isRunningHere(vm.name) {
+            // QEMU 的画面经 VNC 显示，别的进程运行的也能接上。
+            if model.isRunningHere(vm.name) || config?.engine == .qemu {
                 Button { openWindow(id: "machine", value: vm.name) } label: { Label("显示", systemImage: "macwindow") }
             }
             if config?.supportsSuspend == true {

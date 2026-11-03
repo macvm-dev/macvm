@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct CreateSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
 
     enum Source: Hashable { case cloudImage(String), iso, ipswLatest, ipswFile }
 
@@ -43,7 +44,7 @@ struct CreateSheet: View {
                 if os == .windows {
                     Text(QEMUInstallation.locate() == nil
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
-                         : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，会弹出 QEMU 窗口显示进度），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
+                         : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -138,6 +139,7 @@ struct CreateSheet: View {
                                                                    in: model.library)
                     model.activity[name] = "正在安装 Windows…"
                     guard await model.start(name) != nil else { return }
+                    openWindow(id: "machine", value: name)
                     try await WindowsInstaller.waitUntilSetupComplete(bundle, proxyCommand: "\"\(CLILocation.path)\" proxy \(name) --timeout 10")
                     model.activity[name] = "正在完成安装…"
                     await model.stop(name)

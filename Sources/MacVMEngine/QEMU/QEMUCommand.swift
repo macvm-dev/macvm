@@ -14,6 +14,8 @@ struct QEMUCommand {
 
     static func qmpSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).qmp") }
     static func portSocket(_ bundle: VMBundle, port: UInt32) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).p\(port).sock") }
+    /// 画面经此 Unix socket 以 VNC 提供，`QEMUDisplayView` 连上它显示并转发键鼠。
+    static func vncSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).vnc") }
 
     func arguments() throws -> [String] {
         var a: [String] = [
@@ -73,7 +75,7 @@ struct QEMUCommand {
 
         a += ["-qmp", "unix:\(Self.qmpSocket(bundle).path),server=on,wait=off"]
         // ramfb 没有硬件光标，客户机自己在画面里画光标；cocoa 默认在指针进入窗口时藏起宿主光标，免得出现两个。
-        a += ["-display", display ? "cocoa" : "none", "-monitor", "none", "-serial", "none"]
+        a += ["-display", display ? "cocoa" : "none", "-vnc", "unix:\(Self.vncSocket(bundle).path)", "-monitor", "none", "-serial", "none"]
         if let incoming { a += ["-incoming", "file:\(incoming.path)"] }
         return a
     }
