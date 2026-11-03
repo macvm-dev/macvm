@@ -59,9 +59,23 @@ public final class QEMURunner: MachineRunner {
         return .coldBoot
     }
 
+    /// 装了代理的 Windows 请代理关机：它对 ACPI 电源键时常没有反应。代理不可用时再按电源键。
     public func requestStop() throws {
         guard let qmp, process?.isRunning == true else { throw MacVMError.notRunning(bundle.name) }
-        Task { _ = try? await qmp.execute("system_powerdown") }
+        let agent = config.os == .windows && config.guestAgent ? QEMUCommand.portSocket(bundle, port: AgentProtocol.port).path : nil
+        Task.detached {
+            if let agent, Self.askAgentToShutDown(socketPath: agent) { return }
+            _ = try? await qmp.execute("system_powerdown")
+        }
+    }
+
+    nonisolated private static func askAgentToShutDown(socketPath: String) -> Bool {
+        guard let socket = try? UnixSocket.connect(to: socketPath) else { return false }
+        socket.setTimeout(seconds: 3)
+        guard let data = try? JSONEncoder().encode(AgentProtocol.Request.shutdown(reboot: false)), (try? socket.writeLine(data)) != nil,
+              let line = try? socket.readLine(),
+              let response = try? JSONDecoder().decode(AgentProtocol.Response.self, from: line) else { return false }
+        return response.ok
     }
 
     public func forceStop() async throws {
@@ -112,8 +126,12 @@ public final class QEMURunner: MachineRunner {
         try await qmp.execute("screendump", ["filename": url.path, "format": "png"])
     }
 
+    /// 自带的 QEMU 把尺寸告诉客户机（与调整显示窗口大小的效果相同），客户机的显卡驱动决定是否跟随：
+    /// Windows 的 viogpu3d 由它的分辨率服务切换，Linux 由桌面环境切换。
     public func resizeDisplay(width: Int, height: Int) throws {
-        throw MacVMError.unsupported("QEMU 引擎不支持运行中调整显示尺寸")
+        guard qemu.bundleRoot != nil else { throw MacVMError.unsupported("Homebrew 的 QEMU 不支持运行中调整显示尺寸") }
+        guard let qmp else { throw MacVMError.notRunning(bundle.name) }
+        Task { _ = try? await qmp.execute("x-macvm-set-display-size", ["width": width, "height": height]) }
     }
 
     /// 只有 `QEMUCommand.forwardedPorts` 中的端口可达。

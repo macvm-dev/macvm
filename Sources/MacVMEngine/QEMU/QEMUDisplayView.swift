@@ -3,7 +3,8 @@ public import MacVMModel
 
 /// 显示 QEMU 虚拟机画面并转发键鼠的视图：虚拟机提供 SPICE（`QEMUCommand.spiceSocket`）且有显示库时用 SPICE，
 /// 否则连 `QEMUCommand.vncSocket` 上的 VNC。不要求虚拟机在本进程运行：`macvm start` 在后台运行的虚拟机同样能显示。
-/// 客户机分辨率由客户机决定，画面按比例缩放进视图。光标形状优先取客户机代理推送的（`AgentCursorWatcher`），
+/// 用 SPICE 时窗口大小停下来后请客户机把分辨率改成窗口大小（点数），客户机不跟随时画面按比例缩放进视图。
+/// 光标形状优先取客户机代理推送的（`AgentCursorWatcher`），
 /// 用作宿主光标，跟手且无延迟；viogpudo 上传形状与切换光标之间没有同步，VNC 收到的常是上一个形状。
 /// 没有代理时，VNC 用它转来的硬件光标形状，SPICE 把光标画进画面；客户机自己画光标时宿主光标隐藏。
 public final class QEMUDisplayView: NSView {
@@ -57,6 +58,9 @@ public final class QEMUDisplayView: NSView {
         backend?.close()
         backend = nil
         spice = nil
+        guestFit?.invalidate()
+        guestFit = nil
+        requestedGuestSize = nil
         cursorWatchRetry?.invalidate()
         cursorWatchRetry = nil
         cursorWatcher?.onClose = nil
@@ -80,6 +84,10 @@ public final class QEMUDisplayView: NSView {
                 backend = nil
                 self.spice = nil
                 scheduleReconnect()
+            }
+            spice.onConnect = { [weak self] in
+                self?.requestedGuestSize = nil
+                self?.scheduleGuestFit()
             }
             spice.view.frame = bounds
             spice.view.autoresizingMask = [.width, .height]
@@ -209,6 +217,36 @@ public final class QEMUDisplayView: NSView {
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         rebuildGuestCursor()
+        scheduleGuestFit()
+    }
+
+    // MARK: - 分辨率跟随窗口
+
+    private var guestFit: Timer?
+    private var requestedGuestSize: (Int, Int)?
+    /// 拖动窗口时每帧都在变，停下来这么久再请客户机切换。
+    private static let guestFitDelay: TimeInterval = 0.4
+    /// 客户机显示的最小尺寸，再小 Windows 的界面就排不开了。
+    private static let minimumGuestSize = (width: 800, height: 600)
+
+    private func scheduleGuestFit() {
+        guard spice != nil else { return }
+        guestFit?.invalidate()
+        guestFit = Timer.scheduledTimer(withTimeInterval: Self.guestFitDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitGuestToView() }
+        }
+    }
+
+    /// 经控制通道请运行这台虚拟机的进程转告 QEMU；虚拟机可能在别的进程里运行（`macvm start`）。
+    private func fitGuestToView() {
+        guard spice != nil, window != nil else { return }
+        // 偶数宽高，部分驱动要求宽度对齐。
+        let width = max(Int(bounds.width) & ~1, Self.minimumGuestSize.width)
+        let height = max(Int(bounds.height) & ~1, Self.minimumGuestSize.height)
+        guard requestedGuestSize.map({ $0 != (width, height) }) ?? true else { return }
+        requestedGuestSize = (width, height)
+        let bundle = bundle
+        Task.detached { _ = try? ControlClient.send(.display(width: width, height: height), to: bundle, timeout: 5) }
     }
 
     public override func mouseEntered(with event: NSEvent) { updateCursor() }

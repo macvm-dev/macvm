@@ -1,0 +1,55 @@
+Add x-macvm-set-display-size, so that a display shown outside QEMU (here
+through SPICE without a guest agent) can ask the guest to follow its window size.
+
+--- a/qapi/ui.json
++++ b/qapi/ui.json
+@@ -1697,6 +1697,21 @@
+   'boxed' : true }
+ 
+ ##
++# @x-macvm-set-display-size:
++#
++# Ask the guest for a display of this size, as resizing a display
++# window does.  The guest driver decides whether to follow.
++#
++# @width: width in pixels
++#
++# @height: height in pixels
++#
++# Since: 11.1
++##
++{ 'command': 'x-macvm-set-display-size',
++  'data': { 'width': 'int', 'height': 'int' } }
++
++##
+ # @client_migrate_info:
+ #
+ # Set migration information for remote display.  This makes the server
+--- a/ui/ui-qmp-cmds.c
++++ b/ui/ui-qmp-cmds.c
+@@ -177,6 +177,25 @@
+     }
+ }
+ 
++void qmp_x_macvm_set_display_size(int64_t width, int64_t height, Error **errp)
++{
++    QemuConsole *con = qemu_console_lookup_by_index(0);
++    QemuUIInfo info = {};
++
++    if (width < 1 || height < 1 || width > 16384 || height > 16384) {
++        error_setg(errp, "invalid display size %" PRId64 "x%" PRId64, width, height);
++        return;
++    }
++    if (!con || !qemu_console_ui_info_supported(con)) {
++        error_setg(errp, "the display device does not take a size");
++        return;
++    }
++    info = *qemu_console_get_ui_info(con);
++    info.width = width;
++    info.height = height;
++    qemu_console_set_ui_info(con, &info, false);
++}
++
+ void qmp_client_migrate_info(const char *protocol, const char *hostname,
+                              bool has_port, int64_t port,
+                              bool has_tls_port, int64_t tls_port,

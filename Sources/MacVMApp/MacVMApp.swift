@@ -26,6 +26,8 @@ struct MacVMApp: App {
             }
         }
         .windowResizability(.contentMinSize)
+        // 客户机分辨率跟随窗口（QEMU 引擎），默认给一个常用的桌面尺寸。
+        .defaultSize(width: 1280, height: 800)
         // 打开窗口即启动虚拟机，恢复上次的窗口会把它们全部开机。
         .restorationBehavior(.disabled)
 
