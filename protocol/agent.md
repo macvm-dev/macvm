@@ -40,14 +40,15 @@
 
 `display-scale`：只用于 Windows。代理把每个活动显示器的缩放比例设为 Windows 支持的档位里不超过 `percent` 的最大一档，立即生效并记入当前用户的设置。宿主在高分辨率（Retina）画面下按窗口所在屏幕的像素倍数发送，关掉时发 100。
 
-`cursor-watch`：客户机用硬件光标时（QEMU 的 virtio-gpu 且驱动为 viogpudo），宿主用代理推送的形状作宿主光标。连上后先发当前光标，之后只在光标句柄或显隐变化时发：
+`cursor-watch`：QEMU 下宿主按代理推送的光标显示宿主光标。系统光标只推种类（`system`），宿主换成自己的同类光标；其余光标在客户机用硬件光标（viogpudo）时推图像。客户机没有硬件光标（viogpu3d）时，连接期间代理把系统光标换成透明的，其余光标推送 `hidden`、由客户机画，最后一个连接关闭时恢复系统光标。连上后先发当前光标，之后只在光标句柄或显隐变化时发：
 
 ```json
 {"width":32,"height":32,"hot_x":0,"hot_y":0,"bgra":"…"}
 {"hidden":true,"width":0,"height":0,"hot_x":0,"hot_y":0}
+{"width":0,"height":0,"hot_x":0,"hot_y":0,"system":"ibeam"}
 ```
 
-`bgra` 为逐像素 B G R A（非预乘 alpha）、自上而下的 Base64；`hidden` 为 true 时其余字段无意义，省略时为 false。客户机本次开机自绘光标（VZ 下、未开硬件光标，或驱动为不支持硬件光标的 viogpu3d）时回错误响应；运行中换上 viogpu3d 时连接随即关闭。
+`bgra` 为逐像素 B G R A（非预乘 alpha）、自上而下的 Base64；`hidden` 为 true 时其余字段无意义，省略时为 false。`system` 取值：`arrow`、`ibeam`、`wait`、`crosshair`、`uparrow`、`sizenwse`、`sizenesw`、`sizewe`、`sizens`、`sizeall`、`no`、`hand`、`appstarting`、`help`、`pin`，宿主不认识的种类按箭头显示。VZ 下回错误响应；用硬件光标时运行中换上 viogpu3d，连接随即关闭，宿主重连后按 viogpu3d 的方式推送。
 
 Windows 3D 显卡驱动：宿主把 viogpu3d 驱动包平铺放在 `C:\ProgramData\macvm\viogpu3d`（含 `viogpu3d.inf`）。代理在非 VZ 下启动时，把它装到在场且还没用上 3D 驱动的 virtio-gpu 上，不经协议请求。
 

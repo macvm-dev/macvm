@@ -164,7 +164,7 @@ pub fn clipboard_set(text: &str) -> io::Result<()> {
 }
 
 /// 只有 Windows 客户机需要由代理提供光标形状。
-pub fn watch_cursor(_on_change: impl FnMut(Option<crate::CursorImage>) -> io::Result<()>) -> io::Result<()> {
+pub fn watch_cursor(_alive: impl Fn() -> bool, _on_change: impl FnMut(crate::GuestCursor) -> io::Result<()>) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机提供光标形状"))
 }
 

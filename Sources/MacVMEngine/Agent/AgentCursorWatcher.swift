@@ -3,10 +3,19 @@ import Foundation
 import MacVMModel
 
 /// 接收客户机代理推送的光标形状（`cursor-watch`）。读在专用线程，回调在主线程；
-/// 连接断开或代理不可用时以 `onClose(true)` 结束，代理明确不提供（客户机本次开机自绘光标）时以 `onClose(false)` 结束。
+/// 连接断开或代理不可用时以 `onClose(true)` 结束，代理明确不提供（客户机自绘光标，如 VZ 下）时以 `onClose(false)` 结束。
+/// 宿主要显示的客户机光标。
+enum GuestCursor: @unchecked Sendable {
+    /// 宿主不画光标：客户机隐藏了光标，或光标由客户机自己画。
+    case hidden
+    /// 图像与热点（像素）。
+    case image(CGImage, hotspot: CGPoint)
+    /// 客户机系统光标的种类（`CursorShape.system`），宿主换成自己的同类光标。
+    case system(String)
+}
+
 final class AgentCursorWatcher: @unchecked Sendable {
-    /// 光标形状与热点（像素）；nil 表示客户机隐藏了光标。
-    var onShape: (@MainActor (CGImage?, CGPoint) -> Void)?
+    var onShape: (@MainActor (GuestCursor) -> Void)?
     /// 参数表示稍后重试是否可能成功。
     var onClose: (@MainActor (Bool) -> Void)?
 
@@ -45,9 +54,18 @@ final class AgentCursorWatcher: @unchecked Sendable {
         socket.setTimeout(seconds: 0)
         let decoder = JSONDecoder()
         while let line = try? socket.readLine(), let shape = try? decoder.decode(AgentProtocol.CursorShape.self, from: line) {
-            let image = shape.hidden ? nil : Data(base64Encoded: shape.bgra).flatMap { cursorImage(bgra: $0, width: shape.width, height: shape.height) }
-            let hotspot = CGPoint(x: shape.hot_x, y: shape.hot_y), onShape = onShape
-            Task { @MainActor [image] in onShape?(image, hotspot) }
+            let cursor: GuestCursor
+            if shape.hidden {
+                cursor = .hidden
+            } else if let kind = shape.system {
+                cursor = .system(kind)
+            } else if let image = Data(base64Encoded: shape.bgra).flatMap({ cursorImage(bgra: $0, width: shape.width, height: shape.height) }) {
+                cursor = .image(image, hotspot: CGPoint(x: shape.hot_x, y: shape.hot_y))
+            } else {
+                cursor = .hidden
+            }
+            let onShape = onShape
+            Task { @MainActor in onShape?(cursor) }
         }
         return true
     }

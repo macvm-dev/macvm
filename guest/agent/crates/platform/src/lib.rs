@@ -46,6 +46,15 @@ pub struct Spawned {
     pub child: Box<dyn ChildProcess>,
 }
 
+/// 推给宿主的客户机光标。
+pub enum GuestCursor {
+    /// 宿主不画光标：客户机隐藏了光标，或光标由客户机自己画。
+    Hidden,
+    /// 系统光标的种类，宿主换成自己的同类光标。
+    System(&'static str),
+    Image(CursorImage),
+}
+
 /// 客户机光标图像：自上而下逐像素 B G R A，非预乘。
 pub struct CursorImage {
     pub width: u32,

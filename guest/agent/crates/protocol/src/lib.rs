@@ -36,7 +36,8 @@ pub enum Request {
     CursorWatch,
 }
 
-/// 客户机当前光标：`bgra` 为逐像素 B G R A（非预乘）的 Base64，自上而下；`hidden` 时其余字段无意义。
+/// 客户机当前光标：`bgra` 为逐像素 B G R A（非预乘）的 Base64，自上而下；`hidden` 时其余字段无意义；
+/// 有 `system` 时是该种系统光标，没有图像。
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CursorShape {
     #[serde(default, skip_serializing_if = "is_false")]
@@ -51,6 +52,8 @@ pub struct CursorShape {
     pub hot_y: u32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub bgra: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
 }
 
 /// 标准 Base64（带填充）。

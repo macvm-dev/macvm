@@ -3,11 +3,12 @@
 // Windows 上由登录时的计划任务启动，不需要也不应弹出控制台窗口。
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use macvm_agent_platform::{self as platform, Conn, ExecOptions, SpawnedIo};
+use macvm_agent_platform::{self as platform, Conn, ExecOptions, GuestCursor, SpawnedIo};
 use macvm_agent_protocol::{self as proto, ExecRequest, ExitStatus, FrameKind, Info, Request, Response, WindowSize};
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -29,6 +30,7 @@ fn main() {
     #[cfg(windows)]
     {
         platform::configure_hardware_cursor();
+        platform::restore_system_cursors();
         platform::configure_rtc_utc();
         // 换显卡驱动要十几秒，不挡住监听；光标开关已按换之前的驱动设好，换上的驱动下次开机读到。
         std::thread::spawn(|| {
@@ -124,22 +126,35 @@ fn info() -> Info {
 
 /// 首个形状之前先回 ok；平台不支持时回错误。之后每行一个 `CursorShape`，宿主断开即结束。
 fn watch_cursor(mut conn: Conn) -> io::Result<()> {
+    // 宿主不在这条连接上发送，读到结束就是已断开；光标不变时没有写入，只能靠读发现。
+    let closed = Arc::new(AtomicBool::new(false));
+    let mut reader = conn.try_clone()?;
+    let reader_closed = closed.clone();
+    thread::spawn(move || {
+        let mut buf = [0u8; 64];
+        while matches!(reader.read(&mut buf), Ok(n) if n > 0) {}
+        reader_closed.store(true, Ordering::Relaxed);
+    });
     let mut started = false;
-    let result = platform::watch_cursor(|image| {
+    let result = platform::watch_cursor(|| !closed.load(Ordering::Relaxed), |image| {
         if !started {
             proto::write_json_line(&mut conn, &Response::ok())?;
             started = true;
         }
         let shape = match image {
-            None => proto::CursorShape { hidden: true, ..Default::default() },
-            Some(i) => proto::CursorShape { hidden: false, width: i.width, height: i.height, hot_x: i.hot_x, hot_y: i.hot_y, bgra: proto::base64(&i.bgra) },
+            GuestCursor::Hidden => proto::CursorShape { hidden: true, ..Default::default() },
+            GuestCursor::System(kind) => proto::CursorShape { system: Some(kind.to_string()), ..Default::default() },
+            GuestCursor::Image(i) => proto::CursorShape { width: i.width, height: i.height, hot_x: i.hot_x, hot_y: i.hot_y, bgra: proto::base64(&i.bgra), ..Default::default() },
         };
         proto::write_json_line(&mut conn, &shape)
     });
-    match result {
+    let written = match result {
         Err(e) if !started => proto::write_json_line(&mut conn, &Response::error(e.to_string())),
         _ => Ok(()),
-    }
+    };
+    // 读线程还持有连接的克隆，只 drop 不会让宿主看到结束。
+    platform::shutdown_write(&conn);
+    written
 }
 
 fn forward(conn: Conn, tcp: TcpStream) -> io::Result<()> {

@@ -116,6 +116,7 @@ public enum AgentProtocol {
         var hot_x = 0
         var hot_y = 0
         var bgra = ""
+        var system: String?
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -125,9 +126,10 @@ public enum AgentProtocol {
             hot_x = try c.decodeIfPresent(Int.self, forKey: .hot_x) ?? 0
             hot_y = try c.decodeIfPresent(Int.self, forKey: .hot_y) ?? 0
             bgra = try c.decodeIfPresent(String.self, forKey: .bgra) ?? ""
+            system = try c.decodeIfPresent(String.self, forKey: .system)
         }
 
-        private enum CodingKeys: String, CodingKey { case hidden, width, height, hot_x, hot_y, bgra }
+        private enum CodingKeys: String, CodingKey { case hidden, width, height, hot_x, hot_y, bgra, system }
     }
 
     enum FrameKind: UInt8 {

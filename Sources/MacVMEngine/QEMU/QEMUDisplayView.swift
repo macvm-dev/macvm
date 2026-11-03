@@ -114,7 +114,7 @@ public final class QEMUDisplayView: NSView {
             }
             client.onCursor = { [weak self] image, hotspot in
                 guard let self, !agentCursorActive else { return }
-                setGuestCursor(image, hotspot: hotspot)
+                setGuestCursor(image.map { .image($0, hotspot: hotspot) } ?? .hidden)
             }
             client.onClose = { [weak self] in
                 self?.backend = nil
@@ -148,7 +148,7 @@ public final class QEMUDisplayView: NSView {
     private func watchAgentCursor() {
         guard cursorWatcher == nil, cursorWatchRetry == nil, window != nil else { return }
         let watcher = AgentCursorWatcher(bundle: bundle)
-        watcher.onShape = { [weak self] image, hotspot in
+        watcher.onShape = { [weak self] cursor in
             guard let self else { return }
             if !agentCursorActive {
                 spice?.showGuestCursor(false)
@@ -156,24 +156,28 @@ public final class QEMUDisplayView: NSView {
                 scheduleGuestFit()
             }
             agentCursorActive = true
-            setGuestCursor(image, hotspot: hotspot)
+            arrowUntilAgentReturns = false
+            setGuestCursor(cursor)
         }
         watcher.onClose = { [weak self] retry in
             guard let self else { return }
             cursorWatcher = nil
+            // 推送中断时代理可能已经退出，客户机里的系统光标还是透明的，先用箭头顶上，直到代理重新推送或明确不推。
+            arrowUntilAgentReturns = retry && (agentCursorActive || arrowUntilAgentReturns)
             if agentCursorActive {
                 agentCursorActive = false
                 guestCursorImage = nil
+                guestSystemCursor = nil
                 guestCursor = nil
-                updateCursor()
             }
+            updateCursor()
             spice?.showGuestCursor(true)
             guard retry, window != nil else {
                 // 代理在线但不提供光标（客户机自己画光标），同样补上缩放比例。
                 scheduleGuestFit()
                 return
             }
-            cursorWatchRetry = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
+            cursorWatchRetry = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.cursorWatchRetry = nil
                     self?.watchAgentCursor()
@@ -189,22 +193,51 @@ public final class QEMUDisplayView: NSView {
     private var cursorHidden = false
     private var keyObservers: [any NSObjectProtocol] = []
     private var guestCursorImage: (image: CGImage, hotspot: CGPoint)?
+    private var guestSystemCursor: NSCursor?
     private var guestCursor: NSCursor?
     /// 客户机隐藏了光标（如全屏视频、输入时）。
     private var guestCursorHidden = false
+    private var arrowUntilAgentReturns = false
 
-    private func setGuestCursor(_ image: CGImage?, hotspot: CGPoint) {
-        if let image {
-            guestCursorImage = (image, hotspot)
-            guestCursorHidden = false
-        } else {
+    private func setGuestCursor(_ cursor: GuestCursor) {
+        switch cursor {
+        case .hidden:
             guestCursorHidden = true
+        case let .image(image, hotspot):
+            guestCursorImage = (image, hotspot)
+            guestSystemCursor = nil
+            guestCursorHidden = false
+        case let .system(kind):
+            guestSystemCursor = Self.nativeCursor(kind)
+            guestCursorImage = nil
+            guestCursorHidden = false
         }
         rebuildGuestCursor()
     }
 
-    /// 光标按画面的缩放比例显示，与客户机里看到的大小一致。
+    /// 客户机系统光标的种类对应的 macOS 光标；macOS 没有同类光标的用箭头。
+    static func nativeCursor(_ kind: String) -> NSCursor {
+        switch kind {
+        case "ibeam": .iBeam
+        case "hand": .pointingHand
+        case "crosshair": .crosshair
+        case "no": .operationNotAllowed
+        case "sizewe": .frameResize(position: .left, directions: .all)
+        case "sizens": .frameResize(position: .top, directions: .all)
+        case "sizenwse": .frameResize(position: .topLeft, directions: .all)
+        case "sizenesw": .frameResize(position: .topRight, directions: .all)
+        case "sizeall": .openHand
+        default: .arrow
+        }
+    }
+
+    /// 图像光标按画面的缩放比例显示，与客户机里看到的大小一致。
     private func rebuildGuestCursor() {
+        if let guestSystemCursor {
+            guestCursor = guestSystemCursor
+            updateCursor()
+            return
+        }
         guard let (image, hotspot) = guestCursorImage else { return }
         let scale = displayScale
         let size = NSSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
@@ -220,12 +253,13 @@ public final class QEMUDisplayView: NSView {
     private func updateCursor() {
         let inside = window.map { bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
         let active = inside && window?.isKeyWindow == true
-        let hide = active && (guestCursor == nil || guestCursorHidden)
+        let arrow = guestCursor == nil && arrowUntilAgentReturns
+        let hide = active && !arrow && (guestCursor == nil || guestCursorHidden)
         if hide != cursorHidden {
             cursorHidden = hide
             if hide { NSCursor.hide() } else { NSCursor.unhide() }
         }
-        if active, !hide, let guestCursor { guestCursor.set() }
+        if active, !hide { (arrow ? NSCursor.arrow : guestCursor)?.set() }
     }
 
     public override func cursorUpdate(with event: NSEvent) {
