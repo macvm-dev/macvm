@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import MacVMModel
 
 public enum HostInfo {

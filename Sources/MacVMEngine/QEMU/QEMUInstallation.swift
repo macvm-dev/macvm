@@ -1,5 +1,5 @@
 public import Foundation
-public import MacVMModel
+import MacVMModel
 
 /// 用户经 Homebrew 安装的 QEMU：可执行文件与 aarch64 UEFI 固件。
 public struct QEMUInstallation: Sendable {

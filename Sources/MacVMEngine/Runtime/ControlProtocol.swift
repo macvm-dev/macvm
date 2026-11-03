@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// 运行中虚拟机的控制 socket 协议：每个连接发一行 JSON 请求，收一行 JSON 响应。
 /// `connect` 成功响应之后，该连接变为到客户机 vsock 端口的原始字节管道。

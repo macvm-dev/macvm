@@ -1,5 +1,5 @@
 public import Foundation
-public import MacVMModel
+import MacVMModel
 
 public enum DiskImage {
     /// 创建稀疏 raw 镜像：APFS 上只占已写入的块，且可被 `clonefile` 零拷贝复制。

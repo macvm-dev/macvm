@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// 与客户机代理通信的消息类型，字段与编码由协议文档 agent.md 定义。
 public enum AgentProtocol {

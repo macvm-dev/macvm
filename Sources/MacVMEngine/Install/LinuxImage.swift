@@ -1,5 +1,5 @@
 public import Foundation
-public import MacVMModel
+import MacVMModel
 
 /// 可直接启动的 Linux 云镜像。只收录发行方提供 raw 磁盘（打包在 tar 里）的镜像，
 /// 免去主机上的格式转换；镜像内须带 cloud-init 以完成用户与密钥注入。

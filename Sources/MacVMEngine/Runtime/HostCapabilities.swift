@@ -1,5 +1,5 @@
-public import Foundation
-public import MacVMModel
+import Foundation
+import MacVMModel
 @preconcurrency import Virtualization
 
 /// 本机与本进程签名能支持哪些功能。

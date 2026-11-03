@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// 包内 `run.lock` 上的独占 flock：持有者就是正在运行该虚拟机的进程。
 /// 锁随进程退出自动释放，不会因崩溃残留；文件内容是持有者 pid，仅供展示。

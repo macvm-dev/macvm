@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import MacVMModel
 
 /// 在运行虚拟机的进程里监听控制 socket，把请求交给 `MachineRunner`。

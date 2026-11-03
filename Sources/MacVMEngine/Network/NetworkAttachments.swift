@@ -1,6 +1,6 @@
-public import Foundation
-public import MacVMModel
-@preconcurrency public import Virtualization
+import Foundation
+import MacVMModel
+@preconcurrency import Virtualization
 
 public enum NetworkAttachments {
     static func make(for net: NetworkConfig) throws -> VZNetworkDeviceAttachment {

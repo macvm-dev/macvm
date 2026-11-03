@@ -186,7 +186,7 @@ public final class QEMURunner: MachineRunner {
         qmp = nil
         stateLabel = "stopped"
         guard process.isRunning else { return }
-        try? await client?.execute("quit")
+        _ = try? await client?.execute("quit")
         for _ in 0..<50 where process.isRunning { try? await Task.sleep(for: .milliseconds(100)) }
         if process.isRunning { process.terminate() }
     }
@@ -215,7 +215,7 @@ public final class QEMURunner: MachineRunner {
         guard config.installMedia.first.map({ $0.lowercased().hasSuffix(".iso") }) == true else { return }
         Task { [weak self] in
             for _ in 0..<8 {
-                try? await self?.qmp?.execute("send-key", ["keys": [["type": "qcode", "data": "ret"]]])
+                _ = try? await self?.qmp?.execute("send-key", ["keys": [["type": "qcode", "data": "ret"]]])
                 try? await Task.sleep(for: .seconds(1))
             }
         }

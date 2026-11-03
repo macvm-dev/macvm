@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// 解析与格式化 `512M`、`8G`、`1T` 这类二进制单位的容量。
 public enum ByteSize {
