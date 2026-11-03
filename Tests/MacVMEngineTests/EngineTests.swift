@@ -194,6 +194,19 @@ struct WindowsUnattendTests {
         #expect(copy.lowerBound < agent.lowerBound)
     }
 
+    @Test func systemUUIDFollowsMachineIdentity() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "macvm-uuid-\(UUID().uuidString).macvm")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundle = VMBundle(url: directory)
+        #expect(QEMUCommand.systemUUID(bundle) == nil)
+        try Data([1, 2, 3]).write(to: bundle.machineIdentifierURL)
+        let first = try #require(QEMUCommand.systemUUID(bundle))
+        #expect(QEMUCommand.systemUUID(bundle) == first && UUID(uuidString: first) != nil && first != "00000000-0000-0000-0000-000000000000")
+        try Data([4, 5, 6]).write(to: bundle.machineIdentifierURL)
+        #expect(QEMUCommand.systemUUID(bundle) != first)
+    }
+
     @Test func acceleratedWindowsCannotSwitchToVZ() throws {
         var config = VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30, disks: [])
         // 旧配置文件没有这个字段。

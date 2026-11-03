@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import MacVMModel
 
@@ -62,10 +63,24 @@ struct QEMUCommand {
             .max { $0.width * $0.height < $1.width * $1.height }
     }
 
+    /// 主板（SMBIOS）UUID，从包内的机器标识算出：每台虚拟机唯一、每次启动不变，克隆时随机器标识一起换。
+    /// 客户机据它认出同一台机器（Windows 激活即是），QEMU 默认给的是全零。
+    static func systemUUID(_ bundle: VMBundle) -> String? {
+        guard let identity = try? Data(contentsOf: bundle.machineIdentifierURL) else { return nil }
+        var bytes = Array(SHA256.hash(data: identity).prefix(16))
+        // 按 RFC 9562 标成基于名字的第 5 版 UUID。
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let uuid = (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                    bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15])
+        return UUID(uuid: uuid).uuidString
+    }
+
     func arguments() throws -> [String] {
         var a: [String] = qemu.dataDirectory.map { ["-L", $0.path] } ?? []
+        a += ["-name", config.name]
+        if let uuid = Self.systemUUID(bundle) { a += ["-uuid", uuid] }
         a += [
-            "-name", config.name,
             "-nodefaults", "-no-user-config",
             "-machine", "virt,highmem=on,gic-version=3",
             // 自带的 QEMU 支持 4K 的 IPA 粒度：Windows 的 GPU 驱动按 4K 偏移映射资源，默认的 16K 粒度下映射失败、QEMU 退出。

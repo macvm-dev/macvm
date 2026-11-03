@@ -29,6 +29,8 @@ public final class QEMURunner: MachineRunner {
             throw MacVMError.unsupported("\(config.name) 装了 3D 显卡驱动，需要 App 自带的 QEMU（macOS 27 起）；当前的 QEMU 没有 3D，Windows 开机即崩溃")
         }
         try qemu.ensureVars(for: bundle)
+        // 主板 UUID 由它算出；较早建的包可能没有。
+        if !FileManager.default.fileExists(atPath: bundle.machineIdentifierURL.path) { try MachineIdentity.createGeneric(in: bundle) }
         _ = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments()
     }
 
