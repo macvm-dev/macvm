@@ -23,10 +23,12 @@ public enum WindowsInstaller {
         public var diskSize: UInt64?
         public var user: String
         public var password: String?
+        /// 装好后用它激活；不写进虚拟机配置。省略时系统保持未激活。
+        public var productKey: String?
         public var showProgress: Bool
 
         public init(name: String, iso: URL, virtioWin: URL? = nil, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
-                    user: String = NSUserName(), password: String? = nil, showProgress: Bool = false) {
+                    user: String = NSUserName(), password: String? = nil, productKey: String? = nil, showProgress: Bool = false) {
             self.name = name
             self.iso = iso
             self.virtioWin = virtioWin
@@ -35,8 +37,20 @@ public enum WindowsInstaller {
             self.diskSize = diskSize
             self.user = user
             self.password = password
+            self.productKey = productKey
             self.showProgress = showProgress
         }
+    }
+
+    /// 产品密钥统一成大写、以连字符分成五组各五个字符；格式不对时报错。
+    public static func normalizeProductKey(_ key: String) throws -> String {
+        let characters = key.uppercased().filter { $0.isLetter || $0.isNumber }
+        guard characters.count == 25, characters.allSatisfy({ $0.isASCII }) else {
+            throw MacVMError.invalidConfig("产品密钥应为 25 个字母或数字（XXXXX-XXXXX-XXXXX-XXXXX-XXXXX）")
+        }
+        return stride(from: 0, to: 25, by: 5).map { start in
+            String(characters[characters.index(characters.startIndex, offsetBy: start)..<characters.index(characters.startIndex, offsetBy: start + 5)])
+        }.joined(separator: "-")
     }
 
     /// 建好包与安装盘；之后 `start` 即开始安装，完成与否看 `isSetupComplete`。
@@ -46,6 +60,7 @@ public enum WindowsInstaller {
         guard FileManager.default.fileExists(atPath: options.iso.path) else { throw MacVMError.invalidConfig("ISO 不存在：\(options.iso.path)") }
         if FileManager.default.fileExists(atPath: library.bundleURL(named: options.name).path) { throw MacVMError.alreadyExists(options.name) }
 
+        let productKey = try options.productKey.map(normalizeProductKey)
         let locale = try await readLocale(iso: options.iso)
         var virtioWin = options.virtioWin
         if virtioWin == nil { virtioWin = try await cachedVirtioWin(showProgress: options.showProgress) }
@@ -54,7 +69,8 @@ public enum WindowsInstaller {
             computerName: String(options.name.filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(15)),
             user: options.user, password: password, locale: locale,
             sshPublicKey: try await SSHKeys.ensurePublicKey(),
-            installAgent: AgentInstaller.binary(for: .windows) != nil
+            installAgent: AgentInstaller.binary(for: .windows) != nil,
+            productKey: productKey
         )
         // 驱动由代理装，没有代理就不放。
         unattend.installGPUDriver = unattend.installAgent && WindowsGPUDriver.package(qemu) != nil

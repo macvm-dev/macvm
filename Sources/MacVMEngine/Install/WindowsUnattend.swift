@@ -13,6 +13,8 @@ enum WindowsUnattend {
         var installAgent = false
         /// 安装盘上带有 `gpuDriverFolder`，首次登录时放进客户机，由代理装上。
         var installGPUDriver = false
+        /// 首次登录联网后用它激活；省略时系统保持未激活。
+        var productKey: String?
     }
 
     static let agentFileName = "macvm-agent.exe"
@@ -26,7 +28,8 @@ enum WindowsUnattend {
     /// 首次登录脚本完成后创建，宿主经 SSH 检测它判断安装结束。
     static let doneMarker = #"C:\macvm-setup.done"#
 
-    /// Windows 11 专业版的通用安装密钥，只让 OOBE 不再询问密钥，不激活系统。
+    /// Windows 11 专业版的通用安装密钥，只让 OOBE 不再询问密钥，不激活系统。用户自己的密钥在首次登录时换上：
+    /// 它的版本未必是专业版，在部署阶段填错版本会让安装中止，首次登录时换不上只是不激活。
     private static let genericProKey = "VK7JG-NPHTM-C97JM-9MPGT-3V66T"
 
     /// 第一阶段，由安装光盘启动的 WinPE 读取：只运行安装盘上的部署脚本。
@@ -195,6 +198,7 @@ enum WindowsUnattend {
         Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
         Set-Content -Path $PSHOME\profile.ps1 -Encoding utf8 -Value '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding'
         Restart-Service sshd
+        \#(o.productKey.map { "cscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ipk \($0)\ncscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ato" } ?? "")
         \#(o.installGPUDriver ? "New-Item -ItemType Directory -Force -Path (Split-Path '\(WindowsGPUDriver.guestDirectory)') | Out-Null; Copy-Item -Recurse -Force -LiteralPath (Join-Path $PSScriptRoot '\(gpuDriverFolder)') -Destination '\(WindowsGPUDriver.guestDirectory)'" : "")
         \#(o.installAgent ? AgentInstaller.windowsRegistration(source: "(Join-Path $PSScriptRoot '\(agentFileName)')", user: o.user) : "")
         New-Item -ItemType File -Path \#(doneMarker) -Force

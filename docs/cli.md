@@ -12,7 +12,7 @@
 
 | 命令 | 作用 |
 | --- | --- |
-| `create <名> [--image ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu]` | 创建 Linux / Windows 虚拟机；Windows 从原版 ISO 无人值守部署 |
+| `create <名> [--image ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机；Windows 从原版 ISO 无人值守部署，给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态） |
 | `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off]` | 修改已停止虚拟机的配置，可切换引擎；只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效） |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |

@@ -60,6 +60,9 @@ struct Create: AsyncParsableCommand {
     @Option(help: "虚拟化引擎：vz（默认，资源占用最低）或 qemu（功能更全）。Windows 安装总是用 qemu。")
     var engine: Engine?
 
+    @Option(name: .customLong("product-key"), help: "Windows：产品密钥，装好后联网激活；不写进虚拟机配置。省略时不激活。")
+    var productKey: String?
+
     @Flag(help: "Windows：只建好虚拟机，不立即开始安装。")
     var noInstall = false
 
@@ -72,6 +75,7 @@ struct Create: AsyncParsableCommand {
                 throw MacVMError.invalidConfig("macOS 客户机请用 macvm install-macos 创建")
             }
             if os == .windows { return try await createWindows() }
+            if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
@@ -102,7 +106,7 @@ struct Create: AsyncParsableCommand {
             name: name, iso: URL(filePath: (iso as NSString).expandingTildeInPath).standardizedFileURL,
             virtioWin: virtioWin.map { URL(filePath: ($0 as NSString).expandingTildeInPath) },
             cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
-            user: user, showProgress: interactive
+            user: user, productKey: productKey, showProgress: interactive
         )
         let bundle = try await WindowsInstaller.create(options)
         SSHConfigCommand.refresh()

@@ -194,6 +194,18 @@ struct WindowsUnattendTests {
         #expect(copy.lowerBound < agent.lowerBound)
     }
 
+    @Test func productKeyIsActivatedAtFirstLogon() throws {
+        #expect(try WindowsInstaller.normalizeProductKey("abcde fghij-klmno-pqrst-uvwxy") == "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY")
+        #expect(throws: MacVMError.self) { try WindowsInstaller.normalizeProductKey("ABCDE-FGHIJ") }
+        var o = options
+        #expect(!WindowsUnattend.setupScript(o).contains("slmgr"))
+        o.productKey = "ABCDE-FGHIJ-KLMNO-PQRST-UVWXY"
+        let script = WindowsUnattend.setupScript(o)
+        #expect(script.contains(#"slmgr.vbs /ipk ABCDE-FGHIJ-KLMNO-PQRST-UVWXY"#) && script.contains("slmgr.vbs /ato"))
+        // 部署阶段仍用通用密钥，用户的密钥不进应答文件。
+        #expect(!WindowsUnattend.unattend(o).contains("ABCDE"))
+    }
+
     @Test func systemUUIDFollowsMachineIdentity() throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "macvm-uuid-\(UUID().uuidString).macvm")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
