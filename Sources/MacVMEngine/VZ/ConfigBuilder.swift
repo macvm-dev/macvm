@@ -83,20 +83,20 @@ public struct ConfigBuilder {
             guard FileManager.default.fileExists(atPath: boot.path) else {
                 throw MacVMError.invalidConfig("缺少 Windows 启动盘 \(WindowsSupport.bootImageName)，应经 RunnerFactory.make 创建运行器")
             }
-            devices.append(VZVirtioBlockDeviceConfiguration(attachment: try diskAttachment(url: boot, readOnly: true, caching: .automatic, sync: .none)))
+            devices.append(VZVirtioBlockDeviceConfiguration(attachment: try Self.diskAttachment(url: boot, readOnly: true, caching: .automatic, sync: .none)))
         }
         for disk in config.disks {
             devices.append(try storageDevice(for: disk))
         }
         for media in config.installMedia {
-            let attachment = try diskAttachment(url: bundle.resolve(media), readOnly: true, caching: .automatic, sync: .none)
+            let attachment = try Self.diskAttachment(url: bundle.resolve(media), readOnly: true, caching: .automatic, sync: .none)
             devices.append(VZUSBMassStorageDeviceConfiguration(attachment: attachment))
         }
         vz.storageDevices = devices
     }
 
     private func storageDevice(for disk: DiskConfig) throws -> VZStorageDeviceConfiguration {
-        let attachment = try diskAttachment(url: bundle.resolve(disk.path), readOnly: disk.readOnly, caching: disk.caching, sync: disk.sync)
+        let attachment = try Self.diskAttachment(url: bundle.resolve(disk.path), readOnly: disk.readOnly, caching: disk.caching, sync: disk.sync)
         switch disk.bus {
         case .virtio: return VZVirtioBlockDeviceConfiguration(attachment: attachment)
         case .nvme: return VZNVMExpressControllerDeviceConfiguration(attachment: attachment)
@@ -104,7 +104,7 @@ public struct ConfigBuilder {
         }
     }
 
-    private func diskAttachment(url: URL, readOnly: Bool, caching: DiskConfig.Caching, sync: DiskConfig.Sync) throws -> VZDiskImageStorageDeviceAttachment {
+    static func diskAttachment(url: URL, readOnly: Bool, caching: DiskConfig.Caching, sync: DiskConfig.Sync) throws -> VZDiskImageStorageDeviceAttachment {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw MacVMError.invalidConfig("磁盘文件不存在：\(url.path)")
         }

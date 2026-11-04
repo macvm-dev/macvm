@@ -1,6 +1,7 @@
 import MacVMEngine
 import MacVMModel
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 一台虚拟机的窗口：打开即在本进程启动（或接上已在本进程运行的）虚拟机。
 /// QEMU 引擎的画面经 VNC 显示，在别的进程里运行的也能接上；VZ 的画面只能在运行它的进程里显示。
@@ -11,6 +12,8 @@ struct MachineWindow: View {
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
     @State private var showingShares = false
+    @State private var showingImages = false
+    @State private var choosingImage = false
     /// 改了声音或麦克风后在画面顶部短暂显示的说明。
     @State private var notice: String?
     /// 从本窗口发起、还没返回的挂起；期间挂起按钮换成转圈，关机按钮不可点。
@@ -95,6 +98,16 @@ struct MachineWindow: View {
         // 工具栏从窗口打开起就在，虚拟机跑起来之前按钮不可点：按钮晚出现会把标题栏撑高，画面跟着往下跳。
         .toolbar {
             Group {
+                Button { showingImages = true } label: { Label("磁盘映像", systemImage: "opticaldisc") }
+                    .help(model.canAttachImages(name) ? "光盘与磁盘映像" : "只有在本 App 里启动、带 USB 控制器的虚拟机能接入磁盘映像")
+                    .disabled(!model.canAttachImages(name))
+                    .popover(isPresented: $showingImages, arrowEdge: .bottom) {
+                        // 文件选择面板一弹出 popover 就会关闭，所以先关 popover，由窗口弹面板。
+                        ImagesPopover(name: name) {
+                            showingImages = false
+                            choosingImage = true
+                        }
+                    }
                 if let config, config.supportsShares {
                     Button { showingShares = true } label: { Label("共享目录", systemImage: "folder") }
                         .help("共享目录")
@@ -143,6 +156,13 @@ struct MachineWindow: View {
         }
         // 用 sheet 而不是 popover：添加时要弹文件选择面板，popover 一失去焦点就关闭。
         .sheet(isPresented: $showingShares) { SharesSheet(name: name) }
+        .fileImporter(isPresented: $choosingImage, allowedContentTypes: ImagesPopover.imageTypes, allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result, !urls.isEmpty else { return }
+            Task {
+                await model.attachImages(name, urls)
+                showingImages = true
+            }
+        }
     }
 }
 
@@ -214,5 +234,58 @@ private struct SharesSheet: View {
         }
         .frame(width: 460)
         .acceptsShareDrops(vmName: name, editable: editable)
+    }
+}
+
+/// 窗口工具栏里的光盘与磁盘映像：列出这次开机热插的映像，可接入、推出。
+private struct ImagesPopover: View {
+    @Environment(AppModel.self) private var model
+    let name: String
+    let onAttach: () -> Void
+
+    /// VZ 只认原始格式与 ASIF；DMG 只有未压缩的读写格式能接入，其余在接入时报错。
+    static let imageTypes: [UTType] = [.diskImage] + ["iso", "img", "raw", "asif", "cdr", "dmg"].compactMap { UTType(filenameExtension: $0) }
+
+    var body: some View {
+        let images = model.attachedImages[name] ?? []
+        let busy = model.changingImages.contains(name)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("光盘与磁盘映像").font(.headline)
+            if images.isEmpty {
+                Text("没有接入光盘或磁盘映像。").foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(images) { image in row(image, busy: busy) }
+                }
+            }
+            HStack(spacing: 8) {
+                Button(action: onAttach) { Label("接入磁盘映像…", systemImage: "plus") }
+                if busy { ProgressView().controlSize(.small) }
+            }
+            .disabled(busy)
+            Text("映像在客户机里显示为 U 盘。先在客户机里推出，再在这里推出，否则客户机还没写完的数据可能丢失。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding()
+        .frame(width: 320)
+    }
+
+    private func row(_ image: AttachedImage, busy: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "externaldrive").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(image.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                Text(image.readOnly ? "只读" : "可读写").font(.caption).foregroundStyle(.secondary)
+            }
+            .help(image.url.path)
+            Spacer()
+            Button { Task { await model.ejectImage(name, id: image.id) } } label: { Image(systemName: "eject.fill") }
+                .buttonStyle(.borderless)
+                .help("推出")
+                .accessibilityLabel("推出 \(image.url.lastPathComponent)")
+                .disabled(busy)
+        }
     }
 }

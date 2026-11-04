@@ -235,6 +235,7 @@ final class AppModel {
         servers[name]?.close()
         servers[name] = nil
         runners[name] = nil
+        attachedImages[name] = nil
         refresh()
     }
 
@@ -305,6 +306,33 @@ final class AppModel {
         } else {
             updateConfig(name, requiresStopped: true, change)
         }
+    }
+
+    // MARK: - 磁盘映像
+
+    /// 本进程运行的虚拟机热插的磁盘映像，键为虚拟机名：运行器不可观察，接入、推出后在这里留一份给界面。
+    private(set) var attachedImages: [String: [AttachedImage]] = [:]
+    /// 正在接入或推出磁盘映像的虚拟机名。
+    private(set) var changingImages: Set<String> = []
+
+    func canAttachImages(_ name: String) -> Bool { runners[name]?.supportsImageHotPlug == true }
+
+    func attachImages(_ name: String, _ urls: [URL]) async {
+        guard let runner = runners[name] else { return }
+        changingImages.insert(name)
+        for url in urls {
+            do { _ = try await runner.attachImage(url, readOnly: AttachedImage.prefersReadOnly(url)) } catch { report(error) }
+        }
+        changingImages.remove(name)
+        attachedImages[name] = runners[name]?.attachedImages
+    }
+
+    func ejectImage(_ name: String, id: UUID) async {
+        guard let runner = runners[name] else { return }
+        changingImages.insert(name)
+        do { try await runner.ejectImage(id) } catch { report(error) }
+        changingImages.remove(name)
+        attachedImages[name] = runners[name]?.attachedImages
     }
 
     /// 只扩大系统盘镜像，客户机里的分区要另行扩展。

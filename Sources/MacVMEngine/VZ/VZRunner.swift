@@ -83,6 +83,48 @@ public final class VZRunner: NSObject, MachineRunner {
         device.share = try ConfigBuilder.macOSShare(shares, in: bundle)
     }
 
+    // MARK: - 磁盘映像
+
+    /// 按接入顺序排列。
+    private var hotPlugged: [(image: AttachedImage, device: VZUSBMassStorageDevice)] = []
+
+    public var supportsImageHotPlug: Bool { !virtualMachine.usbControllers.isEmpty }
+
+    public var attachedImages: [AttachedImage] { hotPlugged.map(\.image) }
+
+    public func attachImage(_ url: URL, readOnly: Bool) async throws -> AttachedImage {
+        guard let controller = virtualMachine.usbControllers.first else {
+            throw MacVMError.unsupported("\(bundle.name) 没有 USB 控制器，不能接入磁盘映像")
+        }
+        guard virtualMachine.state == .running || virtualMachine.state == .paused else { throw MacVMError.notRunning(bundle.name) }
+        try checkAttachable(url)
+        let attachment = try ConfigBuilder.diskAttachment(url: url, readOnly: readOnly, caching: .automatic, sync: readOnly ? .none : .fsync)
+        let device = VZUSBMassStorageDevice(configuration: VZUSBMassStorageDeviceConfiguration(attachment: attachment))
+        do {
+            try await controller.attach(device: device)
+        } catch {
+            throw MacVMError.engine("接入 \(url.lastPathComponent) 失败：\(describeEngineError(error))")
+        }
+        let image = AttachedImage(id: device.uuid, url: url, readOnly: readOnly)
+        hotPlugged.append((image, device))
+        return image
+    }
+
+    public func ejectImage(_ id: UUID) async throws {
+        guard let index = hotPlugged.firstIndex(where: { $0.image.id == id }) else { return }
+        let (image, device) = hotPlugged[index]
+        guard let controller = device.usbController else {
+            hotPlugged.remove(at: index)
+            return
+        }
+        do {
+            try await controller.detach(device: device)
+        } catch {
+            throw MacVMError.engine("推出 \(image.url.lastPathComponent) 失败：\(describeEngineError(error))")
+        }
+        hotPlugged.removeAll { $0.image.id == id }
+    }
+
     public var canSuspend: Bool {
         guard config.supportsSuspend else { return false }
         return (try? vzConfiguration.validateSaveRestoreSupport()) != nil
@@ -244,6 +286,7 @@ public final class VZRunner: NSObject, MachineRunner {
             throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
         }
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
+        try requireNoAttachedImages()
         try markShareDevice()
         if virtualMachine.state == .running { try await pause() }
         let url = bundle.savedStateURL

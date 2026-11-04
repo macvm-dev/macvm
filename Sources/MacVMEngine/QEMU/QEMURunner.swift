@@ -43,6 +43,68 @@ public final class QEMURunner: MachineRunner {
         throw MacVMError.unsupported("QEMU 引擎不支持共享目录")
     }
 
+    // MARK: - 磁盘映像
+
+    /// 按接入顺序排列；`serial` 拼出 QMP 里的块设备 node-name 与 USB 设备 id。
+    private var hotPlugged: [(image: AttachedImage, serial: Int)] = []
+    private var lastHotPlugSerial = 0
+
+    public var supportsImageHotPlug: Bool { true }
+
+    public var attachedImages: [AttachedImage] { hotPlugged.map(\.image) }
+
+    private static func nodeName(_ serial: Int) -> String { "hpimg\(serial)" }
+    private static func deviceID(_ serial: Int) -> String { "hpusb\(serial)" }
+
+    public func attachImage(_ url: URL, readOnly: Bool) async throws -> AttachedImage {
+        guard let qmp else { throw MacVMError.notRunning(bundle.name) }
+        try checkAttachable(url)
+        // 按 raw 接入，ASIF 的容器字节会原样露给客户机，客户机一写就毁了映像。
+        guard url.pathExtension.lowercased() != "asif" else {
+            throw MacVMError.unsupported("QEMU 引擎不能接入 ASIF 映像")
+        }
+        lastHotPlugSerial += 1
+        let serial = lastHotPlugSerial
+        let node = Self.nodeName(serial)
+        do {
+            try await qmp.execute("blockdev-add", [
+                "driver": "raw", "node-name": node, "read-only": readOnly,
+                "file": ["driver": "file", "filename": url.path, "read-only": readOnly],
+            ])
+            do {
+                try await qmp.execute("device_add", ["driver": "usb-storage", "id": Self.deviceID(serial), "bus": "usb.0", "drive": node, "removable": true])
+            } catch {
+                _ = try? await qmp.execute("blockdev-del", ["node-name": node])
+                throw error
+            }
+        } catch {
+            throw MacVMError.engine("接入 \(url.lastPathComponent) 失败：\((error as? MacVMError)?.message ?? error.localizedDescription)")
+        }
+        let image = AttachedImage(id: UUID(), url: url, readOnly: readOnly)
+        hotPlugged.append((image, serial))
+        return image
+    }
+
+    public func ejectImage(_ id: UUID) async throws {
+        guard let entry = hotPlugged.first(where: { $0.image.id == id }) else { return }
+        guard let qmp else {
+            hotPlugged.removeAll { $0.image.id == id }
+            return
+        }
+        do {
+            try await qmp.execute("device_del", ["id": Self.deviceID(entry.serial)])
+        } catch {
+            throw MacVMError.engine("推出 \(entry.image.url.lastPathComponent) 失败：\((error as? MacVMError)?.message ?? error.localizedDescription)")
+        }
+        hotPlugged.removeAll { $0.image.id == id }
+        // 设备从总线上摘下之后块设备才不再被占用，在那之前 blockdev-del 会失败。
+        for _ in 0..<50 {
+            if (try? await qmp.execute("blockdev-del", ["node-name": Self.nodeName(entry.serial)])) != nil { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        throw MacVMError.engine("\(entry.image.url.lastPathComponent) 已从客户机拔下，但 QEMU 没释放它的块设备，文件仍被占用，关机后才能再接入或改动")
+    }
+
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         try RuntimeDirectory.ensure()
@@ -105,6 +167,7 @@ public final class QEMURunner: MachineRunner {
     public func suspend() async throws {
         guard canSuspend else { throw MacVMError.unsupported("该虚拟机的配置不支持挂起") }
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
+        try requireNoAttachedImages()
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }
         try await qmp.execute("stop")
         stateLabel = "saving"

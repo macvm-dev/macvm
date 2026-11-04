@@ -89,6 +89,13 @@ public protocol MachineRunner: AnyObject, Sendable {
     func screenshot(to url: URL) async throws
     func resizeDisplay(width: Int, height: Int) throws
     func updateShares(_ shares: [ShareConfig]) throws
+    /// 运行中能否用 `attachImage` 热插磁盘映像。
+    var supportsImageHotPlug: Bool { get }
+    var attachedImages: [AttachedImage] { get }
+    /// 把磁盘映像作为 U 盘接到客户机的 USB 控制器上。
+    func attachImage(_ url: URL, readOnly: Bool) async throws -> AttachedImage
+    /// 拔下 `attachImage` 接入的映像；客户机没先推出时，它还没写回的数据会丢失。
+    func ejectImage(_ id: UUID) async throws
 }
 
 extension MachineRunner {

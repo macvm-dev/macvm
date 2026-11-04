@@ -15,3 +15,20 @@ struct ControlProtocolTests {
         #expect(try JSONDecoder().decode(ControlRequest.self, from: Data(#"{"op":"stop"}"#.utf8)) == .stop(force: false))
     }
 }
+
+struct AttachedImageTests {
+    @Test func discImagesAttachReadOnly() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for name in ["a.iso", "b.ISO", "c.dmg", "d.img"] {
+            try Data().write(to: dir.appending(path: name))
+        }
+        #expect(AttachedImage.prefersReadOnly(dir.appending(path: "a.iso")))
+        #expect(AttachedImage.prefersReadOnly(dir.appending(path: "b.ISO")))
+        #expect(AttachedImage.prefersReadOnly(dir.appending(path: "c.dmg")))
+        #expect(!AttachedImage.prefersReadOnly(dir.appending(path: "d.img")))
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: dir.appending(path: "d.img").path)
+        #expect(AttachedImage.prefersReadOnly(dir.appending(path: "d.img")))
+    }
+}
