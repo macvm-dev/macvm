@@ -27,6 +27,8 @@ final class SpiceDisplay: DisplayBackend {
     var onConnect: (() -> Void)?
     var onResize: ((CGSize) -> Void)?
     var onClose: (() -> Void)?
+    /// SPICE 光标通道送来的客户机光标（客户机用硬件光标时才有）。
+    var onCursor: ((GuestCursor) -> Void)?
 
     private let library: Library
     private let handle: UnsafeMutableRawPointer
@@ -44,6 +46,7 @@ final class SpiceDisplay: DisplayBackend {
         view = Unmanaged<NSView>.fromOpaque(handle).takeUnretainedValue()
         self.box = box
         box.owner = self
+        library.setCursorHandler?(handle, Self.cursorHandler)
     }
 
     /// 回调的上下文：库只持有它的裸指针，`close` 之后库不再回调。
@@ -62,6 +65,18 @@ final class SpiceDisplay: DisplayBackend {
             case 3: owner.onResize?(CGSize(width: width, height: height))
             default: break
             }
+        }
+    }
+
+    private static let cursorHandler: Library.CursorHandler = { context, bgra, width, height, hotX, hotY in
+        guard let context else { return }
+        let address = UInt(bitPattern: context)
+        let pixels = bgra.map { Data(bytes: $0, count: Int(width) * Int(height) * 4) }
+        MainActor.assumeIsolated {
+            guard let pointer = UnsafeRawPointer(bitPattern: address),
+                  let owner = Unmanaged<Box>.fromOpaque(pointer).takeUnretainedValue().owner else { return }
+            let image = pixels.flatMap { cursorImage(bgra: $0, width: Int(width), height: Int(height)) }
+            owner.onCursor?(image.map { .image($0, hotspot: CGPoint(x: Int(hotX), y: Int(hotY))) } ?? .hidden)
         }
     }
 
@@ -103,12 +118,15 @@ final class SpiceDisplay: DisplayBackend {
     /// `MacVMDisplay.h` 的函数表，进程内只加载一次。
     struct Library {
         typealias Handler = @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double) -> Void
+        typealias CursorHandler = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int32, Int32, Int32, Int32) -> Void
         let create: @convention(c) (UnsafePointer<CChar>, Handler, UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?
         let close: @convention(c) (UnsafeMutableRawPointer) -> Void
         let key: @convention(c) (UnsafeMutableRawPointer, Int32, Bool) -> Void
         let pointer: @convention(c) (UnsafeMutableRawPointer, Double, Double, UInt32) -> Void
         let scroll: @convention(c) (UnsafeMutableRawPointer, Bool, UInt32) -> Void
         let showGuestCursor: @convention(c) (UnsafeMutableRawPointer, Bool) -> Void
+        /// 库里没有这个符号时为 nil，光标照旧画进画面。
+        let setCursorHandler: (@convention(c) (UnsafeMutableRawPointer, CursorHandler) -> Void)?
         let setFrozen: @convention(c) (UnsafeMutableRawPointer, Bool) -> Void
         let freezeOnResize: @convention(c) (UnsafeMutableRawPointer) -> Void
         let thawWhenIdle: @convention(c) (UnsafeMutableRawPointer, Double, Double) -> Void
@@ -117,7 +135,7 @@ final class SpiceDisplay: DisplayBackend {
 
         private struct MissingSymbol: Error {}
 
-        /// 函数类型由各属性的声明决定；缺任何一个符号都失败。
+        /// 函数类型由各属性的声明决定；除了可选的，缺任何一个符号都失败。
         private init(_ lib: UnsafeMutableRawPointer) throws {
             func symbol<T>(_ name: String) throws -> T {
                 guard let address = dlsym(lib, name) else { throw MissingSymbol() }
@@ -129,6 +147,7 @@ final class SpiceDisplay: DisplayBackend {
             pointer = try symbol("MacVMDisplayPointer")
             scroll = try symbol("MacVMDisplayScroll")
             showGuestCursor = try symbol("MacVMDisplayShowGuestCursor")
+            setCursorHandler = try? symbol("MacVMDisplaySetCursorHandler")
             setFrozen = try symbol("MacVMDisplaySetFrozen")
             freezeOnResize = try symbol("MacVMDisplayFreezeOnResize")
             thawWhenIdle = try symbol("MacVMDisplayThawWhenIdle")

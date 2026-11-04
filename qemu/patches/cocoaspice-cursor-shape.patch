@@ -1,0 +1,111 @@
+--- a/Sources/CocoaSpice/CSCursor.m
++++ b/Sources/CocoaSpice/CSCursor.m
+@@ -30,6 +30,7 @@
+ @property (nonatomic, readwrite) BOOL hasCursor;
+ @property (nonatomic, readwrite) BOOL cursorHidden;
+ @property (nonatomic) CGPoint mouseGuest;
++@property (nonatomic, nullable) NSData *shapePixels;
+ 
+ @property (nonatomic, nullable, readwrite) id<MTLTexture> texture;
+ @property (nonatomic, readwrite) NSUInteger numVertices;
+@@ -46,6 +47,23 @@
+     [self.display invalidate];
+ }
+ 
++static void cs_cursor_report(CSCursor *self)
++{
++    void (^handler)(NSData *, CGSize, CGPoint);
++    NSData *pixels;
++    CGSize size;
++    CGPoint hotspot;
++    @synchronized (self) {
++        handler = self.shapeHandler;
++        pixels = self.hasCursor && !self.cursorHidden ? self.shapePixels : nil;
++        size = self.cursorSize;
++        hotspot = self.cursorHotspot;
++    }
++    if (handler) {
++        handler(pixels, size, hotspot);
++    }
++}
++
+ static void cs_cursor_set(SpiceCursorChannel *channel,
+                           G_GNUC_UNUSED GParamSpec *pspec,
+                           gpointer data)
+@@ -67,10 +85,15 @@
+         [self rebuildCursorWithSize:newSize center:hotspot];
+     }
+     [self drawCursor:cursor_shape->data];
++    NSData *pixels = [NSData dataWithBytes:cursor_shape->data length:(NSUInteger)cursor_shape->width * cursor_shape->height * 4];
+     // this has to be after drawCursor: which runs in the same serial queue
+     g_boxed_free(SPICE_TYPE_CURSOR_SHAPE, cursor_shape);
+-    self.cursorHidden = NO;
++    @synchronized (self) {
++        self.shapePixels = pixels;
++        self.cursorHidden = NO;
++    }
+     cs_cursor_invalidate(self);
++    cs_cursor_report(self);
+ }
+ 
+ static void cs_cursor_move(SpiceCursorChannel *channel, gint x, gint y, gpointer data)
+@@ -80,11 +103,16 @@
+     self.mouseGuest = CGPointMake(x, y);
+ 
+     /* apparently we have to restore cursor when "cursor_move" */
++    BOOL shown = NO;
+     if (self.hasCursor) {
++        shown = self.cursorHidden;
+         self.cursorHidden = NO;
+     }
+     
+     cs_cursor_invalidate(self);
++    if (shown) {
++        cs_cursor_report(self);
++    }
+ }
+ 
+ static void cs_cursor_hide(SpiceCursorChannel *channel, gpointer data)
+@@ -93,6 +121,7 @@
+     
+     self.cursorHidden = YES;
+     cs_cursor_invalidate(self);
++    cs_cursor_report(self);
+ }
+ 
+ static void cs_cursor_reset(SpiceCursorChannel *channel, gpointer data)
+@@ -102,6 +131,7 @@
+     SPICE_DEBUG("[CocoaSpice] %s",  __FUNCTION__);
+     [self destroyCursor];
+     cs_cursor_invalidate(self);
++    cs_cursor_report(self);
+ }
+ 
+ #pragma mark - Main events
+@@ -280,6 +310,13 @@
+                     mipmapLevel:0
+                       withBytes:buffer
+                     bytesPerRow:cursorSize.width*pixelSize];
++}
++
++- (void)setShapeHandler:(void (^)(NSData *, CGSize, CGPoint))shapeHandler {
++    @synchronized (self) {
++        _shapeHandler = [shapeHandler copy];
++    }
++    cs_cursor_report(self);
+ }
+ 
+ - (void)moveTo:(CGPoint)point {
+--- a/Sources/CocoaSpice/include/CSCursor.h
++++ b/Sources/CocoaSpice/include/CSCursor.h
+@@ -37,6 +37,10 @@
+ /// Cursor is visible if it is not inhibited (by the host) and is not hidden (by the guest) and is drawn (by the guest)
+ @property (nonatomic, readonly) BOOL isVisible;
+ 
++/// Called on the SPICE thread whenever the guest cursor changes: BGRA pixels with straight alpha, size and hotspot in pixels.
++/// `bgra` is nil while the guest hides the cursor or has none. Setting the handler calls it once with the current cursor.
++@property (nonatomic, copy, nullable) void (^shapeHandler)(NSData * _Nullable bgra, CGSize size, CGPoint hotspot);
++
+ - (instancetype)init NS_UNAVAILABLE;
+ 
+ /// Set the cursor to a new location (only appliable if client side cursor rendering is in use)

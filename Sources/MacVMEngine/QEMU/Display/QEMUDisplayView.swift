@@ -6,7 +6,8 @@ public import MacVMModel
 /// 用 SPICE 时窗口大小停下来后请客户机把分辨率改成窗口大小（点数），客户机不跟随时画面按比例缩放进视图。
 /// 光标形状优先取客户机代理推送的（`AgentCursorWatcher`），
 /// 用作宿主光标，跟手且无延迟；viogpudo 上传形状与切换光标之间没有同步，VNC 收到的常是上一个形状。
-/// 没有代理时，VNC 用它转来的硬件光标形状，SPICE 把光标画进画面；客户机自己画光标时宿主光标隐藏。
+/// 代理不推送时用客户机的硬件光标形状（VNC 转来的，或 SPICE 光标通道的）；SPICE 收不到形状时把光标画进画面，
+/// 客户机自己画光标时宿主光标隐藏。
 public final class QEMUDisplayView: NSView {
     private let bundle: VMBundle
     private let vncPath: String
@@ -15,8 +16,10 @@ public final class QEMUDisplayView: NSView {
     private var spice: SpiceDisplay? { backend as? SpiceDisplay }
     private var cursorWatcher: AgentCursorWatcher?
     private var cursorWatchRetry: Timer?
-    /// 代理正在推送光标形状，此时忽略 VNC 的光标。
+    /// 代理正在推送光标形状，此时忽略 VNC 与 SPICE 的光标。
     private var agentCursorActive = false
+    /// 当前 SPICE 连接最近送来的客户机光标；有它时宿主光标用它，光标不再画进画面。
+    private var spiceCursor: GuestCursor?
     private var framebufferSize = CGSize.zero
     private var reconnect: Timer?
     private var buttons: UInt8 = 0
@@ -68,6 +71,7 @@ public final class QEMUDisplayView: NSView {
         cursorWatcher?.close()
         cursorWatcher = nil
         agentCursorActive = false
+        spiceCursor = nil
     }
 
     private func connect() {
@@ -84,6 +88,7 @@ public final class QEMUDisplayView: NSView {
             }
             spice.onClose = { [weak self] in
                 guard let self else { return }
+                spiceCursor = nil
                 backend?.close()
                 backend = nil
                 scheduleReconnect()
@@ -91,6 +96,12 @@ public final class QEMUDisplayView: NSView {
             spice.onConnect = { [weak self] in
                 self?.requestedGuestSize = nil
                 self?.scheduleGuestFit()
+            }
+            spice.onCursor = { [weak self] cursor in
+                guard let self else { return }
+                if spiceCursor == nil, !agentCursorActive { self.spice?.showGuestCursor(false) }
+                spiceCursor = cursor
+                if !agentCursorActive { setGuestCursor(cursor) }
             }
             spice.view.frame = bounds
             spice.view.autoresizingMask = [.width, .height]
@@ -165,9 +176,10 @@ public final class QEMUDisplayView: NSView {
                 guestCursorImage = nil
                 guestSystemCursor = nil
                 guestCursor = nil
+                if let spiceCursor { setGuestCursor(spiceCursor) }
             }
             updateCursor()
-            spice?.showGuestCursor(true)
+            spice?.showGuestCursor(spiceCursor == nil)
             guard retry, window != nil else {
                 // 代理在线但不提供光标（客户机自己画光标）。
                 agentCameOnline()

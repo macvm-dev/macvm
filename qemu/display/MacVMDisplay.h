@@ -11,6 +11,9 @@ enum {
     MacVMDisplayEventResized = 3,
 };
 typedef void (*MacVMDisplayHandler)(void *context, int event, double width, double height);
+/// 客户机光标形状：`bgra` 为逐行 B G R A、非预乘的像素，尺寸与热点单位为像素；客户机隐藏光标或没有光标时 `bgra` 为 NULL。
+/// `bgra` 只在回调期间有效。
+typedef void (*MacVMDisplayCursorHandler)(void *context, const uint8_t *bgra, int width, int height, int hotX, int hotY);
 
 /// 返回一个已持有（+1）的 NSView，连接 `socketPath` 上的 SPICE 并用 Metal 按比例居中显示画面。
 /// 视图不接收鼠标事件（hitTest 返回 nil），键鼠由宿主视图经下列函数转发。
@@ -25,6 +28,8 @@ void MacVMDisplayPointer(void *view, double x, double y, uint32_t buttons);
 void MacVMDisplayScroll(void *view, bool up, uint32_t buttons);
 /// 是否把 SPICE 光标通道的光标画进画面（默认画）；宿主已用系统光标显示客户机光标时关掉。
 void MacVMDisplayShowGuestCursor(void *view, bool shows);
+/// SPICE 光标通道的光标形状变化时在主线程回调，`context` 是创建视图时传入的指针；设上时先回调一次当前形状。
+void MacVMDisplaySetCursorHandler(void *view, MacVMDisplayCursorHandler handler);
 /// 冻结时画面停在当前这一帧（窗口变大时拉伸显示），新帧照常接收确认、客户机不受阻；解冻立即画最新一帧。
 void MacVMDisplaySetFrozen(void *view, bool frozen);
 /// 画面尺寸下次变化时自动冻结，停在变化前的最后一帧，直到 `MacVMDisplaySetFrozen(view, false)`。

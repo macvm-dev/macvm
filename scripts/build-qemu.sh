@@ -208,7 +208,8 @@ build_display() {
   unpack cocoaspice-pinned.tar.gz cocoaspice "$native/patches/cocoaspice-renderer.patch" \
     "$native/patches/cocoaspice-screenshot.patch" "$native/patches/cocoaspice-seamless.patch" \
     "$native/patches/cocoaspice-device-area.patch" "$native/patches/cocoaspice-scanout-peek.patch" \
-    "$native/patches/cocoaspice-present-on-attach.patch" "$native/patches/cocoaspice-on-demand-draw.patch"
+    "$native/patches/cocoaspice-present-on-attach.patch" "$native/patches/cocoaspice-on-demand-draw.patch" \
+    "$native/patches/cocoaspice-cursor-shape.patch"
   local cocoa=$sources/cocoaspice
   local renderer=$cocoa/Sources/CocoaSpiceRenderer client=$cocoa/Sources/CocoaSpice
   local module=$work/display-module objects=$work/display-objects file

@@ -24,6 +24,7 @@ static BOOL debug_enabled(void) {
 
 @interface MacVMSpiceView : MTKView <CSConnectionDelegate, MTKViewDelegate>
 @property (nonatomic) MacVMDisplayHandler handler;
+@property (nonatomic) MacVMDisplayCursorHandler cursorHandler;
 @property (nonatomic) void *context;
 @end
 
@@ -87,6 +88,7 @@ static BOOL debug_enabled(void) {
     _thawTimer = nil;
     [NSNotificationCenter.defaultCenter removeObserver:self];
     _handler = NULL;
+    _cursorHandler = NULL;
     _connection.delegate = nil;
     [_connection disconnect];
     [self detachDisplay];
@@ -132,6 +134,7 @@ static BOOL debug_enabled(void) {
     }
     [_display removeObserver:self forKeyPath:@"displaySize"];
     [_display removeRenderer:_renderer];
+    _display.cursor.shapeHandler = nil;
     _display = nil;
 }
 
@@ -219,6 +222,31 @@ static BOOL debug_enabled(void) {
     _display.cursor.isInhibited = !shows;
 }
 
+- (void)setCursorHandler:(MacVMDisplayCursorHandler)cursorHandler {
+    _cursorHandler = cursorHandler;
+    [self watchCursorOf:_display];
+}
+
+/// 光标形状在 SPICE 线程上送来，拷一份转到主线程；换了画面或关闭后到的旧形状丢掉。
+- (void)watchCursorOf:(CSDisplay *)display {
+    if (!display || !_cursorHandler) {
+        return;
+    }
+    // 块存在 display 的光标里，弱引用 display 免得循环引用。
+    __weak MacVMSpiceView *weakSelf = self;
+    __weak CSDisplay *weakDisplay = display;
+    display.cursor.shapeHandler = ^(NSData *bgra, CGSize size, CGPoint hotspot) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MacVMSpiceView *view = weakSelf;
+            CSDisplay *current = weakDisplay;
+            if (!view || !current || view->_display != current || !view->_cursorHandler) {
+                return;
+            }
+            view->_cursorHandler(view->_context, bgra.bytes, (int)size.width, (int)size.height, (int)hotspot.x, (int)hotspot.y);
+        });
+    };
+}
+
 #pragma mark - 输入
 
 - (void)key:(int)scancode down:(BOOL)down {
@@ -276,6 +304,7 @@ static BOOL debug_enabled(void) {
         }
         self->_display = display;
         display.cursor.isInhibited = !self->_showsGuestCursor;
+        [self watchCursorOf:display];
         // 尺寸在 SPICE 线程上随 scanout 与显示器配置变化，不一定伴随 spiceDisplayUpdated。
         [display addObserver:self forKeyPath:@"displaySize" options:0 context:NULL];
         [display addRenderer:self->_renderer];
@@ -345,6 +374,10 @@ void MacVMDisplayScroll(void *view, bool up, uint32_t buttons) {
 
 void MacVMDisplayShowGuestCursor(void *view, bool shows) {
     [view_of(view) setShowsGuestCursor:shows];
+}
+
+void MacVMDisplaySetCursorHandler(void *view, MacVMDisplayCursorHandler handler) {
+    view_of(view).cursorHandler = handler;
 }
 
 void MacVMDisplaySetFrozen(void *view, bool frozen) {
