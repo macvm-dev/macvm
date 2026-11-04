@@ -1,34 +1,19 @@
 #!/usr/bin/env bash
-# 由 packaging/AppIcon.svg 生成 packaging/AppIcon.icns。改了 SVG 后运行一次，把生成的 icns 一并提交。
+# 由 packaging/AppIcon.icon（Icon Composer 文档）编出 packaging/Assets.car 与 packaging/AppIcon.icns，改了图标后运行一次，把两个产物一并提交。
+# Assets.car 由系统按 CFBundleIconName 读取，统一裁成圆角方形并跟随深色与染色外观；AppIcon.icns 供 macOS 26 之前的系统使用。
+# 需要 Xcode 26 以上的 actool；打包只复制产物，不依赖 Xcode。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-ICONSET="$WORK/AppIcon.iconset"
-mkdir -p "$ICONSET"
 
-cat > "$WORK/render.swift" <<'EOF'
-import AppKit
-let args = CommandLine.arguments
-guard let image = NSImage(contentsOfFile: args[1]) else { fatalError("无法读取 \(args[1])") }
-let dir = args[2]
-for (points, scales) in [(16, [1, 2]), (32, [1, 2]), (128, [1, 2]), (256, [1, 2]), (512, [1, 2])] {
-    for scale in scales {
-        let px = points * scale
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
-                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(in: NSRect(x: 0, y: 0, width: px, height: px))
-        NSGraphicsContext.restoreGraphicsState()
-        let name = scale == 1 ? "icon_\(points)x\(points).png" : "icon_\(points)x\(points)@2x.png"
-        try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "\(dir)/\(name)"))
-    }
-}
-EOF
-
-swift "$WORK/render.swift" packaging/AppIcon.svg "$ICONSET"
-iconutil -c icns "$ICONSET" -o packaging/AppIcon.icns
-echo packaging/AppIcon.icns
+xcrun actool packaging/AppIcon.icon --compile "$WORK" \
+    --output-format human-readable-text --errors --warnings \
+    --output-partial-info-plist "$WORK/partial.plist" \
+    --app-icon AppIcon --include-all-app-icons --enable-on-demand-resources NO \
+    --development-region zh_CN --target-device mac --platform macosx --minimum-deployment-target 15.0 >&2
+# 不认 .icon 的 actool 不报错也不出文件。
+[[ -s "$WORK/Assets.car" && -s "$WORK/AppIcon.icns" ]] \
+    || { echo "actool 没有生成图标（需要 Xcode 26 以上）：$(xcodebuild -version | head -1)" >&2; exit 1; }
+mv -f "$WORK/Assets.car" "$WORK/AppIcon.icns" packaging/
+echo packaging/Assets.car packaging/AppIcon.icns

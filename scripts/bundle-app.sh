@@ -13,7 +13,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/guest"
 
 cp packaging/Info.plist "$APP/Contents/Info.plist"
-cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp packaging/Assets.car packaging/AppIcon.icns "$APP/Contents/Resources/"
 cp "$BIN/MacVMApp" "$APP/Contents/MacOS/MacVM"
 cp "$BIN/macvm" "$APP/Contents/Resources/bin/macvm"
 # 代理与固件是可选产物，缺失时 App 仍可运行，只是相应功能不可用。
