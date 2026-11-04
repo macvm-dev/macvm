@@ -42,7 +42,7 @@
 
 1. 从 [Releases](https://github.com/macvm-dev/macvm/releases/latest) 下载最新的 `MacVM-<版本>.dmg`。
 2. 打开 DMG，把 `MacVM.app` 拖到「应用程序」。App 已经过 Apple 公证，可以直接打开。
-3. （可选）把命令行工具 `macvm` 加到 PATH：
+3. 打开 App 时会自动把命令行工具 `macvm` 链接到 `~/.local/bin/macvm`。这个目录不在 PATH 里的话，把它加进 shell 配置，或者改链到 `/usr/local/bin`：
 
    ```sh
    sudo mkdir -p /usr/local/bin && sudo ln -sf /Applications/MacVM.app/Contents/Resources/bin/macvm /usr/local/bin/macvm
