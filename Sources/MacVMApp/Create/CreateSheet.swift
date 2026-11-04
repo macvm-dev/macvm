@@ -109,7 +109,7 @@ struct CreateSheet: View {
 
     private func resetDefaults(for os: GuestOS) {
         file = nil
-        memoryGB = Int(HostInfo.defaultMemorySize(for: os) >> 30)
+        memoryGB = Int(HostInfo.defaultMemorySize() >> 30)
         diskGB = Int(HostInfo.defaultDiskSize(for: os) >> 30)
         switch os {
         case .linux: source = .cloudImage(LinuxImage.catalog[0].id)

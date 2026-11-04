@@ -12,12 +12,12 @@ public enum HostInfo {
 
     public static var physicalMemory: UInt64 { ProcessInfo.processInfo.physicalMemory }
 
-    public static func defaultCPUCount() -> Int { performanceCoreCount }
+    /// 不超过主机逻辑核数。
+    public static func defaultCPUCount() -> Int { min(4, ProcessInfo.processInfo.activeProcessorCount) }
 
     /// 不超过主机物理内存的一半，避免默认配置就压垮主机。
-    public static func defaultMemorySize(for os: GuestOS) -> UInt64 {
-        let wanted: UInt64 = os == .linux ? 4 << 30 : 8 << 30
-        return min(wanted, physicalMemory / 2)
+    public static func defaultMemorySize() -> UInt64 {
+        min(8 << 30, physicalMemory / 2)
     }
 
     public static func defaultDiskSize(for os: GuestOS) -> UInt64 {

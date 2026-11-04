@@ -84,7 +84,7 @@ public enum WindowsInstaller {
             let config = VMConfig(
                 name: options.name, os: .windows, engine: .qemu,
                 cpuCount: options.cpuCount ?? HostInfo.defaultCPUCount(),
-                memorySize: options.memorySize ?? HostInfo.defaultMemorySize(for: .windows),
+                memorySize: options.memorySize ?? HostInfo.defaultMemorySize(),
                 disks: [DiskConfig(path: bundle.diskURL.lastPathComponent, bus: .nvme), DiskConfig(path: dataImageName, bus: .nvme)],
                 networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],
                 installMedia: [options.iso.path, setupImageName],

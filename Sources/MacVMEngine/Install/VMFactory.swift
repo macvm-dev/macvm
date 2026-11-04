@@ -31,7 +31,7 @@ public enum VMFactory {
             self.name = name
             self.os = os
             self.cpuCount = cpuCount ?? HostInfo.defaultCPUCount()
-            self.memorySize = memorySize ?? HostInfo.defaultMemorySize(for: os)
+            self.memorySize = memorySize ?? HostInfo.defaultMemorySize()
             self.diskSize = diskSize ?? HostInfo.defaultDiskSize(for: os)
             self.installMedia = installMedia
             self.network = network

@@ -69,7 +69,7 @@ public enum MacOSInstaller {
                 let config = VMConfig(
                     name: options.name, os: .macOS,
                     cpuCount: max(options.cpuCount ?? HostInfo.defaultCPUCount(), requirements.minimumSupportedCPUCount),
-                    memorySize: max(options.memorySize ?? HostInfo.defaultMemorySize(for: .macOS), requirements.minimumSupportedMemorySize),
+                    memorySize: max(options.memorySize ?? HostInfo.defaultMemorySize(), requirements.minimumSupportedMemorySize),
                     disks: [DiskConfig(path: bundle.diskURL.lastPathComponent)],
                     display: options.display,
                     networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],

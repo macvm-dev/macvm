@@ -24,10 +24,10 @@ struct Create: AsyncParsableCommand {
     @Option(help: "客户机系统：linux、windows、macos。")
     var os: GuestOS = .linux
 
-    @Option(name: .customLong("cpus"), help: "vCPU 数，默认为主机性能核数。")
+    @Option(name: .customLong("cpus"), help: "vCPU 数，默认 4，且不超过主机核数。")
     var cpuCount: Int?
 
-    @Option(help: "内存，如 4G。默认 Linux 4G、其他 8G，且不超过主机内存一半。")
+    @Option(help: "内存，如 4G。默认 8G，且不超过主机内存一半。")
     var memory: String?
 
     @Option(help: "磁盘容量（稀疏，按实际写入占用），如 64G。")
