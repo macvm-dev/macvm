@@ -10,8 +10,8 @@ pub fn shutdown_write(conn: &Conn) {
 }
 
 /// Windows 客户机经 TCP 提供服务：QEMU 引擎没有 vsock，用户态网络把宿主的 Unix socket 转发到这个端口；
-/// VZ 引擎下宿主直连客户机 NAT 地址。这两种情况下宿主以默认网关的地址出现，按 `Origin::Host` 交出；
-/// 桥接网络下宿主直连客户机地址，与客户机里的其他进程一样按 `Origin::Network` 交出。
+/// VZ 引擎下宿主直连客户机 NAT 地址。这两种情况下宿主以默认网关的地址出现；桥接网络下宿主直连客户机地址。
+/// 连接按来源交出 `Origin`。
 pub struct Listener {
     inner: TcpListener,
 }
@@ -25,13 +25,12 @@ impl Listener {
     pub fn accept(&self) -> io::Result<(Conn, crate::Origin)> {
         let (stream, peer) = self.inner.accept()?;
         stream.set_nodelay(true).ok();
-        let origin = if super::system::default_gateways().contains(&peer.ip()) { crate::Origin::Host } else { crate::Origin::Network };
+        let origin = if super::system::default_gateways().contains(&peer.ip()) { crate::Origin::Gateway } else { crate::Origin::Network };
         Ok((stream, origin))
     }
 }
 
-/// 与宿主共享的令牌，`Origin::Network` 的连接靠它认证；没有时这类连接一律拒绝。
-/// 文件只有 SYSTEM 与 Administrators 能读，代理以最高权限运行。
+/// 与宿主共享的令牌，连接靠它认证。文件只有 SYSTEM 与 Administrators 能读，代理以最高权限运行。
 pub fn agent_token() -> Option<String> {
     let text = std::fs::read_to_string(r"C:\ProgramData\macvm\agent-token").ok()?;
     let token = text.trim();

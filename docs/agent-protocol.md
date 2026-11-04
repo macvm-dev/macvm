@@ -6,14 +6,15 @@
 
 - Linux、macOS 客户机：代理监听 vsock 端口 **6100**（CID 任意）。Linux 上没有 virtio vsock 设备时（QEMU 引擎）改为监听 TCP 端口 **6100**，规则同下面的 Windows，宿主经用户态网络转发连这个端口；有 vsock 设备时不监听 TCP。
 - Windows 客户机：没有可用的 vsock 驱动，代理监听 TCP 端口 **6100**。安装时同时开放该端口的防火墙入站规则。
-- TCP 连接的源地址是客户机默认网关时（VZ 的 NAT 网关、QEMU 用户态网络的网关都是宿主）直接受理；其他来源（桥接网络下的宿主）先过下面的「认证」。
+- 客户机里有共享令牌时，所有 TCP 连接（包括经 QEMU 用户态网络转发进来的）都先过下面的「认证」：桥接网络下默认网关是局域网路由器，它的地址也可能被局域网里的机器冒用，不能凭来源认出宿主。vsock 连接不认证。
+- 客户机里没有令牌时，只受理源地址是客户机默认网关的 TCP 连接（VZ 的 NAT 网关、QEMU 用户态网络的网关都是宿主），其他来源直接关闭。
 - 每个连接只承载一个请求。宿主先发一行 UTF-8 JSON（以 `\n` 结尾），代理回一行 JSON 响应。
 - 响应 `{"ok":false,"error":"…"}` 表示失败，代理随后关闭连接。
 - `exec` 与 `forward` 的成功响应之后，连接切换为下述各自的数据格式。
 
 ## 认证
 
-宿主与代理共享一个令牌（64 位十六进制小写）。宿主存在包内 `agent-token`（0600）；客户机里在 Linux 是 `/etc/macvm-agent/token`（root，0600），Windows 是 `C:\ProgramData\macvm\agent-token`（只有 SYSTEM 与 Administrators 可读）。创建虚拟机与 `macvm agent install` 时写入两边。
+宿主与代理共享一个令牌（64 位十六进制小写）。宿主存在包内 `agent-token`（0600）；客户机里在 Linux 是 `/etc/macvm-agent/token`（root，0600），Windows 是 `C:\ProgramData\macvm\agent-token`（所在目录归 Administrators，只有 SYSTEM 与 Administrators 能访问；安装时目录或其中某项的所有者不可信就整个挪开重建）。创建虚拟机与 `macvm agent install` 时写入两边。
 
 1. 代理接受连接后先发一行 `{"challenge":"<64 位十六进制>"}`，内容每次随机。客户机里没有令牌时不发，直接关闭连接。
 2. 宿主回一行 `{"auth":"<HMAC-SHA256>"}`：以令牌的 UTF-8 字节为密钥、对 `challenge` 字符串的 UTF-8 字节计算，十六进制小写。

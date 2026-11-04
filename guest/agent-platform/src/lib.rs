@@ -20,12 +20,15 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<()> {
     if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
 }
 
-/// 连接的来处。`Network` 是可信通道之外的 TCP 连接（桥接网络下的宿主，或网上别的机器），
-/// 要先答对 `macvm_agent_protocol::auth` 的质询才能发请求。
+/// 连接的来处。TCP 连接在客户机里有共享令牌时都要先答对 `macvm_agent_protocol::auth` 的质询：
+/// 桥接网络下默认网关是局域网路由器，它的地址也能被局域网里的机器冒用，单凭来源认不出宿主。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
-    /// vsock，或来自默认网关的 TCP：用户态网络与 NAT 下宿主以默认网关的地址出现。
-    Host,
+    /// vsock：只有宿主连得进来。
+    Vsock,
+    /// 源地址是默认网关的 TCP。用户态网络与 NAT 下宿主以这个地址出现。
+    Gateway,
+    /// 其他来源的 TCP：桥接网络下的宿主、客户机里的进程或网上别的机器。
     Network,
 }
 

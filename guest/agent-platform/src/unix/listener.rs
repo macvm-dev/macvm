@@ -45,7 +45,7 @@ pub fn shutdown_write(conn: &Conn) {
 }
 
 /// 宿主经 vsock 连入。Linux 上没有 virtio vsock 设备（QEMU 引擎）时改为监听 TCP：用户态网络把宿主的 Unix socket
-/// 转发到这个端口，宿主以默认网关的地址出现；桥接网络下宿主直连客户机地址，来源不是默认网关，按 `Origin::Network` 交出。
+/// 转发到这个端口，宿主以默认网关的地址出现；桥接网络下宿主直连客户机地址。TCP 连接按来源交出 `Origin`。
 /// 有 vsock 设备时不开 TCP。
 /// 没有 vsock 设备时 vsock 也可能绑定成功，所以按设备而不是按绑定结果判断。两种至少有一种监听成功即可。
 pub struct Listener {
@@ -96,7 +96,7 @@ impl Listener {
             for ready in fds.iter().filter(|p| p.revents != 0) {
                 if Some(ready.fd) == self.vsock {
                     if let Some(conn) = accept_raw(ready.fd)? {
-                        return Ok((conn, crate::Origin::Host));
+                        return Ok((conn, crate::Origin::Vsock));
                     }
                     continue;
                 }
@@ -108,7 +108,7 @@ impl Listener {
                         Err(e) => return Err(e),
                     };
                     stream.set_nodelay(true).ok();
-                    let origin = if super::system::default_gateways().contains(&peer.ip()) { crate::Origin::Host } else { crate::Origin::Network };
+                    let origin = if super::system::default_gateways().contains(&peer.ip()) { crate::Origin::Gateway } else { crate::Origin::Network };
                     return Ok((File::from(std::os::fd::OwnedFd::from(stream)), origin));
                 }
             }
@@ -184,7 +184,7 @@ fn set_cloexec(fd: RawFd) {
     unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
 }
 
-/// 与宿主共享的令牌，`Origin::Network` 的连接靠它认证；没有时这类连接一律拒绝。
+/// 与宿主共享的令牌，TCP 连接靠它认证。
 /// macOS 客户机只经 vsock 连入，用不到。
 pub fn agent_token() -> Option<String> {
     #[cfg(target_os = "linux")]

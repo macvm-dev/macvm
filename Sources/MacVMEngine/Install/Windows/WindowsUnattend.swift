@@ -200,7 +200,8 @@ enum WindowsUnattend {
         Set-Content -Path $PSHOME\profile.ps1 -Encoding utf8 -Value '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding'
         Restart-Service sshd
         \#(o.productKey.map { "cscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ipk \($0)\ncscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ato" } ?? "")
-        \#(o.installGPUDriver ? "New-Item -ItemType Directory -Force -Path (Split-Path '\(WindowsGPUDriver.guestDirectory)') | Out-Null; Copy-Item -Recurse -Force -LiteralPath (Join-Path $PSScriptRoot '\(gpuDriverFolder)') -Destination '\(WindowsGPUDriver.guestDirectory)'" : "")
+        \#(o.installAgent ? AgentInstaller.windowsPrepareDirectory : "")
+        \#(o.installGPUDriver ? "Copy-Item -Recurse -Force -LiteralPath (Join-Path $PSScriptRoot '\(gpuDriverFolder)') -Destination '\(WindowsGPUDriver.guestDirectory)'" : "")
         \#(o.installAgent ? (o.agentToken.map(AgentToken.windowsInstall) ?? "") : "")
         \#(o.installAgent ? AgentInstaller.windowsRegistration(source: "(Join-Path $PSScriptRoot '\(agentFileName)')", user: o.user) : "")
         New-Item -ItemType File -Path \#(doneMarker) -Force

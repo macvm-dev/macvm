@@ -4,7 +4,9 @@ public import MacVMModel
 /// 定位随程序分发的客户机代理，并把它装进客户机。
 public enum AgentInstaller {
     public static let linuxPath = "/usr/local/bin/macvm-agent"
-    static let windowsPath = #"C:\ProgramData\macvm\macvm-agent.exe"#
+    /// Windows 上放代理、令牌与显卡驱动的目录。
+    static let windowsDirectory = #"C:\ProgramData\macvm"#
+    static let windowsPath = windowsDirectory + #"\macvm-agent.exe"#
     static let windowsTaskName = "macvm-agent"
     static let launchAgentLabel = "cn.barey.macvm.agent"
 
@@ -40,17 +42,60 @@ public enum AgentInstaller {
         return (unit, install)
     }
 
-    /// Windows 上把 `source` 处的代理装好并启动的 PowerShell 片段：
+    /// 停下代理并备好 `windowsDirectory` 的 PowerShell 片段，往这个目录里放任何东西之前运行。
+    /// 普通用户能在 ProgramData 下建目录，抢先建好它就能换掉以最高权限运行的代理或读到令牌：
+    /// 目录或其中任何一项不归 SYSTEM、Administrators 或当前（管理员）用户所有、或是重解析点时，整个挪开重建。
+    /// 之后目录归 Administrators，权限不继承，只给 SYSTEM 与 Administrators；新建时即带这份权限。
+    /// 收紧权限后再查一遍，仍不可信就抛错中止，不往里写。片段只用 ASCII：Windows PowerShell 按 ANSI 读无 BOM 的脚本。
+    static var windowsPrepareDirectory: String {
+        """
+        Stop-ScheduledTask -TaskName \(windowsTaskName) -ErrorAction SilentlyContinue
+        Get-Process macvm-agent -ErrorAction SilentlyContinue | Stop-Process -Force
+        Start-Sleep -Milliseconds 500
+        $macvm = \(PowerShell.quote(windowsDirectory))
+        $admins = New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'
+        $trusted = @('S-1-5-18', $admins.Value, [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+        function Test-MacVMOwner($item, $owners) {
+          try { $item.GetAccessControl('Owner').GetOwner([Security.Principal.SecurityIdentifier]).Value -in $owners } catch { $false }
+        }
+        function Test-MacVMTrusted($root) {
+          $queue = New-Object Collections.Queue
+          $queue.Enqueue($root)
+          try {
+            while ($queue.Count) {
+              $item = $queue.Dequeue()
+              if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not (Test-MacVMOwner $item $trusted)) { return $false }
+              if ($item -is [IO.DirectoryInfo]) { foreach ($child in $item.GetFileSystemInfos()) { $queue.Enqueue($child) } }
+            }
+            return $true
+          } catch { return $false }
+        }
+        $top = Get-ChildItem -LiteralPath (Split-Path $macvm) -Force -Filter (Split-Path $macvm -Leaf) -ErrorAction Stop
+        if ($top -and -not (Test-MacVMTrusted $top)) {
+          Rename-Item -LiteralPath $macvm -NewName "macvm.untrusted-$([guid]::NewGuid())" -ErrorAction Stop
+          $top = $null
+        }
+        $acl = New-Object Security.AccessControl.DirectorySecurity
+        $acl.SetOwner($admins)
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($owner in 'S-1-5-18', $admins.Value) {
+          $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier $owner), 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+        }
+        if ($top) { $top.SetAccessControl($acl) } else { [void][IO.Directory]::CreateDirectory($macvm, $acl) }
+        $dir = Get-Item -LiteralPath $macvm -Force -ErrorAction Stop
+        if (-not ($dir -is [IO.DirectoryInfo]) -or -not (Test-MacVMOwner $dir @($admins.Value)) -or -not (Test-MacVMTrusted $dir)) {
+          throw "$macvm has an untrusted owner or content; not installing macvm-agent"
+        }
+        """
+    }
+
+    /// Windows 上把 `source` 处的代理装好并启动的 PowerShell 片段，要在 `windowsPrepareDirectory` 之后运行：
     /// 登录时以最高权限在 `user` 的交互会话里运行的计划任务（剪贴板只在交互会话可用），
-    /// 外加对所有网络生效的入站规则。代理对默认网关以外的来源要求答对 `AgentToken` 的质询。
+    /// 外加对所有网络生效的入站规则。代理对经 TCP 连入的连接要求答对 `AgentToken` 的质询。
     static func windowsRegistration(source: String, user: String) -> String {
         let quoted = PowerShell.quote
         return """
         $exe = \(quoted(windowsPath))
-        Stop-ScheduledTask -TaskName \(windowsTaskName) -ErrorAction SilentlyContinue
-        Get-Process macvm-agent -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Milliseconds 500
-        New-Item -ItemType Directory -Force -Path (Split-Path $exe) | Out-Null
         Copy-Item -LiteralPath \(source) -Destination $exe -Force
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 9999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
         $principal = New-ScheduledTaskPrincipal -UserId \(quoted(user)) -LogonType Interactive -RunLevel Highest
@@ -110,7 +155,7 @@ public enum AgentInstaller {
             let staged = "macvm-agent.exe"
             let scp = ["-q"] + ssh.dropLast().filter { $0 != "-T" }
             try await Subprocess.run("/usr/bin/scp", scp + [binary.path, "\(ssh.last!):\(staged)"])
-            var install = ""
+            var install = windowsPrepareDirectory + "\n"
             let gpuDriver = config.engine == .qemu ? WindowsGPUDriver.package(QEMUInstallation.locate()) : nil
             if let gpuDriver {
                 // 先放驱动包再重启代理，代理启动时即可装上。
@@ -120,7 +165,6 @@ public enum AgentInstaller {
                 try await Subprocess.run("/usr/bin/scp", scp + ["-r", local.path, "\(ssh.last!):\(WindowsUnattend.gpuDriverFolder)"])
                 let target = "'\(WindowsGPUDriver.guestDirectory)'"
                 install += """
-                New-Item -ItemType Directory -Force -Path (Split-Path \(target)) | Out-Null
                 Remove-Item -Recurse -Force -LiteralPath \(target) -ErrorAction SilentlyContinue
                 Move-Item -LiteralPath (Join-Path $HOME '\(WindowsUnattend.gpuDriverFolder)') -Destination \(target)
 

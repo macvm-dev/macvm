@@ -11,6 +11,7 @@ use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 struct Config {
     port: u32,
@@ -84,19 +85,18 @@ fn parse_args() -> Config {
     config
 }
 
-/// 认证要在这么久之内答完。
-const AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// 从发出质询起，认证要在这么久之内答完。
+const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// `Origin::Network` 的连接先过质询；客户机里没有令牌时一律断开，不回应。返回是否通过。
-fn authenticate(conn: &mut Conn) -> io::Result<bool> {
-    let Some(token) = platform::agent_token() else { return Ok(false) };
+/// 以共享令牌 `token` 发质询、验应答，返回是否通过。
+fn authenticate(conn: &mut Conn, token: &str) -> io::Result<bool> {
     let mut nonce = [0u8; proto::auth::CHALLENGE_BYTES];
     getrandom::fill(&mut nonce).map_err(|e| io::Error::other(format!("取随机数失败：{e}")))?;
     let challenge = proto::auth::hex(&nonce);
-    platform::set_read_timeout(conn, Some(AUTH_TIMEOUT))?;
+    let deadline = Instant::now() + AUTH_TIMEOUT;
     proto::write_json_line(conn, &proto::auth::Challenge { challenge: challenge.clone() })?;
-    let line = proto::read_line(conn)?;
-    let ok = serde_json::from_slice::<proto::auth::Answer>(&line).is_ok_and(|a| proto::auth::verify(&token, &challenge, &a.auth));
+    let line = read_answer_line(conn, deadline)?;
+    let ok = serde_json::from_slice::<proto::auth::Answer>(&line).is_ok_and(|a| proto::auth::verify(token, &challenge, &a.auth));
     if !ok {
         proto::write_json_line(conn, &Response::error("认证失败"))?;
         return Ok(false);
@@ -105,9 +105,45 @@ fn authenticate(conn: &mut Conn) -> io::Result<bool> {
     Ok(true)
 }
 
+/// 应答行的长度上限，远大于 `{"auth":"<64 位十六进制>"}`。
+const MAX_ANSWER: usize = 256;
+
+/// 在 `deadline` 前读完应答行：每次读都按剩余时间设超时，对方逐字节慢慢发也占不住线程。
+fn read_answer_line(conn: &mut Conn, deadline: Instant) -> io::Result<Vec<u8>> {
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "认证应答超时"));
+        }
+        // 零超时在 SO_RCVTIMEO 里表示不限时，Windows 上则直接报错。
+        platform::set_read_timeout(conn, Some(left.max(Duration::from_millis(1))))?;
+        if conn.read(&mut byte)? == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "连接在认证应答结束前关闭"));
+        }
+        if byte[0] == b'\n' {
+            return Ok(line);
+        }
+        line.push(byte[0]);
+        if line.len() > MAX_ANSWER {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "认证应答过长"));
+        }
+    }
+}
+
 fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
-    if origin == Origin::Network && !authenticate(&mut conn)? {
-        return Ok(());
+    if origin != Origin::Vsock {
+        match platform::agent_token() {
+            Some(token) => {
+                if !authenticate(&mut conn, &token)? {
+                    return Ok(());
+                }
+            }
+            // 客户机里没有令牌时只受理来自默认网关的连接，其余直接断开、不回应。
+            None if origin == Origin::Gateway => {}
+            None => return Ok(()),
+        }
     }
     let line = proto::read_line(&mut conn)?;
     let request: Request = match serde_json::from_slice(&line) {

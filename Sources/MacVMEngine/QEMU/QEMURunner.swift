@@ -158,7 +158,9 @@ public final class QEMURunner: MachineRunner {
         guard QEMUCommand.forwardedPorts.contains(port) else {
             throw MacVMError.unsupported("QEMU 引擎在 NAT 网络下只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")
         }
-        return try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
+        let socket = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
+        if port == AgentProtocol.port { try AgentToken.authenticate(socket, bundle: bundle, bridged: false) }
+        return socket
     }
 
     public func forceStop() async throws {

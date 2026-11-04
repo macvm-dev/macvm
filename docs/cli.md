@@ -65,7 +65,7 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 | NAT（默认） | `nat` | 客户机在主机内置的 NAT 网络里，IP 从主机 DHCP 服务的租约里查 |
 | 桥接 | `bridged[:网卡]` | 客户机直接接入主机网卡（BSD 名，如 `en0`，可用的见 `doctor`）所在的局域网，从局域网的路由器取得地址；不写网卡时开机桥接到第一块可桥接的网卡。两种引擎都支持 |
 
-桥接要用到随 App 安装的网络辅助程序 macvm-netd：在 App 的设置里启用，再到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM；`doctor` 的 `bridgedNetworking` 为 true 时可用。没启用就开机报 `unsupported`。桥接下宿主不是客户机的默认网关，Linux（QEMU 引擎）与 Windows 的客户机代理要靠共享令牌认证宿主：新建的虚拟机自带令牌，之前建的要先运行一次 `macvm agent install <名>` 更新代理并写入令牌，否则桥接下 `exec` 等经代理的操作会被拒绝（SSH 不受影响）。桥接下 IP 是从客户机发出的 ARP 里认出来的，客户机开机拿到地址前 `ip` 查不到。改网络只能在关机时；MAC 地址保持不变。
+桥接要用到随 App 安装的网络辅助程序 macvm-netd：在 App 的设置里启用，再到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM；`doctor` 的 `bridgedNetworking` 为 true 时可用。没启用就开机报 `unsupported`。桥接下宿主不是客户机的默认网关，Linux（QEMU 引擎）与 Windows 的客户机代理要靠共享令牌认证宿主：新建的虚拟机自带令牌，之前建的要先运行一次 `macvm agent install <名>` 更新代理并写入令牌，否则桥接下 `exec` 等经代理的操作会被拒绝（SSH 不受影响）。客户机里有令牌后，代理经 TCP 的连接不论哪种网络都要认证。桥接下 IP 是从客户机发出的 ARP 里认出来的，客户机开机拿到地址前 `ip` 查不到。改网络只能在关机时；MAC 地址保持不变。
 
 ## 与 runode 配合
 

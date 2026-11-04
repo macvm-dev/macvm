@@ -7,7 +7,7 @@ import MacVMModel
 /// （`VMConfig.graphicsAcceleration`）。
 enum WindowsGPUDriver {
     /// 客户机代理找驱动包的目录，与代理的 `GPU_DRIVER_DIR` 相同。
-    static let guestDirectory = #"C:\ProgramData\macvm\viogpu3d"#
+    static let guestDirectory = AgentInstaller.windowsDirectory + #"\viogpu3d"#
 
     /// 自带的 QEMU 编进了 Direct3D 转译时才有。
     static func package(_ qemu: QEMUInstallation?) -> URL? {

@@ -273,15 +273,24 @@ struct WindowsUnattendTests {
         #expect(script.contains("MACVMDATA") && script.contains("MACVMSETUP"))
     }
 
-    @Test func setupScriptLocksAgentTokenBeforeWritingIt() throws {
+    @Test func setupScriptLocksDirectoryBeforeWritingIntoIt() throws {
         var o = options
         o.installAgent = true
+        o.installGPUDriver = true
         o.agentToken = "abc123"
         let script = WindowsUnattend.setupScript(o)
-        let acl = try #require(script.range(of: "/inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'"))
-        let write = try #require(script.range(of: "WriteAllText($token, 'abc123')"))
-        let start = try #require(script.range(of: "Start-ScheduledTask"))
-        #expect(acl.lowerBound < write.lowerBound && write.lowerBound < start.lowerBound)
+        let lock = try #require(script.range(of: "CreateDirectory($macvm, $acl)"))
+        let verify = try #require(script.range(of: "throw \"$macvm has an untrusted owner"))
+        let driver = try #require(script.range(of: "Copy-Item -Recurse"))
+        let write = try #require(script.range(of: "WriteAllText('\(AgentToken.windowsPath)', 'abc123')"))
+        let copy = try #require(script.range(of: "Copy-Item -LiteralPath (Join-Path $PSScriptRoot"))
+        #expect(lock.lowerBound < verify.lowerBound && verify.lowerBound < driver.lowerBound)
+        #expect(driver.lowerBound < write.lowerBound && write.lowerBound < copy.lowerBound)
+    }
+
+    @Test func prepareDirectoryIsASCII() {
+        let ascii = AgentInstaller.windowsPrepareDirectory.unicodeScalars.allSatisfy { $0.isASCII }
+        #expect(ascii)
     }
 
     @Test func setupScriptInstallsAgentOnlyWhenBundled() {
