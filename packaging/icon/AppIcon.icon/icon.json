@@ -1,8 +1,38 @@
 {
   "fill" : {
-    "solid" : "srgb:0.35686,0.35686,0.94118,1.00000"
+    "linear-gradient" : [
+      "srgb:0.13333,0.17647,0.28235,1.00000",
+      "srgb:0.03922,0.05882,0.11765,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.2,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.8,
+        "y" : 1
+      }
+    }
   },
   "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "leg.svg",
+          "name" : "leg"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      },
+      "name" : "Leg"
+    },
     {
       "layers" : [
         {
@@ -23,13 +53,30 @@
     {
       "layers" : [
         {
+          "image-name" : "middle.svg",
+          "name" : "middle"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.4
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      },
+      "name" : "Middle"
+    },
+    {
+      "layers" : [
+        {
           "image-name" : "back.svg",
           "name" : "back"
         }
       ],
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.4
+        "opacity" : 0.3
       },
       "translucency" : {
         "enabled" : false,

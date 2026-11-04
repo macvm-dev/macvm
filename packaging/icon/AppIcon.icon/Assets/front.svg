@@ -1,33 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="100 100 824 824">
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="40 40 944 944">
   <defs>
-    <linearGradient id="win" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2A3648"/>
-      <stop offset="1" stop-color="#0F1522"/>
+    <linearGradient id="frame" x1="316" y1="346" x2="816" y2="766" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7CE4FF"/>
+      <stop offset=".5" stop-color="#5293FF"/>
+      <stop offset="1" stop-color="#8D6BFF"/>
     </linearGradient>
-    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4B5869"/>
-      <stop offset="1" stop-color="#333F50"/>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1C2849"/>
+      <stop offset="1" stop-color="#141D37"/>
     </linearGradient>
-    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#C7CBFF"/>
-      <stop offset="1" stop-color="#8F96FF"/>
+    <linearGradient id="mark" x1="426" y1="520" x2="614" y2="668" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7CE4FF"/>
+      <stop offset=".55" stop-color="#5293FF"/>
+      <stop offset="1" stop-color="#8D6BFF"/>
     </linearGradient>
   </defs>
-  <g transform="rotate(6 520 560)">
-    <rect x="250" y="355" width="540" height="410" rx="60" fill="url(#win)"/>
-    <path d="M310 355 H730 A60 60 0 0 1 790 415 V439 H250 V415 A60 60 0 0 1 310 355 Z" fill="url(#bar)"/>
-    <rect x="250" y="439" width="540" height="3" fill="#000000" fill-opacity="0.35"/>
-    <rect x="252" y="357" width="536" height="406" rx="58" fill="none" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="4"/>
-    <circle cx="306" cy="397" r="15" fill="#FF5F57"/>
-    <circle cx="350" cy="397" r="15" fill="#FEBC2E"/>
-    <circle cx="394" cy="397" r="15" fill="#28C840"/>
-    <g fill="none" stroke="#8F96FF" stroke-opacity="0.35" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M432 553 L492 603 L432 653"/>
-      <path d="M536 654 H606"/>
-    </g>
-    <g fill="none" stroke="url(#ink)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M432 553 L492 603 L432 653"/>
-      <path d="M536 654 H606"/>
-    </g>
-  </g>
+  <path d="M444.9 346.5 L688.1 346.5 C725.1 346.5 743.6 346.5 763.5 352.8 C785.2 360.7 802.3 377.8 810.2 399.5 C816.5 419.4 816.5 437.9 816.5 474.9 L816.5 638.1 C816.5 675.1 816.5 693.6 810.2 713.5 C802.3 735.2 785.2 752.3 763.5 760.2 C743.6 766.5 725.1 766.5 688.1 766.5 L444.9 766.5 C407.9 766.5 389.4 766.5 369.5 760.2 C347.8 752.3 330.7 735.2 322.8 713.5 C316.5 693.6 316.5 675.1 316.5 638.1 L316.5 474.9 C316.5 437.9 316.5 419.4 322.8 399.5 C330.7 377.8 347.8 360.7 369.5 352.8 C389.4 346.5 407.9 346.5 444.9 346.5Z" fill="url(#glass)" stroke="url(#frame)" stroke-width="34"/>
+  <circle cx="375.5" cy="400.5" r="12" fill="#FF6B63"/>
+  <circle cx="413.5" cy="400.5" r="12" fill="#FFC145"/>
+  <circle cx="451.5" cy="400.5" r="12" fill="#34CF5C"/>
+  <rect x="333.5" y="435.5" width="466" height="4" fill="#8FB8FF" fill-opacity=".16"/>
+  <path d="M425.5 519.5 L519.5 667.5 L613.5 519.5" fill="none" stroke="url(#mark)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
