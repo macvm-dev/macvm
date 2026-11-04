@@ -10,6 +10,7 @@ struct InstallMacOS: AsyncParsableCommand {
         discussion: """
         不指定 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在 ~/Library/Caches/MacVM/ipsw）。
         安装后首次开机自动创建用户、自动登录并开启 SSH，再装入 macvm 专用密钥，之后可直接 macvm ssh / exec。
+        开通后接着执行 macvm tune 的全部项，降低客户机空闲时的资源占用；--no-tune 跳过，之后可单独运行。
         """
     )
 
@@ -24,12 +25,16 @@ struct InstallMacOS: AsyncParsableCommand {
     @Option(help: "客户机密码，默认随机生成，保存在虚拟机包内的 guest-password。") var password: String?
     @Option(help: "显示分辨率，如 1920x1200。") var resolution: String = "1920x1200"
     @Flag(help: "安装完不开机配置 SSH。") var noProvision = false
+    @Flag(help: "开通后不执行 macvm tune。") var noTune = false
 
     struct Result: Encodable, Sendable {
         let vm: VMSummary
         let user: String
         let passwordFile: String
         let sshReady: Bool
+        /// 调优结果；跳过或调优出错时为 nil，安装本身不算失败。
+        let tuning: MacOSTuning.Report?
+        let tuningError: String?
     }
 
     @MainActor
@@ -63,6 +68,8 @@ struct InstallMacOS: AsyncParsableCommand {
             SSHConfigCommand.refresh()
 
             var sshReady = false
+            var tuning: MacOSTuning.Report?
+            var tuningError: String?
             if !noProvision, let pw = GuestCredentials.password(for: bundle) {
                 if interactive { FileHandle.standardError.write(Data("首次开机并配置 SSH（可能需要几分钟）…\n".utf8)) }
                 _ = try await Start.launch(bundle, timeout: 120)
@@ -72,17 +79,29 @@ struct InstallMacOS: AsyncParsableCommand {
                 if AgentInstaller.binary(for: .macOS) != nil {
                     _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
                 }
+                if !noTune {
+                    if interactive { FileHandle.standardError.write(Data("调优客户机…\n".utf8)) }
+                    do {
+                        tuning = try await MacOSTuning.run(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
+                    } catch {
+                        tuningError = (error as? MacVMError)?.message ?? error.localizedDescription
+                    }
+                }
             }
             return Result(vm: try VMStatus.summary(of: bundle), user: user,
-                          passwordFile: GuestCredentials.passwordURL(bundle).path, sshReady: sshReady)
+                          passwordFile: GuestCredentials.passwordURL(bundle).path, sshReady: sshReady,
+                          tuning: tuning, tuningError: tuningError)
         }
     }
 
     static func render(_ r: Result) -> String {
-        """
+        var text = """
         已安装 \(r.vm.name)（\(r.vm.state.rawValue)）
         用户 \(r.user)，密码见 \(r.passwordFile)
         \(r.sshReady ? "SSH 已就绪：macvm ssh \(r.vm.name)" : "首次开机后自动登录并开启 SSH")
         """
+        if let tuning = r.tuning { text += "\n" + Tune.render(r.vm.name, tuning) }
+        if let error = r.tuningError { text += "\n调优失败：\(error)，可稍后运行 macvm tune \(r.vm.name)" }
+        return text
     }
 }

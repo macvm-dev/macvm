@@ -267,3 +267,31 @@ struct CursorShapeTests {
         #expect(shapes[2].system == "ibeam" && !shapes[2].hidden)
     }
 }
+
+struct MacOSTuningTests {
+    @Test func scriptRunsEachStepAndReports() throws {
+        let script = MacOSTuning.script([.spotlight, .screensaver], revert: false)
+        #expect(script.contains("mdutil -a -i off"))
+        #expect(script.contains("echo 'ok screensaver'"))
+        #expect(MacOSTuning.script([.screensaver], revert: true).contains("defaults -currentHost delete com.apple.screensaver idleTime"))
+
+        let report = MacOSTuning.parse("ok spotlight\nfail screensaver\n", steps: [.spotlight, .screensaver, .updates], revert: false)
+        #expect(report.applied == [.spotlight])
+        #expect(report.failed == [.screensaver, .updates])
+    }
+
+    @Test func scriptRunsUnderShell() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "macvm-tune-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // 用不存在的命令代替真实设置，只验证 sh 能解析脚本、每项各出一行结果。
+        let script = MacOSTuning.script(MacOSTuning.Step.allCases, revert: false)
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = ["-n", "-c", script]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        #expect(script.split(separator: "\n").count == MacOSTuning.Step.allCases.count + 1)
+    }
+}

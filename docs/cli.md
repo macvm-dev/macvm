@@ -16,7 +16,7 @@
 | `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off]` | 修改已停止虚拟机的配置，可切换引擎；只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效） |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
-| `install-macos <名> [--ipsw 文件]` | 安装 macOS 虚拟机并开通 SSH 与代理 |
+| `install-macos <名> [--ipsw 文件] [--no-tune]` | 安装 macOS 虚拟机并开通 SSH 与代理，再执行 `tune` 的全部项；结果里的 `tuning` 是调优报告，跳过或出错时没有该字段，出错原因在 `tuningError`，安装本身仍算成功 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
 | `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机 |
 | `wait <名>` | 等到代理（或 SSH）可用，未运行时自动启动 |
@@ -25,6 +25,7 @@
 | `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand |
 | `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名即虚拟机名 |
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
+| `tune <名> [--skip 项]… [--revert] [--password 密码]` | 经 SSH 调整 macOS 客户机设置以降低空闲占用，项为 `spotlight`、`sleep`、`screensaver`、`updates`、`animations`、`transparency`；其中 `spotlight`、`sleep`、`updates` 要 root，用包内的客户机密码 sudo。结果为 `{applied, failed, reverted}`，单项失败只记进 `failed`，sudo 认证失败才整体报错；`--revert` 恢复系统默认 |
 | `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU） |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
 
