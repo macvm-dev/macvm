@@ -44,7 +44,7 @@ qemu:
 app:
 	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 
-# 公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用钥匙串里唯一的 Developer ID Application 证书，有零张或多张就停下。
+# 产出公证过的 dist/MacVM.app 与 dist/MacVM.dmg。公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用钥匙串里唯一的 Developer ID Application 证书，有零张或多张就停下。
 release:
 	@id='$(SIGN_IDENTITY)'; \
 	if [ "$$id" = "-" ]; then \
@@ -56,8 +56,11 @@ release:
 	  id=$$ids; \
 	fi; \
 	echo "签名身份：$$id"; \
-	$(MAKE) app CONFIG=release SIGN_IDENTITY="$$id"
-	scripts/notarize.sh dist/MacVM.app
+	set -e; \
+	$(MAKE) app CONFIG=release SIGN_IDENTITY="$$id"; \
+	scripts/notarize.sh dist/MacVM.app; \
+	SIGN_IDENTITY="$$id" scripts/make-dmg.sh dist/MacVM.app dist/MacVM.dmg; \
+	scripts/notarize.sh dist/MacVM.dmg
 
 clean:
 	rm -rf .build dist guest/target

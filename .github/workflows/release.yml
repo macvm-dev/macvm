@@ -1,6 +1,6 @@
 name: Release
 
-# 推送 v* 标签时构建、签名、公证 App 并发布到 GitHub Releases；手动运行时只构建，产物作为 artifact 上传。
+# 推送 v* 标签时构建、签名、公证 App 与 DMG 并发布到 GitHub Releases；手动运行时只构建，产物作为 artifact 上传。
 on:
   push:
     tags: ['v*']
@@ -63,9 +63,27 @@ jobs:
           security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           rm "$RUNNER_TEMP/certificate.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$KEYCHAIN" >/dev/null
-          # App Store Connect API 密钥：.p8 原文或其 base64 都接受。
+          # App Store Connect API 密钥：接受 .p8 原文（换行可被压成空格或 \n）、它的 base64，或不带 PEM 头尾的密钥正文。
           key="$RUNNER_TEMP/notary-key.p8"
-          if [[ "$NOTARY_KEY_P8" == -----BEGIN* ]]; then printf '%s\n' "$NOTARY_KEY_P8" > "$key"; else echo "$NOTARY_KEY_P8" | base64 --decode > "$key"; fi
+          python3 - "$key" <<'EOF'
+          import base64, binascii, os, re, sys, textwrap
+          raw = os.environ["NOTARY_KEY_P8"].replace("\\n", "\n").replace("\r", "").strip()
+          if "BEGIN" not in raw:
+              try:
+                  decoded = base64.b64decode(raw).decode()
+              except (binascii.Error, UnicodeDecodeError):
+                  decoded = ""
+              if "BEGIN" in decoded:
+                  raw = decoded
+          match = re.search(r"-----BEGIN [A-Z ]+-----(.*?)-----END [A-Z ]+-----", raw, re.S)
+          body = re.sub(r"\s", "", match.group(1) if match else raw)
+          try:
+              base64.b64decode(body, validate=True)
+          except binascii.Error:
+              sys.exit("NOTARY_KEY_P8 不是有效的 .p8 密钥")
+          with open(sys.argv[1], "w") as f:
+              f.write("-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(body, 64)) + "\n-----END PRIVATE KEY-----\n")
+          EOF
           xcrun notarytool store-credentials macvm --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$KEYCHAIN"
           rm "$key"
 
@@ -97,10 +115,10 @@ jobs:
       - name: 打包
         id: package
         run: |
-          zip=dist/MacVM-${{ steps.version.outputs.version }}.zip
-          ditto -c -k --keepParent dist/MacVM.app "$zip"
-          shasum -a 256 "$zip" | sed 's| dist/| |' > "$zip.sha256"
-          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          dmg=dist/MacVM-${{ steps.version.outputs.version }}.dmg
+          mv dist/MacVM.dmg "$dmg"
+          (cd dist && shasum -a 256 "$(basename "$dmg")") > "$dmg.sha256"
+          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
 
       - name: 上传 artifact
         if: github.event_name == 'workflow_dispatch'
@@ -108,8 +126,8 @@ jobs:
         with:
           name: MacVM-${{ steps.version.outputs.version }}
           path: |
-            ${{ steps.package.outputs.zip }}
-            ${{ steps.package.outputs.zip }}.sha256
+            ${{ steps.package.outputs.dmg }}
+            ${{ steps.package.outputs.dmg }}.sha256
 
       - name: 发布
         if: startsWith(github.ref, 'refs/tags/v')
@@ -117,7 +135,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "MacVM ${{ steps.version.outputs.version }}" \
-            "${{ steps.package.outputs.zip }}" "${{ steps.package.outputs.zip }}.sha256"
+            "${{ steps.package.outputs.dmg }}" "${{ steps.package.outputs.dmg }}.sha256"
 
       - name: 清理钥匙串
         if: always()
