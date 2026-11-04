@@ -13,6 +13,7 @@
   <a href="https://github.com/macvm-dev/macvm/actions/workflows/ci.yml"><img src="https://github.com/macvm-dev/macvm/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/macOS-15%2B-blue" alt="macOS 15+">
   <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-black" alt="Apple Silicon">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
 </p>
 
 <p align="center">
@@ -149,6 +150,6 @@ make test lint       # 运行测试与检查
 
 参与开发前请先阅读 [AGENTS.md](AGENTS.md)，里面有目录结构、分层规则和代码约定。宿主与客户机代理之间的协议见 [docs/agent-protocol.md](docs/agent-protocol.md)。
 
-## 致谢
+## 许可证
 
-MacVM 用到了这些项目：[QEMU](https://www.qemu.org)；[UTM](https://github.com/utmapp) 的 QEMU 图形补丁与 [CocoaSpice](https://github.com/utmapp/CocoaSpice)；[SPICE](https://www.spice-space.org)、[virglrenderer](https://gitlab.freedesktop.org/virgl/virglrenderer)、[ANGLE](https://chromium.googlesource.com/angle/angle) 与 [DXMT](https://github.com/3Shain/dxmt)；[virtio-win](https://github.com/virtio-win/kvm-guest-drivers-windows) 驱动与 [viogpu3d](https://github.com/osy/kvm-guest-drivers-windows) 显卡驱动。
+MacVM 以 [MIT 许可证](LICENSE) 发布。App 自带的 QEMU 及其图形组件、Windows 驱动等第三方组件沿用各自的许可证（QEMU 为 GPL 2.0），随 App 一起分发在 QEMU 目录的 `licenses/` 中。
