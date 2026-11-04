@@ -355,7 +355,7 @@ final class AppModel {
 
     /// 运行中也可改：只影响画面窗口向客户机请求的分辨率与缩放。
     func setRetina(_ name: String, _ retina: Bool) {
-        if updateConfig(name, { $0.display.retina = retina }) { QEMUDisplayView.displayPreferenceChanged(name) }
+        if updateConfig(name, { $0.display.retina = retina }) { DisplayPreference.didChange(for: name) }
     }
 
     /// 返回是否已保存；失败时报告错误。

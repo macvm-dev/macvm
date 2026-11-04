@@ -27,9 +27,13 @@ struct MachineDetailView: View {
                         Text("QEMU（声音、挂起）").tag(Engine.qemu)
                     }
                     .disabled(!editable || !config.installMedia.isEmpty)
-                    if config.engine == .qemu {
+                    if config.engine == .qemu || config.os == .linux {
                         Toggle("高分辨率（Retina）", isOn: Binding(get: { config.display.retina }, set: { model.setRetina(vm.name, $0) }))
-                            .help("窗口里的分辨率按屏幕像素而不是点数，更清晰；Windows 同时把缩放比例调到相同倍数。运行中切换立即生效。")
+                            .help(config.os == .windows
+                                  ? "窗口里的分辨率按屏幕像素而不是点数，更清晰；Windows 同时把缩放比例调到相同倍数。运行中切换立即生效。"
+                                  : config.guestAgent
+                                  ? "窗口里的分辨率按屏幕像素而不是点数，更清晰；客户机代理同时把 GNOME 的缩放调到相同倍数。运行中切换立即生效。"
+                                  : "窗口里的分辨率按屏幕像素而不是点数，更清晰；Retina 屏上界面会变成一半大，要在客户机里把缩放调到 200%。运行中切换立即生效。")
                     }
                 }
                 if let config, editable {

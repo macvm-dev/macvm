@@ -311,7 +311,7 @@ public final class QEMUDisplayView: NSView {
     }
 
     /// 经控制通道请运行这台虚拟机的进程转告 QEMU；虚拟机可能在别的进程里运行（`macvm start`）。
-    /// 开了 `DisplayConfig.retina` 时按屏幕像素请求，Windows 再经代理把缩放比例调到屏幕倍数，界面大小与点数模式相同。
+    /// 开了 `DisplayConfig.retina` 时按屏幕像素请求，再经代理把客户机的缩放比例调到屏幕倍数，界面大小与点数模式相同。
     private func fitGuestToView() {
         guard spice != nil, let window else { return }
         let config = try? bundle.loadConfig()
@@ -328,7 +328,7 @@ public final class QEMUDisplayView: NSView {
             }
         }
         let percent = Int((factor * 100).rounded())
-        guard config?.os == .windows, config?.guestAgent == true, requestedGuestScale != percent else { return }
+        guard config?.guestAgent == true, requestedGuestScale != percent else { return }
         let changing = requestedGuestScale != nil
         requestedGuestScale = percent
         guard changing, (Int(framebufferSize.width), Int(framebufferSize.height)) != (width, height) else {
@@ -406,13 +406,6 @@ public final class QEMUDisplayView: NSView {
         scheduleGuestFit(after: 0)
     }
 
-    /// 改了 `DisplayConfig.retina` 后调用，已打开的这台虚拟机的画面立即按新设置请求分辨率。
-    public static func displayPreferenceChanged(_ name: String) {
-        NotificationCenter.default.post(name: preferenceChanged, object: nil, userInfo: ["name": name])
-    }
-
-    private static let preferenceChanged = Notification.Name("MacVMDisplayPreferenceChanged")
-
     public override func mouseEntered(with event: NSEvent) { updateCursor() }
     public override func mouseExited(with event: NSEvent) { updateCursor() }
 
@@ -427,11 +420,7 @@ public final class QEMUDisplayView: NSView {
         if let preferenceObserver { NotificationCenter.default.removeObserver(preferenceObserver) }
         preferenceObserver = nil
         guard let newWindow else { return }
-        let name = bundle.name
-        preferenceObserver = NotificationCenter.default.addObserver(forName: Self.preferenceChanged, object: nil, queue: .main) { [weak self] note in
-            guard note.userInfo?["name"] as? String == name else { return }
-            MainActor.assumeIsolated { self?.scheduleGuestFit() }
-        }
+        preferenceObserver = DisplayPreference.observe(bundle.name) { [weak self] in self?.scheduleGuestFit() }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: newWindow, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.updateCursor() }

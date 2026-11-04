@@ -9,7 +9,7 @@ struct Set: AsyncParsableCommand {
         discussion: """
         --engine 切换虚拟化引擎，磁盘与系统保持不变。例如 Windows：日常编译测试用 vz（占用最低），需要声音或挂起时切到 qemu。
         macOS 客户机只能用 vz。
-        --retina 只影响应用窗口里 QEMU 虚拟机的分辨率，运行中也可修改，打开的窗口下次调整大小时生效。
+        --retina 只影响应用窗口里 QEMU 虚拟机与 VZ 下 Linux 的分辨率，运行中也可修改，打开的窗口下次调整大小时生效。
         --disk-size 只扩大系统盘镜像，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。
         --remove-share 先于 --add-share 执行，先移除再加回即可改只读。共享目录只用于 VZ 引擎的 macOS、Linux 客户机。
         """
@@ -21,7 +21,7 @@ struct Set: AsyncParsableCommand {
     @Option(name: .customLong("cpus"), help: "vCPU 数。") var cpuCount: Int?
     @Option(help: "内存，如 8G。") var memory: String?
     @Option(help: "开机时的显示尺寸，宽x高，如 2560x1600。") var display: String?
-    @Option(help: "应用窗口里按屏幕像素请求分辨率（QEMU 引擎）：on 或 off。") var retina: Toggle?
+    @Option(help: "应用窗口里按屏幕像素请求分辨率（QEMU 引擎与 VZ 下的 Linux）：on 或 off。") var retina: Toggle?
     @Option(help: "扩大系统盘到此容量，如 256G；只能扩大。") var diskSize: String?
     @Option(help: "添加共享目录：主机路径[:名称][:ro]，可重复。") var addShare: [String] = []
     @Option(help: "移除共享目录：主机路径或名称，可重复。") var removeShare: [String] = []

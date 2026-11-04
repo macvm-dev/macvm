@@ -171,9 +171,130 @@ pub fn set_display(_width: u32, _height: u32) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机需要代理切换分辨率"))
 }
 
-/// Linux 与 macOS 客户机的缩放由桌面环境按显示器决定。
-pub fn set_display_scale(_percent: u32) -> io::Result<()> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机由代理设置缩放比例"))
+/// Linux：把 GNOME 的整数缩放倍数（`percent` 四舍五入到 1–4 倍）写进每个图形会话用户的
+/// `org.gnome.desktop.interface scaling-factor`，并用 `gdctl` 立即应用到当前画面。mutter 在没有保存过的显示器配置时
+/// 按这个设置给新分辨率选缩放比例，所以之后窗口改分辨率也保持这个倍数。之后登录的会话由后台线程补上。
+/// macOS 客户机的缩放由系统按显示器决定。
+pub fn set_display_scale(percent: u32) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        gnome_scale::set(percent.saturating_add(50).div_euclid(100).clamp(1, 4));
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = percent;
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 客户机的缩放由系统决定"))
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod gnome_scale {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, Once};
+    use std::time::Duration;
+
+    /// 宿主最近要求的倍数，与已按它设置过的会话。
+    static STATE: Mutex<(Option<u32>, Vec<String>)> = Mutex::new((None, Vec::new()));
+    static WATCH: Once = Once::new();
+    /// 新会话出现后多久能补上设置。
+    const POLL: Duration = Duration::from_secs(2);
+
+    pub fn set(factor: u32) {
+        {
+            let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+            if state.0 != Some(factor) {
+                *state = (Some(factor), Vec::new());
+            }
+        }
+        apply_pending();
+        WATCH.call_once(|| {
+            std::thread::spawn(|| loop {
+                std::thread::sleep(POLL);
+                apply_pending();
+            });
+        });
+    }
+
+    /// 给还没设置过的图形会话设置；会话结束后从记录里去掉。
+    fn apply_pending() {
+        let Some(factor) = STATE.lock().unwrap_or_else(|e| e.into_inner()).0 else { return };
+        let sessions = graphical_sessions();
+        let live: HashSet<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+        let pending: Vec<&Session> = {
+            let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+            state.1.retain(|id| live.contains(id.as_str()));
+            sessions.iter().filter(|s| !state.1.contains(&s.id)).collect()
+        };
+        for session in pending {
+            if apply(session, factor) {
+                let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+                if state.0 == Some(factor) {
+                    state.1.push(session.id.clone());
+                }
+            }
+        }
+    }
+
+    struct Session {
+        id: String,
+        user: String,
+        uid: String,
+    }
+
+    /// systemd-logind 在 `/run/systemd/sessions/<ID>` 里记录每个会话，格式为 KEY=VALUE 行。
+    fn graphical_sessions() -> Vec<Session> {
+        let Ok(entries) = std::fs::read_dir("/run/systemd/sessions") else { return Vec::new() };
+        entries
+            .flatten()
+            .filter_map(|entry| {
+                let id = entry.file_name().into_string().ok()?;
+                if id.contains('.') {
+                    return None;
+                }
+                let text = std::fs::read_to_string(entry.path()).ok()?;
+                let field = |key: &str| text.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix('=')).map(str::to_owned);
+                let graphical = matches!(field("TYPE").as_deref(), Some("wayland" | "x11"));
+                let user_class = field("CLASS").as_deref() == Some("user");
+                let closing = field("STATE").as_deref() == Some("closing");
+                if !graphical || !user_class || closing {
+                    return None;
+                }
+                Some(Session { id, user: field("USER")?, uid: field("UID")? })
+            })
+            .collect()
+    }
+
+    /// 以会话用户身份接上它的会话总线执行命令；成功时返回标准输出。
+    fn as_user(session: &Session, args: &[&str]) -> Option<String> {
+        let bus = format!("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{}/bus", session.uid);
+        let runtime = format!("XDG_RUNTIME_DIR=/run/user/{}", session.uid);
+        let output = std::process::Command::new("runuser")
+            .args(["-u", &session.user, "--", "env", &bus, &runtime])
+            .args(args)
+            .output()
+            .ok()?;
+        output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    /// 设置写不进去（会话总线还没起来）时返回 false，下一轮再试。`gdctl` 只在单显示器时用，失败不算：
+    /// 没有 `gdctl` 时设置在下次分辨率变化时生效。
+    fn apply(session: &Session, factor: u32) -> bool {
+        let value = factor.to_string();
+        if as_user(session, &["gsettings", "set", "org.gnome.desktop.interface", "scaling-factor", &value]).is_none() {
+            return false;
+        }
+        if let Some(show) = as_user(session, &["gdctl", "show"]) {
+            let monitors: Vec<&str> = show
+                .lines()
+                .filter_map(|l| l.split("Monitor ").nth(1)?.split_whitespace().next())
+                .collect();
+            if let [monitor] = monitors[..] {
+                let _ = as_user(session, &["gdctl", "set", "--logical-monitor", "--primary", "--monitor", monitor, "--scale", &value]);
+            }
+        }
+        true
+    }
 }
 
 pub fn mount_virtiofs(tag: &str, path: &str, read_only: bool) -> io::Result<()> {
