@@ -138,9 +138,9 @@ struct UbuntuAutoinstallTests {
 
         """
 
-    private func options(agent: URL? = nil, shares: [ShareConfig] = [], rosetta: Bool = false) -> UbuntuAutoinstall.Options {
+    private func options(agent: URL? = nil, shares: [ShareConfig] = [], rosetta: Bool = false, token: String? = nil) -> UbuntuAutoinstall.Options {
         UbuntuAutoinstall.Options(hostname: "My_Desk.1", user: "ethan", password: "s3cret", sshPublicKey: "ssh-ed25519 AAAA test",
-                                  shares: shares, rosetta: rosetta, timezone: "Asia/Shanghai", agentBinary: agent)
+                                  shares: shares, rosetta: rosetta, timezone: "Asia/Shanghai", agentBinary: agent, agentToken: token)
     }
 
     @Test func sha512CryptMatchesGlibcVectors() {
@@ -212,13 +212,17 @@ struct UbuntuAutoinstallTests {
         }
         try "# GDM configuration storage\n\n[daemon]\n# AutomaticLoginEnable = true\n\n[security]\n"
             .write(to: target.appending(path: "etc/gdm3/custom.conf"), atomically: true, encoding: .utf8)
-        let o = options(shares: [ShareConfig(hostPath: "/Users/e/My Code", tag: "code", readOnly: true)], rosetta: true)
+        let o = options(shares: [ShareConfig(hostPath: "/Users/e/My Code", tag: "code", readOnly: true)], rosetta: true, token: "abc123")
+        try "abc123".write(to: seed.appending(path: UbuntuAutoinstall.agentTokenName), atomically: true, encoding: .utf8)
         let script = seed.appending(path: UbuntuAutoinstall.setupScriptName)
         try UbuntuAutoinstall.setupScript(o).write(to: script, atomically: true, encoding: .utf8)
         try await Subprocess.run("/bin/sh", [script.path, seed.path, target.path])
 
         func read(_ path: String) throws -> String { try String(contentsOf: target.appending(path: path), encoding: .utf8) }
         #expect(try read("etc/sudoers.d/90-macvm") == "ethan ALL=(ALL) NOPASSWD:ALL\n")
+        #expect(try read(String(AgentToken.linuxPath.dropFirst())) == "abc123")
+        let mode = try FileManager.default.attributesOfItem(atPath: target.appending(path: String(AgentToken.linuxPath.dropFirst())).path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
         #expect(try read("etc/NetworkManager/conf.d/90-macvm.conf") == "[connection]\nipv4.dhcp-client-id=mac\n")
         #expect(try read("etc/binfmt.d/rosetta.conf") == CloudInit.rosettaBinfmtRule + "\n")
         #expect(try read("etc/fstab") == "code /mnt/code virtiofs ro,nofail 0 0\nrosetta /media/rosetta virtiofs ro,nofail 0 0\n")
@@ -267,6 +271,17 @@ struct WindowsUnattendTests {
         #expect(ascii)
         #expect(!script.replacingOccurrences(of: "\r\n", with: "").contains("\n"))
         #expect(script.contains("MACVMDATA") && script.contains("MACVMSETUP"))
+    }
+
+    @Test func setupScriptLocksAgentTokenBeforeWritingIt() throws {
+        var o = options
+        o.installAgent = true
+        o.agentToken = "abc123"
+        let script = WindowsUnattend.setupScript(o)
+        let acl = try #require(script.range(of: "/inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'"))
+        let write = try #require(script.range(of: "WriteAllText($token, 'abc123')"))
+        let start = try #require(script.range(of: "Start-ScheduledTask"))
+        #expect(acl.lowerBound < write.lowerBound && write.lowerBound < start.lowerBound)
     }
 
     @Test func setupScriptInstallsAgentOnlyWhenBundled() {
@@ -354,6 +369,13 @@ struct CloudInitTests {
     private func options(password: String?) -> CloudInit.Options {
         CloudInit.Options(hostname: "dev", user: "ethan", password: password, sshPublicKey: "ssh-ed25519 AAAA test",
                           macAddress: "02:00:00:00:00:01", agentBinary: nil)
+    }
+
+    @Test func writesAgentTokenRootOnly() {
+        var o = options(password: nil)
+        #expect(!CloudInit.userData(o).contains(AgentToken.linuxPath))
+        o.agentToken = "abc123"
+        #expect(CloudInit.userData(o).contains("  - path: \(AgentToken.linuxPath)\n    permissions: '0600'\n    content: \"abc123\""))
     }
 
     @Test func withoutPasswordLocksPasswordLogin() {

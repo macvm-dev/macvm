@@ -1,5 +1,7 @@
 //! 宿主与 macvm-agent 之间的消息类型与 exec 帧编解码。
 
+pub mod auth;
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};

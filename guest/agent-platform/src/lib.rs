@@ -20,6 +20,15 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<()> {
     if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
 }
 
+/// 连接的来处。`Network` 是可信通道之外的 TCP 连接（桥接网络下的宿主，或网上别的机器），
+/// 要先答对 `macvm_agent_protocol::auth` 的质询才能发请求。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// vsock，或来自默认网关的 TCP：用户态网络与 NAT 下宿主以默认网关的地址出现。
+    Host,
+    Network,
+}
+
 pub struct ExecOptions<'a> {
     pub argv: &'a [String],
     pub cwd: Option<&'a str>,

@@ -28,6 +28,17 @@ public enum GuestConnection {
         return fd
     }
 
+    /// 经网络直连客户机 `ip` 上的 `port`。桥接网络下宿主不是客户机的默认网关，连代理端口要先过 `AgentToken.authenticate`。
+    static func direct(_ ip: String, port: UInt16, bundle: VMBundle, config: VMConfig) throws -> UnixSocket {
+        let fd = tcpConnect(ip, port)
+        guard fd >= 0 else { throw MacVMError.posix("连接 \(ip):\(port)") }
+        let socket = UnixSocket(fd: fd)
+        if UInt32(port) == AgentProtocol.port, config.networks.first?.mode == .bridged {
+            try AgentToken.authenticate(socket, bundle: bundle)
+        }
+        return socket
+    }
+
     static func tcpConnect(_ ip: String, _ port: UInt16) -> Int32 {
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)

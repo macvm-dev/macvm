@@ -153,9 +153,7 @@ public final class QEMURunner: MachineRunner {
     nonisolated static func connectToGuest(_ bundle: VMBundle, _ config: VMConfig, port: UInt32) throws -> UnixSocket {
         if config.networks.first?.mode == .bridged {
             guard let ip = GuestAddress.current(bundle, config) else { throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址") }
-            let fd = GuestConnection.tcpConnect(ip, UInt16(port))
-            guard fd >= 0 else { throw MacVMError.posix("连接 \(ip):\(port)") }
-            return UnixSocket(fd: fd)
+            return try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle, config: config)
         }
         guard QEMUCommand.forwardedPorts.contains(port) else {
             throw MacVMError.unsupported("QEMU 引擎在 NAT 网络下只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")

@@ -53,7 +53,7 @@ public final class VZRunner: NSObject, MachineRunner {
             for _ in 0..<Self.guestDisplayAttempts {
                 guard !Task.isCancelled else { return }
                 if let ip = GuestAddress.current(bundle, config),
-                   Self.callAgent(ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
+                   Self.callAgent(bundle, config, ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
                     return
                 }
                 try? await Task.sleep(for: Self.guestDisplayRetryInterval)
@@ -183,7 +183,7 @@ public final class VZRunner: NSObject, MachineRunner {
             let agent = config.guestAgent, user = config.guestUser
             Task.detached { [weak self] in
                 if let ip = GuestAddress.current(bundle, config) {
-                    if agent, Self.callAgent(ip, .shutdown(reboot: false)) { return }
+                    if agent, Self.callAgent(bundle, config, ip, .shutdown(reboot: false)) { return }
                     if let user, Self.sshShutdown(user: user, ip: ip) { return }
                 }
                 try? await self?.pressPowerButton()
@@ -268,10 +268,9 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 经网络直连 Windows 客户机的代理发一个请求，返回是否成功。
-    nonisolated private static func callAgent(_ ip: String, _ request: AgentProtocol.Request, timeout: Int = 3) -> Bool {
-        let fd = GuestConnection.tcpConnect(ip, UInt16(AgentProtocol.port))
-        guard fd >= 0 else { return false }
-        return AgentClient.call(request, over: UnixSocket(fd: fd), timeout: timeout)
+    nonisolated private static func callAgent(_ bundle: VMBundle, _ config: VMConfig, _ ip: String, _ request: AgentProtocol.Request, timeout: Int = 3) -> Bool {
+        guard let socket = try? GuestConnection.direct(ip, port: UInt16(AgentProtocol.port), bundle: bundle, config: config) else { return false }
+        return AgentClient.call(request, over: socket, timeout: timeout)
     }
 
     /// 立即断电，未写回的客户机数据会丢失。
@@ -345,8 +344,8 @@ public final class VZRunner: NSObject, MachineRunner {
             guard let ip = guestIP else {
                 throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址")
             }
-            let fd = await Task.detached { GuestConnection.tcpConnect(ip, UInt16(port)) }.value
-            guard fd >= 0 else { throw MacVMError.posix("连接 \(ip):\(port)") }
+            let bundle = bundle, config = config
+            let fd = try await Task.detached { try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle, config: config).duplicateDescriptor() }.value
             return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
         }
         let connection = Unchecked(value: try await connectToGuest(port: port))

@@ -9,6 +9,7 @@ public enum UbuntuAutoinstall {
     public static let seedFileName = "autoinstall-seed.iso"
     static let setupScriptName = "macvm-setup.sh"
     static let agentUnitName = "macvm-agent.service"
+    static let agentTokenName = "macvm-agent-token"
 
     public struct Options: Sendable {
         public var hostname: String
@@ -20,10 +21,12 @@ public enum UbuntuAutoinstall {
         /// tz 数据库里的时区名。
         public var timezone: String
         public var agentBinary: URL?
+        /// 写进客户机的 `AgentToken`。
+        public var agentToken: String?
 
         public init(hostname: String, user: String, password: String, sshPublicKey: String, shares: [ShareConfig] = [], rosetta: Bool = false,
                     timezone: String = TimeZone.current.identifier,
-                    agentBinary: URL? = AgentInstaller.binary(for: .linux)) {
+                    agentBinary: URL? = AgentInstaller.binary(for: .linux), agentToken: String? = nil) {
             self.hostname = UbuntuAutoinstall.hostname(for: hostname)
             self.user = user
             self.password = password
@@ -32,6 +35,7 @@ public enum UbuntuAutoinstall {
             self.rosetta = rosetta
             self.timezone = timezone
             self.agentBinary = agentBinary
+            self.agentToken = agentToken
         }
     }
 
@@ -97,6 +101,9 @@ public enum UbuntuAutoinstall {
             if let agent = o.agentBinary {
                 try FileManager.default.copyItem(at: agent, to: staging.appending(path: "macvm-agent"))
                 try AgentInstaller.linuxCloudInit(user: o.user).unit.write(to: staging.appending(path: agentUnitName), atomically: true, encoding: .utf8)
+            }
+            if let token = o.agentToken {
+                try token.write(to: staging.appending(path: agentTokenName), atomically: true, encoding: .utf8)
             }
         }
     }
@@ -176,6 +183,9 @@ public enum UbuntuAutoinstall {
                 #"install -m 0644 "$seed/\#(agentUnitName)" "$target/etc/systemd/system/\#(agentUnitName)""#,
                 #"systemctl --root="$target" enable \#(agentUnitName)"#,
             ]
+        }
+        if o.agentToken != nil {
+            lines.append("(\(AgentToken.linuxInstallCommand(root: #""$target""#))) < \"$seed/\(agentTokenName)\"")
         }
         var mounts = o.shares.map { share in
             (tag: share.tag, path: share.samePath ? share.hostPath : "/mnt/\(share.tag)", flags: share.readOnly ? "ro,nofail" : "rw,nofail")

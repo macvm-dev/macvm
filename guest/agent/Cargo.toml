@@ -7,6 +7,7 @@ edition.workspace = true
 serde_json.workspace = true
 macvm-agent-protocol.workspace = true
 macvm-agent-platform.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true

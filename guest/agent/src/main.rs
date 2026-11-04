@@ -3,7 +3,7 @@
 // Windows 上由登录时的计划任务启动，不需要也不应弹出控制台窗口。
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use macvm_agent_platform::{self as platform, Conn, ExecOptions, GuestCursor, SpawnedIo};
+use macvm_agent_platform::{self as platform, Conn, ExecOptions, GuestCursor, Origin, SpawnedIo};
 use macvm_agent_protocol::{self as proto, ExecRequest, ExitStatus, FrameKind, Info, Request, Response, WindowSize};
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -42,10 +42,10 @@ fn main() {
     let config = Arc::new(config);
     loop {
         match listener.accept() {
-            Ok(conn) => {
+            Ok((conn, origin)) => {
                 let config = config.clone();
                 thread::spawn(move || {
-                    if let Err(e) = serve(conn, &config) {
+                    if let Err(e) = serve(conn, origin, &config) {
                         eprintln!("macvm-agent: {e}");
                     }
                 });
@@ -84,7 +84,31 @@ fn parse_args() -> Config {
     config
 }
 
-fn serve(mut conn: Conn, config: &Config) -> io::Result<()> {
+/// 认证要在这么久之内答完。
+const AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// `Origin::Network` 的连接先过质询；客户机里没有令牌时一律断开，不回应。返回是否通过。
+fn authenticate(conn: &mut Conn) -> io::Result<bool> {
+    let Some(token) = platform::agent_token() else { return Ok(false) };
+    let mut nonce = [0u8; proto::auth::CHALLENGE_BYTES];
+    getrandom::fill(&mut nonce).map_err(|e| io::Error::other(format!("取随机数失败：{e}")))?;
+    let challenge = proto::auth::hex(&nonce);
+    platform::set_read_timeout(conn, Some(AUTH_TIMEOUT))?;
+    proto::write_json_line(conn, &proto::auth::Challenge { challenge: challenge.clone() })?;
+    let line = proto::read_line(conn)?;
+    let ok = serde_json::from_slice::<proto::auth::Answer>(&line).is_ok_and(|a| proto::auth::verify(&token, &challenge, &a.auth));
+    if !ok {
+        proto::write_json_line(conn, &Response::error("认证失败"))?;
+        return Ok(false);
+    }
+    platform::set_read_timeout(conn, None)?;
+    Ok(true)
+}
+
+fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
+    if origin == Origin::Network && !authenticate(&mut conn)? {
+        return Ok(());
+    }
     let line = proto::read_line(&mut conn)?;
     let request: Request = match serde_json::from_slice(&line) {
         Ok(r) => r,

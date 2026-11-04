@@ -10,9 +10,10 @@ public enum VMClone {
             for file in BundleFiles.stateFiles(of: source, config: config) {
                 try Clone.file(from: source.url.appending(path: file), to: target.url.appending(path: file))
             }
-            // 磁盘是复制来的，客户机密码与源机相同。
+            // 磁盘是复制来的，客户机密码与代理令牌与源机相同。
             let password = GuestCredentials.password(for: source)
             if let password { try GuestCredentials.storePassword(password, in: target) }
+            if let token = AgentToken.read(source) { try AgentToken.store(token, in: target) }
             try MachineIdentity.regenerate(in: target, os: config.os)
             config.name = name
             for i in config.networks.indices { config.networks[i].macAddress = NetworkAttachments.randomMACAddress() }

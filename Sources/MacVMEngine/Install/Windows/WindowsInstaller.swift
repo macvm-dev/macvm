@@ -102,6 +102,7 @@ public enum WindowsInstaller {
             installAgent: AgentInstaller.binary(for: .windows) != nil,
             productKey: productKey
         )
+        if unattend.installAgent { unattend.agentToken = AgentToken.random() }
         // 驱动由代理装，没有代理就不放。
         unattend.installGPUDriver = unattend.installAgent && WindowsGPUDriver.package(qemu) != nil
 
@@ -113,6 +114,7 @@ public enum WindowsInstaller {
             try MachineIdentity.createGeneric(in: bundle)
             try qemu.ensureVars(for: bundle)
             try GuestCredentials.storePassword(password, in: bundle)
+            if let token = unattend.agentToken { try AgentToken.store(token, in: bundle) }
             let config = VMConfig(
                 name: options.name, os: .windows, engine: .qemu,
                 cpuCount: options.cpuCount ?? HostInfo.defaultCPUCount(),

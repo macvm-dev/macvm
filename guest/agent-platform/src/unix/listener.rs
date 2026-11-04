@@ -45,8 +45,8 @@ pub fn shutdown_write(conn: &Conn) {
 }
 
 /// 宿主经 vsock 连入。Linux 上没有 virtio vsock 设备（QEMU 引擎）时改为监听 TCP：用户态网络把宿主的 Unix socket
-/// 转发到这个端口，宿主以默认网关的地址出现，所以 TCP 只接受来自默认网关的连接，客户机里的其他进程连不进来。
-/// 有 vsock 设备时不开 TCP：桥接网络下默认网关是局域网路由器，不是宿主。
+/// 转发到这个端口，宿主以默认网关的地址出现；桥接网络下宿主直连客户机地址，来源不是默认网关，按 `Origin::Network` 交出。
+/// 有 vsock 设备时不开 TCP。
 /// 没有 vsock 设备时 vsock 也可能绑定成功，所以按设备而不是按绑定结果判断。两种至少有一种监听成功即可。
 pub struct Listener {
     vsock: Option<RawFd>,
@@ -72,7 +72,7 @@ impl Listener {
         Ok(Self { vsock: Some(vsock?) })
     }
 
-    pub fn accept(&self) -> io::Result<File> {
+    pub fn accept(&self) -> io::Result<(File, crate::Origin)> {
         #[cfg(target_os = "linux")]
         use std::os::fd::AsRawFd;
         let mut fds: Vec<libc::pollfd> = Vec::new();
@@ -96,7 +96,7 @@ impl Listener {
             for ready in fds.iter().filter(|p| p.revents != 0) {
                 if Some(ready.fd) == self.vsock {
                     if let Some(conn) = accept_raw(ready.fd)? {
-                        return Ok(conn);
+                        return Ok((conn, crate::Origin::Host));
                     }
                     continue;
                 }
@@ -107,10 +107,9 @@ impl Listener {
                         Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                         Err(e) => return Err(e),
                     };
-                    if super::system::default_gateways().contains(&peer.ip()) {
-                        stream.set_nodelay(true).ok();
-                        return Ok(File::from(std::os::fd::OwnedFd::from(stream)));
-                    }
+                    stream.set_nodelay(true).ok();
+                    let origin = if super::system::default_gateways().contains(&peer.ip()) { crate::Origin::Host } else { crate::Origin::Network };
+                    return Ok((File::from(std::os::fd::OwnedFd::from(stream)), origin));
                 }
             }
         }
@@ -183,4 +182,30 @@ fn cloexec() -> libc::c_int {
 fn set_cloexec(fd: RawFd) {
     // SAFETY: 对有效 fd 设置标志位。
     unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+}
+
+/// 与宿主共享的令牌，`Origin::Network` 的连接靠它认证；没有时这类连接一律拒绝。
+/// macOS 客户机只经 vsock 连入，用不到。
+pub fn agent_token() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = std::fs::read_to_string("/etc/macvm-agent/token").ok()?;
+        let token = text.trim();
+        if !token.is_empty() {
+            return Some(token.to_owned());
+        }
+    }
+    None
+}
+
+/// 读超时；None 取消。认证前限时，免得网上的连接一直占着线程。
+pub fn set_read_timeout(conn: &Conn, timeout: Option<std::time::Duration>) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let t = timeout.unwrap_or_default();
+    let tv = libc::timeval { tv_sec: t.as_secs() as _, tv_usec: t.subsec_micros() as _ };
+    // SAFETY: fd 由 conn 持有；tv 在调用期间有效，长度与类型一致。
+    let rc = unsafe {
+        libc::setsockopt(conn.as_raw_fd(), libc::SOL_SOCKET, libc::SO_RCVTIMEO, (&tv as *const libc::timeval).cast(), std::mem::size_of::<libc::timeval>() as libc::socklen_t)
+    };
+    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }

@@ -11,6 +11,8 @@ enum WindowsUnattend {
         var sshPublicKey: String
         /// 安装盘上带有 `agentFileName`，首次登录时装好客户机代理。
         var installAgent = false
+        /// 随代理写进客户机的 `AgentToken`。
+        var agentToken: String?
         /// 安装盘上带有 `gpuDriverFolder`，首次登录时放进客户机，由代理装上。
         var installGPUDriver = false
         /// 首次登录联网后用它激活；省略时系统保持未激活。
@@ -199,6 +201,7 @@ enum WindowsUnattend {
         Restart-Service sshd
         \#(o.productKey.map { "cscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ipk \($0)\ncscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ato" } ?? "")
         \#(o.installGPUDriver ? "New-Item -ItemType Directory -Force -Path (Split-Path '\(WindowsGPUDriver.guestDirectory)') | Out-Null; Copy-Item -Recurse -Force -LiteralPath (Join-Path $PSScriptRoot '\(gpuDriverFolder)') -Destination '\(WindowsGPUDriver.guestDirectory)'" : "")
+        \#(o.installAgent ? (o.agentToken.map(AgentToken.windowsInstall) ?? "") : "")
         \#(o.installAgent ? AgentInstaller.windowsRegistration(source: "(Join-Path $PSScriptRoot '\(agentFileName)')", user: o.user) : "")
         New-Item -ItemType File -Path \#(doneMarker) -Force
         Stop-Transcript

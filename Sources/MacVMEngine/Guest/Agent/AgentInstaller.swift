@@ -42,7 +42,7 @@ public enum AgentInstaller {
 
     /// Windows 上把 `source` 处的代理装好并启动的 PowerShell 片段：
     /// 登录时以最高权限在 `user` 的交互会话里运行的计划任务（剪贴板只在交互会话可用），
-    /// 外加对所有网络生效的入站规则。代理自己只接受来自默认网关（宿主）的连接。
+    /// 外加对所有网络生效的入站规则。代理对默认网关以外的来源要求答对 `AgentToken` 的质询。
     static func windowsRegistration(source: String, user: String) -> String {
         let quoted = PowerShell.quote
         return """
@@ -69,6 +69,7 @@ public enum AgentInstaller {
         guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 安装代理") }
         guard let binary = binary(for: config.os) else { throw MacVMError.io("找不到 \(config.os.rawValue) 版客户机代理，先运行 make agent") }
         let ssh = sshArguments(bundle: bundle, user: user, macvmPath: macvmPath)
+        let token = config.os == .macOS ? nil : try AgentToken.ensure(bundle)
 
         let script: String
         switch config.os {
@@ -125,9 +126,14 @@ public enum AgentInstaller {
 
                 """
             }
+            install += AgentToken.windowsInstall(token!) + "\n"
             install += windowsRegistration(source: "(Join-Path $HOME '\(staged)')", user: user) + "\nRemove-Item (Join-Path $HOME '\(staged)')"
             try await Subprocess.run("/usr/bin/ssh", ssh + [encodedPowerShell(install)])
             return gpuDriver != nil
+        }
+        if config.os == .linux {
+            // 令牌经标准输入传，不进客户机的命令行。
+            try await Subprocess.run("/usr/bin/ssh", ssh + ["sudo sh -c '\(AgentToken.linuxInstallCommand())'"], stdin: AgentToken.url(bundle))
         }
         try await Subprocess.run("/usr/bin/ssh", ssh + [script], stdin: binary)
         return false

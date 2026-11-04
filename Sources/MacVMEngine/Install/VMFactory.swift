@@ -103,7 +103,8 @@ public enum VMFactory {
                 }
                 let seed = CloudInit.Options(hostname: options.name, user: options.user, password: options.password,
                                              sshPublicKey: try await SSHKeys.ensurePublicKey(),
-                                             macAddress: network.macAddress!, shares: options.shares, rosetta: options.rosetta)
+                                             macAddress: network.macAddress!, shares: options.shares, rosetta: options.rosetta,
+                                             agentToken: try AgentToken.ensure(bundle))
                 try await CloudInit.writeSeed(seed, instanceID: UUID().uuidString, in: bundle)
                 if let password = options.password { try GuestCredentials.storePassword(password, in: bundle) }
                 hasAgent = seed.agentBinary != nil
@@ -115,7 +116,8 @@ public enum VMFactory {
                 let password = options.password ?? GuestCredentials.randomPassword()
                 let seed = UbuntuAutoinstall.Options(hostname: options.name, user: options.user, password: password,
                                                      sshPublicKey: try await SSHKeys.ensurePublicKey(),
-                                                     shares: options.shares, rosetta: options.rosetta)
+                                                     shares: options.shares, rosetta: options.rosetta,
+                                                     agentToken: try AgentToken.ensure(bundle))
                 try await UbuntuAutoinstall.writeSeed(seed, in: bundle)
                 try GuestCredentials.storePassword(password, in: bundle)
                 hasAgent = seed.agentBinary != nil

@@ -21,9 +21,11 @@ public enum CloudInit {
         public var macAddress: String
         /// 放进种子盘并在首启时安装为 systemd 服务的代理二进制。
         public var agentBinary: URL?
+        /// 写进客户机的 `AgentToken`。
+        public var agentToken: String?
 
         public init(hostname: String, user: String, password: String? = nil, sshPublicKey: String, macAddress: String, shares: [ShareConfig] = [],
-                    rosetta: Bool = false, agentBinary: URL? = AgentInstaller.binary(for: .linux)) {
+                    rosetta: Bool = false, agentBinary: URL? = AgentInstaller.binary(for: .linux), agentToken: String? = nil) {
             self.hostname = hostname
             self.user = user
             self.password = password
@@ -32,6 +34,7 @@ public enum CloudInit {
             self.rosetta = rosetta
             self.macAddress = macAddress
             self.agentBinary = agentBinary
+            self.agentToken = agentToken
         }
     }
 
@@ -94,6 +97,9 @@ public enum CloudInit {
             writeFiles.append("  - path: /etc/systemd/system/macvm-agent.service\n    content: |\n" +
                               agent.unit.split(separator: "\n", omittingEmptySubsequences: false).map { "      " + $0 }.joined(separator: "\n"))
             runcmd.append("[sh, -c, \(yaml(agent.install))]")
+        }
+        if let token = o.agentToken {
+            writeFiles.append("  - path: \(AgentToken.linuxPath)\n    permissions: '0600'\n    content: \(yaml(token))")
         }
         for share in o.shares {
             let target = share.samePath ? share.hostPath : "/mnt/\(share.tag)"
