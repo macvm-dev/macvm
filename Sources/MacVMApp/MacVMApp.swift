@@ -27,6 +27,8 @@ struct MacVMApp: App {
             if let name {
                 MachineWindow(name: name)
                     .environment(model)
+                    // 全屏时画面占满屏幕，工具栏只在指针移到屏幕顶端时滑出。
+                    .windowToolbarFullScreenVisibility(.onHover)
             }
         }
         .windowResizability(.contentMinSize)
