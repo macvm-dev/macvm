@@ -3,11 +3,14 @@ SIGN_IDENTITY ?= -
 ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
+# swift build 链接时不把 SDK 路径交给 clang，二进制记下的 SDK 版本会退成部署目标，
+# 系统据此按旧版外观（兼容模式）显示 App；显式传 -isysroot 让它记成实际使用的 SDK。
+SWIFT_FLAGS   := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(shell xcrun --sdk macosx --show-sdk-path)
 
 .PHONY: build sign test lint agent boot qemu app release clean
 
 build:
-	swift build -c $(CONFIG)
+	swift build -c $(CONFIG) $(SWIFT_FLAGS)
 
 # VZ 拒绝没有 virtualization entitlement 的进程，开发时每次构建后都要重签。
 sign: build
@@ -15,7 +18,7 @@ sign: build
 	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/MacVMApp
 
 test:
-	swift test
+	swift test $(SWIFT_FLAGS)
 	cd guest && cargo test
 
 lint:
@@ -31,7 +34,7 @@ qemu:
 	scripts/build-qemu.sh
 
 app:
-	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" scripts/bundle-app.sh
+	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 
 # 公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用钥匙串里唯一的 Developer ID Application 证书，有零张或多张就停下。
 release:
