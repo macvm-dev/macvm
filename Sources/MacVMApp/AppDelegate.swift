@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in Self.updateActivationPolicy() }
             },
         ]
+        // 直接运行可执行文件（不经 LaunchServices）启动时系统不会激活 App，窗口压在启动它的终端后面。
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
