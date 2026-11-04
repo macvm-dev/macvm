@@ -18,8 +18,6 @@ jobs:
     runs-on: xcode-27
     # 首次编译 QEMU 图形栈（含 LLVM）很久，之后走缓存。
     timeout-minutes: 300
-    env:
-      KEYCHAIN: ${{ runner.temp }}/release.keychain-db
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
@@ -53,6 +51,8 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
         run: |
+          KEYCHAIN=$RUNNER_TEMP/release.keychain-db
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           password=$(uuidgen)
           security create-keychain -p "$password" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
@@ -121,4 +121,4 @@ jobs:
 
       - name: 清理钥匙串
         if: always()
-        run: security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+        run: '[ -z "${KEYCHAIN:-}" ] || security delete-keychain "$KEYCHAIN"'
