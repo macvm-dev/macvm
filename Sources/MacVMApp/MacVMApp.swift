@@ -8,6 +8,8 @@ struct MacVMApp: App {
     private var model: AppModel { delegate.model }
     @AppStorage(StatusMenu.visibleKey) private var showsMenuBarExtra = true
 
+    init() { AppInstance.claim() }
+
     var body: some Scene {
         // 单实例：菜单栏里「打开 MacVM」用 openWindow 把已有的主窗口提到前面，而不是再开一个。
         Window("MacVM", id: "library") {

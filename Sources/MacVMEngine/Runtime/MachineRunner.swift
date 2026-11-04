@@ -29,10 +29,10 @@ public enum MachineStartOutcome: Sendable {
 final class StopLatch {
     private(set) var reason: MachineStopReason?
     var onStop: ((MachineStopReason) -> Void)?
-    private let lock: BundleLock
+    private let lock: ProcessLock
     private var waiters: [CheckedContinuation<MachineStopReason, Never>] = []
 
-    init(lock: BundleLock) { self.lock = lock }
+    init(lock: ProcessLock) { self.lock = lock }
 
     func fire(_ reason: MachineStopReason) {
         guard self.reason == nil else { return }
