@@ -87,6 +87,9 @@ struct QEMUCommand {
             "-accel", qemu.bundleRoot == nil ? "hvf" : "hvf,ipa-granule-size=4096", "-cpu", "host",
             // 运行它的进程（应用或 macvm run）意外退出时 QEMU 跟着退出，不留下无人管理的虚拟机。
             "-run-with", "exit-with-parent=on",
+            // 固件的启动菜单倒计时默认取 EFI 变量 Timeout（客户机里的引导程序可能把它设成几秒）；
+            // 等待时间为 0 时固件按它把倒计时改成 0，不再每次开机白等。
+            "-boot", "menu=on,splash-time=0",
             "-smp", "\(config.cpuCount)",
             "-m", "\(config.memorySize >> 20)M",
             // 自带的固件去掉了补零，不能当 pflash0；-bios 两种都能加载。
