@@ -10,10 +10,12 @@ public struct LinuxImage: Sendable, Equatable {
     /// 归档里磁盘文件的扩展名。
     let diskExtension: String
 
+    /// Debian 用 generic 而非 genericcloud：后者的 cloud 内核不带 DRM，virtio-gpu 无驱动，
+    /// 窗口画面会停在 EFI 引导输出。
     public static let catalog: [LinuxImage] = [
         LinuxImage(
-            id: "debian-13", title: "Debian 13 (trixie) genericcloud",
-            url: URL(string: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.tar.xz")!,
+            id: "debian-13", title: "Debian 13 (trixie) generic",
+            url: URL(string: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.tar.xz")!,
             diskExtension: "raw"
         ),
         LinuxImage(
@@ -29,6 +31,15 @@ public struct LinuxImage: Sendable, Equatable {
         }
         return image
     }
+
+    /// 解包后的磁盘在缓存里的文件名，取自归档名，使换了下载地址的镜像不复用旧缓存。
+    var cacheFileName: String {
+        var name = url.lastPathComponent
+        for suffix in [".tar.xz", ".tar.gz"] where name.hasSuffix(suffix) {
+            name.removeLast(suffix.count)
+        }
+        return name + ".raw"
+    }
 }
 
 /// 下载并解包后的镜像缓存，位于 `DownloadCache.root` 下的 images。
@@ -41,7 +52,7 @@ public enum ImageCache {
     public static func disk(for image: LinuxImage, showProgress: Bool) async throws -> URL {
         // 只取一次：下载期间设置里的目录可能被改，中间文件得留在同一处。
         let root = root
-        let disk = root.appending(path: "\(image.id).raw")
+        let disk = root.appending(path: image.cacheFileName)
         let archive = root.appending(path: image.url.lastPathComponent + ".part")
         return try await Download.cached(disk, from: image.url, via: archive, showProgress: showProgress) { archive in
             let staging = root.appending(path: "\(image.id).staging", directoryHint: .isDirectory)
