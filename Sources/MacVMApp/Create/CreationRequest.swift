@@ -9,6 +9,8 @@ struct CreationRequest: Codable, Sendable, Equatable {
         /// `LinuxDesktop` 的原始值。
         case desktop(String)
         case iso, ipswLatest, ipswFile
+        /// 从微软下载 Windows ISO。
+        case windowsLatest
     }
 
     var name: String

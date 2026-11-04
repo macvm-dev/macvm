@@ -502,7 +502,14 @@ final class AppModel {
                 }
             }
         case (.windows, _):
-            guard let iso = r.file else { throw MacVMError.invalidConfig("没有选择 Windows 安装 ISO") }
+            let iso: URL
+            if r.source == .windowsLatest {
+                setActivity(name, "正在下载 Windows…")
+                iso = try await WindowsISO.iso(showProgress: false)
+            } else {
+                guard let file = r.file else { throw MacVMError.invalidConfig("没有选择 Windows 安装 ISO") }
+                iso = file
+            }
             setActivity(name, "正在准备 Windows 安装盘…")
             let bundle = try await WindowsInstaller.create(.init(name: name, iso: iso, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
                                                                  user: r.user ?? NSUserName(), password: r.password, productKey: r.productKey,

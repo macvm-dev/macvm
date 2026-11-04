@@ -82,7 +82,7 @@ struct CreateSheet: View {
                     TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
                     Text(!hasQEMU
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
-                         : "选择 Windows 11 ARM64 安装 ISO，或点「从微软下载」在浏览器里下载（选好语言后点 Download），下载完成会自动选上。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
+                         : "自动下载时语言随系统首选语言。微软拒绝下载时（开着 VPN 或代理时常见）改选本地 ISO，点「从微软下载…」在浏览器里下载（选好语言后点 Download），下载完成会自动选上。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -121,7 +121,12 @@ struct CreateSheet: View {
             .pickerStyle(.radioGroup)
             .labelsHidden()
         case .windows:
-            EmptyView()
+            Picker("", selection: $source) {
+                Text("从微软下载 Windows 11 ARM64").tag(Source.windowsLatest)
+                Text("本地 ISO 文件…").tag(Source.iso)
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
         }
         if needsFile {
             HStack {
@@ -144,7 +149,7 @@ struct CreateSheet: View {
     /// 等浏览器把 Windows ISO 下载完；用户自己选了文件或换了系统就不再等。
     private func watchDownloads() async {
         guard let since = downloadRequestedAt else { return }
-        while !Task.isCancelled, file == nil, os == .windows {
+        while !Task.isCancelled, file == nil, os == .windows, source == .iso {
             if let fresh = WindowsInstaller.downloadedISOs(modifiedAfter: since).first {
                 file = fresh
                 return
@@ -170,7 +175,7 @@ struct CreateSheet: View {
         }
         return nil
     }
-    private var needsFile: Bool { source == .iso || source == .ipswFile || os == .windows }
+    private var needsFile: Bool { source == .iso || source == .ipswFile }
     private var allowedTypes: [UTType] { [UTType(filenameExtension: os == .macOS ? "ipsw" : "iso") ?? .data] }
     private var defaultName: String { os == .macOS ? "macos" : os == .windows ? "windows" : "linux" }
     private var finalName: String { name.isEmpty ? defaultName : name }
@@ -194,7 +199,7 @@ struct CreateSheet: View {
         switch os {
         case .linux: source = .cloudImage(LinuxImage.catalog[0].id)
         case .macOS: source = .ipswLatest
-        case .windows: source = .iso
+        case .windows: source = .windowsLatest
         }
     }
 

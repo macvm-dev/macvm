@@ -47,7 +47,7 @@ struct Create: AsyncParsableCommand {
     @Option(help: "Linux 云镜像与 Windows：登录密码，保存在虚拟机包内的 guest-password。省略时云镜像只能用 SSH 密钥登录，Windows 随机生成。")
     var password: String?
 
-    @Option(name: .customLong("iso"), help: "以只读 U 盘挂载的安装介质，可重复。")
+    @Option(name: .customLong("iso"), help: "以只读 U 盘挂载的安装介质，可重复。Windows 只取一张，省略时从微软下载。")
     var installMedia: [String] = []
 
     @Option(help: "共享目录：主机路径[:tag][:ro]，可重复。")
@@ -112,14 +112,19 @@ struct Create: AsyncParsableCommand {
     }
 
     private func createWindows() async throws -> VMSummary {
-        guard installMedia.count == 1, let iso = installMedia.first else {
-            throw MacVMError.invalidConfig("Windows 需要用 --iso 指定一张 Windows 11 ARM64 安装 ISO，可在 \(WindowsInstaller.downloadPage.absoluteString) 下载")
-        }
+        guard installMedia.count <= 1 else { throw MacVMError.invalidConfig("Windows 只能用 --iso 指定一张安装 ISO") }
         let interactive = !global.json && isatty(STDERR_FILENO) == 1
         func say(_ text: String) { if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) } }
 
+        let iso: URL
+        if let path = installMedia.first {
+            iso = URL(filePath: (path as NSString).expandingTildeInPath).standardizedFileURL
+        } else {
+            say("正在从微软下载 Windows 11 ARM64 安装 ISO（语言随系统首选语言）…")
+            iso = try await WindowsISO.iso(showProgress: interactive)
+        }
         let options = WindowsInstaller.Options(
-            name: name, iso: URL(filePath: (iso as NSString).expandingTildeInPath).standardizedFileURL,
+            name: name, iso: iso,
             virtioWin: virtioWin.map { URL(filePath: ($0 as NSString).expandingTildeInPath) },
             cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
             user: user ?? NSUserName(), password: password, productKey: productKey, showProgress: interactive
