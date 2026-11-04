@@ -17,7 +17,9 @@ struct MachineDetailView: View {
     var body: some View {
         let config = model.config(of: vm.name)
         Form {
-            Section { header(config) }
+            Section {
+                header(config).background(OverlayScrollers())
+            }
             Section {
                 if let config, config.os != .macOS {
                     Picker("引擎", selection: Binding(get: { config.engine }, set: { model.setEngine(vm.name, to: $0) })) {
