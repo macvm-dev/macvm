@@ -46,5 +46,6 @@ struct MacVMApp: App {
             StatusMenu()
                 .environment(model)
         }
+        .menuBarExtraStyle(.window)
     }
 }
