@@ -27,6 +27,7 @@
 | `display` | `width`，`height`（像素） | `{"ok":true}`（仅 Windows：设定主显示器与分辨率） |
 | `display-scale` | `percent`（整数，100 为不缩放） | `{"ok":true}`（Windows、Linux：设定显示器的缩放比例；macOS 不支持） |
 | `gpu-driver` | `sha256`（驱动包 zip 的 SHA-256，十六进制），`size`（字节数） | 已有同一个包时 `{"ok":true,"text":"current"}`；否则 `{"ok":true,"text":"send"}`，收下随后的 `size` 字节并安装后再回 `{"ok":true,"text":"installed"}` 或 `"unchanged"`（仅 Windows） |
+| `trim-cache` | `keep`（字节数） | `{"ok":true}`（仅 Linux：把文件页缓存回收到约 `keep`） |
 | `cursor-watch` | — | `{"ok":true}`，随后每当客户机光标变化发一行光标形状，直到连接关闭（仅 Windows） |
 
 `info` 的内容：
@@ -40,6 +41,8 @@
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
 
 `display-scale`：Windows 上代理把每个活动显示器的缩放比例设为 Windows 支持的档位里不超过 `percent` 的最大一档，立即生效并记入当前用户的设置。Linux 上代理把 `percent` 四舍五入成 1–4 倍，写进每个图形会话用户的 GNOME 设置 `org.gnome.desktop.interface scaling-factor`，并用 `gdctl` 立即应用（没有 `gdctl` 的旧版 GNOME 在下次分辨率变化时生效）；之后登录的会话也会补上。宿主在高分辨率（Retina）画面下按窗口所在屏幕的像素倍数发送，关掉时发 100。
+
+`trim-cache`：代理经 cgroup v2 根组的 `memory.reclaim` 按 LRU 回收文件页（`Active(file)` 与 `Inactive(file)`），回收到约 `keep` 字节为止，超出不足 64 MiB 时不回收；内核支持 `swappiness=0` 参数时不换出匿名页，否则按系统的 swappiness 回收。内核回收不到要求的量时仍回成功。QEMU 下自带的 QEMU 把客户机经气球上报的空闲页还给宿主，页缓存不算空闲，宿主为装有代理的 Linux 客户机定期发送这个请求，腾出的页随之上报；代理回错误后不再发送。
 
 `cursor-watch`：QEMU 下宿主按代理推送的光标显示宿主光标。系统光标只推种类（`system`），宿主换成自己的同类光标；其余光标在客户机用硬件光标（viogpudo）时推图像。客户机没有硬件光标（viogpu3d）时，连接期间代理把系统光标换成透明的，其余光标推送 `hidden`、由客户机画，最后一个连接关闭时恢复系统光标。连上后先发当前光标，之后只在光标句柄或显隐变化时发：
 

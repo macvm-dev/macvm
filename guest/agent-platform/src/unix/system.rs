@@ -48,14 +48,7 @@ pub fn memory() -> (u64, u64) {
     #[cfg(target_os = "linux")]
     {
         let text = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
-        let field = |name: &str| -> u64 {
-            text.lines()
-                .find(|l| l.starts_with(name))
-                .and_then(|l| l.split_whitespace().nth(1))
-                .and_then(|v| v.parse::<u64>().ok())
-                .map_or(0, |kb| kb * 1024)
-        };
-        (field("MemTotal:"), field("MemAvailable:"))
+        (meminfo_bytes(&text, "MemTotal:"), meminfo_bytes(&text, "MemAvailable:"))
     }
     #[cfg(target_os = "macos")]
     {
@@ -71,6 +64,45 @@ pub fn memory() -> (u64, u64) {
         };
         let available = (pages("Pages free") + pages("Pages inactive") + pages("Pages purgeable")) * page;
         (total, available.min(total))
+    }
+}
+
+/// `/proc/meminfo` 里一项的字节数，没有这一项时为 0。
+#[cfg(target_os = "linux")]
+fn meminfo_bytes(text: &str, name: &str) -> u64 {
+    text.lines()
+        .find(|l| l.starts_with(name))
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(0, |kb| kb * 1024)
+}
+
+/// 超出 `keep` 不到这么多时不回收，免得每次都为零头打扰内核。
+#[cfg(target_os = "linux")]
+const MIN_TRIM: u64 = 64 << 20;
+
+/// 把文件页缓存（`Active(file)` 与 `Inactive(file)`）按 LRU 回收到约 `keep` 字节，内核支持时不换出匿名页。
+pub fn trim_page_cache(keep: u64) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = std::fs::read_to_string("/proc/meminfo")?;
+        let file = meminfo_bytes(&text, "Active(file):") + meminfo_bytes(&text, "Inactive(file):");
+        let Some(excess) = file.checked_sub(keep).filter(|&n| n >= MIN_TRIM) else { return Ok(()) };
+        let reclaim = |request: String| match std::fs::write("/sys/fs/cgroup/memory.reclaim", request) {
+            // 回收不到要求的量时内核回 EAGAIN，已回收的部分照样生效。
+            Err(e) if e.raw_os_error() == Some(libc::EAGAIN) => Ok(()),
+            result => result,
+        };
+        match reclaim(format!("{excess} swappiness=0")) {
+            // 不认识 swappiness 参数的内核回 EINVAL：按系统的 swappiness 回收。
+            Err(e) if e.raw_os_error() == Some(libc::EINVAL) => reclaim(excess.to_string()),
+            result => result,
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = keep;
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 客户机不支持修剪页缓存"))
     }
 }
 

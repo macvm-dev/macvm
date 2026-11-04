@@ -126,6 +126,10 @@ pub fn set_time(unix_ms: i64) -> io::Result<()> {
 
 pub use super::clipboard::{clipboard_get, clipboard_set};
 
+pub fn trim_page_cache(_keep: u64) -> io::Result<()> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Windows 客户机不支持修剪页缓存"))
+}
+
 pub fn mount_virtiofs(_tag: &str, _path: &str, _read_only: bool) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "Windows 客户机暂不支持挂载 virtio-fs"))
 }

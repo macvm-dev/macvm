@@ -19,6 +19,7 @@ public final class QEMURunner: MachineRunner {
     private var qmp: QMPClient?
     private var bridge: BridgeSession?
     private var gpuDriverSync: Task<Void, Never>?
+    private var pageCacheTrim: Task<Void, Never>?
 
     /// `display` 为 true 时由 QEMU 自己开一个 Cocoa 窗口显示画面。
     public init(bundle: VMBundle, display: Bool = false) throws {
@@ -128,6 +129,7 @@ public final class QEMURunner: MachineRunner {
         }
         stateLabel = "running"
         syncGuestGPUDriver()
+        trimGuestPageCache()
         return outcome
     }
 
@@ -305,6 +307,7 @@ public final class QEMURunner: MachineRunner {
     /// 结束当前 QEMU 进程并等它退出。先摘下 `process`，它的退出不再触发停止回调，由调用方决定停止原因。
     private func terminate() async {
         gpuDriverSync?.cancel()
+        pageCacheTrim?.cancel()
         defer { closeBridge() }
         guard let process else { return }
         let client = qmp
@@ -320,6 +323,7 @@ public final class QEMURunner: MachineRunner {
     /// 客户机关机时 QEMU 自行退出，退出码 0。
     private func processExited(_ token: ObjectIdentifier, status: Int32) {
         guard let process, ObjectIdentifier(process) == token else { return }
+        pageCacheTrim?.cancel()
         self.process = nil
         qmp = nil
         closeBridge()
@@ -366,6 +370,28 @@ public final class QEMURunner: MachineRunner {
             }
         }
     }
+
+    /// 客户机上报的空闲页由自带的 QEMU 还给宿主，页缓存却不算空闲、一直占着宿主内存：定期请代理把它修剪到
+    /// `pageCacheKeep`，腾出的页随之上报。代理回错误（旧版本不认识这个请求）就不再请求；连不上时下次再试。
+    private func trimGuestPageCache() {
+        guard config.os == .linux, config.guestAgent, qemu.returnsFreedGuestMemory else { return }
+        let bundle = bundle, config = config
+        pageCacheTrim?.cancel()
+        pageCacheTrim = Task.detached {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.pageCacheTrimInterval)
+                guard !Task.isCancelled, let socket = try? Self.connectToGuest(bundle, config, port: AgentProtocol.port) else { continue }
+                socket.setTimeout(seconds: Self.pageCacheTrimTimeout)
+                let request = AgentProtocol.Request.trimCache(keep: Self.pageCacheKeep)
+                guard let response = try? socket.exchange(request, as: AgentProtocol.Response.self) else { continue }
+                if !response.ok { return }
+            }
+        }
+    }
+
+    private nonisolated static let pageCacheTrimInterval: Duration = .seconds(60)
+    private nonisolated static let pageCacheKeep: UInt64 = 256 << 20
+    private nonisolated static let pageCacheTrimTimeout = 10
 
     private nonisolated static let agentWaitAttempts = 120
     private nonisolated static let agentWaitInterval: Duration = .seconds(5)

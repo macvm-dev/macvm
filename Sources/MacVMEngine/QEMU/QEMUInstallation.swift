@@ -16,6 +16,9 @@ public struct QEMUInstallation: Sendable {
     /// 自带布局的根目录；有它才是带图形加速补丁的 QEMU。
     public var bundleRoot: URL?
 
+    /// 自带的 QEMU 把客户机经气球上报的空闲页还给宿主；Homebrew 的 QEMU 只调 madvise，macOS 上释放不了客户机写过的页。
+    var returnsFreedGuestMemory: Bool { bundleRoot != nil }
+
     /// 启动 QEMU 时附加的环境变量：virglrenderer 按编译时的绝对路径找 render server，要改指向自带的那份；
     /// ANGLE 用 Metal 后端；Windows 的 Direct3D 经 DXMT 转成 Metal。
     var environment: [String: String] {

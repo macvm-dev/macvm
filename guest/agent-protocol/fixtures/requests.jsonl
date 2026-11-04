@@ -12,3 +12,4 @@
 {"op":"cursor-watch"}
 {"op":"display-scale","percent":200}
 {"op":"gpu-driver","sha256":"155695ab7820f71e75c369aeae7b8c060691ba43646ac37edef72aa2428506d5","size":6272667}
+{"op":"trim-cache","keep":268435456}

@@ -107,6 +107,7 @@ fn serve(mut conn: Conn, config: &Config) -> io::Result<()> {
         Request::Mount { tag, path, read_only } => reply(&mut conn, platform::mount_virtiofs(&tag, &path, read_only).map(|_| Response::ok())),
         Request::Display { width, height } => reply(&mut conn, platform::set_display(width, height).map(|_| Response::ok())),
         Request::DisplayScale { percent } => reply(&mut conn, platform::set_display_scale(percent).map(|_| Response::ok())),
+        Request::TrimCache { keep } => reply(&mut conn, platform::trim_page_cache(keep).map(|_| Response::ok())),
         Request::CursorWatch => watch_cursor(conn),
         Request::GpuDriver { sha256, size } => receive_gpu_driver(conn, &sha256, size),
         Request::Forward { port } => match TcpStream::connect(("127.0.0.1", port)) {

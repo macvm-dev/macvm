@@ -100,6 +100,7 @@ struct QEMUCommand {
             "-device", "usb-kbd,bus=usb.0",
             "-device", "usb-tablet,bus=usb.0",
             "-device", "virtio-rng-pci",
+            // 客户机把空闲页报给宿主，自带的 QEMU 随即把它们还给 macOS。
             "-device", "virtio-balloon-pci,free-page-reporting=on",
         ]
 

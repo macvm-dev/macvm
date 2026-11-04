@@ -37,6 +37,8 @@ pub enum Request {
     /// 宿主带的 Windows 显卡驱动包（zip）的 SHA-256 与字节数；代理已有同一个包时回 `current`，
     /// 否则回 `send`，收下随后的 `size` 字节、安装后再回一行（`installed` 或 `unchanged`）。
     GpuDriver { sha256: String, size: u64 },
+    /// 把客户机的文件页缓存回收到约 `keep` 字节（仅 Linux）。
+    TrimCache { keep: u64 },
 }
 
 /// 客户机当前光标：`bgra` 为逐像素 B G R A（非预乘）的 Base64，自上而下；`hidden` 时其余字段无意义；

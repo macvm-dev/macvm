@@ -1,0 +1,97 @@
+Return guest pages reported free through virtio-balloon free page reporting to macOS
+under HVF. madvise() does not release pages the guest has written through the stage-2
+mapping, so each reported range is unmapped from the guest, replaced with fresh anonymous
+memory and mapped back; the guest reads zeroes there afterwards.
+
+--- a/accel/hvf/hvf-all.c
++++ b/accel/hvf/hvf-all.c
+@@ -136,6 +136,35 @@
+     assert_hvf_ok(ret);
+ }
+ 
++/*
++ * madvise() does not release pages the guest has written through the
++ * stage-2 mapping on macOS, so the range is unmapped from the guest, replaced
++ * with fresh anonymous memory and mapped back.
++ */
++bool hvf_discard_guest_ram(uint64_t gpa, void *host, size_t size)
++{
++    hv_memory_flags_t flags = HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC;
++    uint64_t page_size = qemu_real_host_page_size();
++    hv_return_t ret;
++
++    if (!QEMU_IS_ALIGNED(gpa | size, page_size) ||
++        !QEMU_PTR_IS_ALIGNED(host, page_size) || !size) {
++        return false;
++    }
++    ret = hv_vm_unmap(gpa, size);
++    if (ret != HV_SUCCESS) {
++        return false;
++    }
++    if (mmap(host, size, PROT_READ | PROT_WRITE,
++             MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0) == MAP_FAILED) {
++        /* A failed MAP_FIXED mmap leaves the old mapping in place. */
++        assert_hvf_ok(hv_vm_map(host, gpa, size, flags));
++        return false;
++    }
++    assert_hvf_ok(hv_vm_map(host, gpa, size, flags));
++    return true;
++}
++
+ static void hvf_log_start(MemoryListener *listener,
+                           MemoryRegionSection *section, int old, int new)
+ {
+--- a/hw/virtio/virtio-balloon.c
++++ b/hw/virtio/virtio-balloon.c
+@@ -33,6 +33,7 @@
+ #include "qemu/error-report.h"
+ #include "migration/misc.h"
+ #include "system/reset.h"
++#include "system/hvf.h"
+ #include "hw/virtio/virtio-bus.h"
+ #include "hw/virtio/virtio-access.h"
+ #include "qemu/aio-wait.h"
+@@ -390,6 +391,15 @@
+                 continue;
+             }
+ 
++            /*
++             * Only private anonymous RAM can be swapped for fresh pages, and
++             * not while any client tracks dirty pages: the range is mapped back writable.
++             */
++            if (hvf_enabled() && rb->fd < 0 && !qemu_ram_is_shared(rb) &&
++                !memory_region_get_dirty_log_mask(rb->mr) &&
++                hvf_discard_guest_ram(elem->in_addr[i], addr, size)) {
++                continue;
++            }
+             ram_block_discard_range(rb, ram_offset, size);
+         }
+ 
+--- a/include/system/hvf.h
++++ b/include/system/hvf.h
+@@ -38,6 +38,14 @@
+ 
+ void hvf_nested_virt_enable(bool nested_virt);
+ 
++/*
++ * Give the host pages backing guest RAM [gpa, gpa + size) at host address
++ * @host back to macOS; the guest reads zeroes there afterwards.  Returns
++ * false and leaves the memory untouched if the range cannot be released.
++ * The guest must not access the range while this runs.
++ */
++bool hvf_discard_guest_ram(uint64_t gpa, void *host, size_t size);
++
+ #define TYPE_HVF_ACCEL ACCEL_CLASS_NAME("hvf")
+ 
+ typedef struct HVFState HVFState;
+--- a/accel/stubs/hvf-stub.c
++++ b/accel/stubs/hvf-stub.c
+@@ -22,3 +22,8 @@
+      * As such, do nothing here instead of marking as unreachable.
+      */
+ }
++
++bool hvf_discard_guest_ram(uint64_t gpa, void *host, size_t size)
++{
++    return false;
++}

@@ -23,3 +23,16 @@ struct SSHConfigIncludeTests {
         #expect(SSHConfig.removingInclude(from: existing) == existing)
     }
 }
+
+struct AgentRequestTests {
+    @Test func requestFixturesRoundTrip() throws {
+        let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../guest/agent-protocol/fixtures/requests.jsonl")
+        for line in try String(contentsOf: url, encoding: .utf8).split(separator: "\n") {
+            let request = try JSONDecoder().decode(AgentProtocol.Request.self, from: Data(line.utf8))
+            let encoded = try JSONEncoder().encode(request)
+            let expected = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? NSDictionary
+            let actual = try JSONSerialization.jsonObject(with: encoded) as? NSDictionary
+            #expect(actual == expected, "\(line)")
+        }
+    }
+}

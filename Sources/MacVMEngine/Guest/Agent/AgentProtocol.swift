@@ -40,8 +40,10 @@ public enum AgentProtocol {
         case displayScale(percent: Int)
         /// 随后发送 `size` 字节的驱动包，见 `WindowsGPUDriver.push`。
         case gpuDriver(sha256: String, size: Int)
+        /// 把 Linux 客户机的文件页缓存回收到约 `keep` 字节。
+        case trimCache(keep: UInt64)
 
-        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size }
+        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size, keep }
 
         public func encode(to encoder: any Encoder) throws {
             if case .exec(let req) = self {
@@ -65,6 +67,7 @@ public enum AgentProtocol {
             case .displayScale(let percent): try c.encode("display-scale", forKey: .op); try c.encode(percent, forKey: .percent)
             case .gpuDriver(let sha256, let size):
                 try c.encode("gpu-driver", forKey: .op); try c.encode(sha256, forKey: .sha256); try c.encode(size, forKey: .size)
+            case .trimCache(let keep): try c.encode("trim-cache", forKey: .op); try c.encode(keep, forKey: .keep)
             case .display(let width, let height):
                 try c.encode("display", forKey: .op); try c.encode(width, forKey: .width); try c.encode(height, forKey: .height)
             }
@@ -87,6 +90,7 @@ public enum AgentProtocol {
             case "cursor-watch": self = .cursorWatch
             case "display-scale": self = .displayScale(percent: try c.decode(Int.self, forKey: .percent))
             case "gpu-driver": self = .gpuDriver(sha256: try c.decode(String.self, forKey: .sha256), size: try c.decode(Int.self, forKey: .size))
+            case "trim-cache": self = .trimCache(keep: try c.decode(UInt64.self, forKey: .keep))
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }
