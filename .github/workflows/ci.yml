@@ -17,12 +17,12 @@ jobs:
     env:
       MACVM_HOME: ${{ github.workspace }}/.ci-home
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '27'
       - run: swift --version
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .build
           key: swiftpm-xcode27-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
@@ -38,7 +38,7 @@ jobs:
     name: Guest (Rust)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
