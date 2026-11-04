@@ -40,6 +40,10 @@ sign() { codesign -f "${SIGN_OPTIONS[@]}" -s "$SIGN_IDENTITY" --entitlements "$E
 # 库与辅助程序不带权限。
 sign_plain() { codesign -f "${SIGN_OPTIONS[@]}" -s "$SIGN_IDENTITY" "$1"; }
 sign "$APP/Contents/Resources/bin/macvm"
+# 公证检查 App 里的每个 Mach-O，放进 macOS 客户机的代理也得重签，不能留着链接器的 ad-hoc 签名。
+for f in "$APP"/Contents/Resources/guest/*; do
+  if file -b "$f" | grep -q '^Mach-O'; then sign_plain "$f"; fi
+done
 if [ -d "$APP/Contents/Resources/QEMU" ]; then
   for f in "$APP"/Contents/Resources/QEMU/lib/*.dylib "$APP/Contents/Resources/QEMU/bin/virgl_render_server"; do
     sign_plain "$f"
