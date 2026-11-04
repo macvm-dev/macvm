@@ -7,7 +7,8 @@ cd "$(dirname "$0")/.."
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-xcrun actool packaging/icon/AppIcon.icon --compile "$WORK" \
+# actool 的后台进程会沿用先前调用的工作目录，输入要给绝对路径。
+xcrun actool "$PWD/packaging/icon/AppIcon.icon" --compile "$WORK" \
     --output-format human-readable-text --errors --warnings \
     --output-partial-info-plist "$WORK/partial.plist" \
     --app-icon AppIcon --include-all-app-icons --enable-on-demand-resources NO \
