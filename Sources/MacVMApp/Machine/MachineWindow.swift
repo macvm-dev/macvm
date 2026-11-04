@@ -92,8 +92,9 @@ struct MachineWindow: View {
         .onChange(of: model.isRunningHere(name)) { _, running in
             if !running { runner = nil }
         }
+        // 工具栏从窗口打开起就在，虚拟机跑起来之前按钮不可点：按钮晚出现会把标题栏撑高，画面跟着往下跳。
         .toolbar {
-            if runner != nil || runningElsewhere {
+            Group {
                 if let config, config.supportsShares {
                     Button { showingShares = true } label: { Label("共享目录", systemImage: "folder") }
                         .help("共享目录")
@@ -138,6 +139,7 @@ struct MachineWindow: View {
                         .disabled(suspending)
                 }
             }
+            .disabled(runner == nil && !runningElsewhere)
         }
         // 用 sheet 而不是 popover：添加时要弹文件选择面板，popover 一失去焦点就关闭。
         .sheet(isPresented: $showingShares) { SharesSheet(name: name) }
