@@ -6,7 +6,7 @@ import MacVMModel
 struct SSHConfigCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "ssh-config",
-        abstract: "生成 ssh 配置，让每台虚拟机可用 `ssh macvm-<名>` 连接。",
+        abstract: "生成 ssh 配置，让每台虚拟机可用 `ssh <名>` 连接。",
         discussion: """
         配置写到 ~/.config/macvm/ssh_config，此后 create / rm 会自动更新它。
         --install 在 ~/.ssh/config 开头加入 Include，ssh 与读取 ssh 配置的工具（如 runode）即可看到这些主机。
@@ -29,7 +29,7 @@ struct SSHConfigCommand: AsyncParsableCommand {
             _ = try await SSHKeys.ensurePublicKey()
             let url = try SSHConfig.write(macvmPath: Self.executablePath)
             if install { try SSHConfig.installInclude() }
-            let hosts = try VMLibrary.default.all().map { SSHConfig.hostAlias(for: $0.name) }
+            let hosts = try VMLibrary.default.all().map(\.name)
             return Result(path: url.path, included: SSHConfig.isIncluded, hosts: hosts)
         }
     }

@@ -89,7 +89,7 @@ struct SSH: AsyncParsableCommand {
         let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: config.name)
         // 未装代理时 sshd 走 NAT 网络；先确保虚拟机在运行，免得 ssh 的连接超时先于开机完成。
         var args = ["ssh", "-q", tty ? "-tt" : "-T"] + SSHConfig.keyArguments(proxyCommand: proxy)
-            + ["\(user)@\(SSHConfig.hostAlias(for: config.name))"]
+            + ["\(user)@\(config.name)"]
         if let remoteCommand { args += ["--", remoteCommand] }
         let argv = args.map { strdup($0) } + [nil]
         execv("/usr/bin/ssh", argv)

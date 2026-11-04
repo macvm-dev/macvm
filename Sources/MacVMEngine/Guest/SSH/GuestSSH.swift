@@ -24,7 +24,7 @@ public enum GuestSSH {
             process.arguments = ["-o", "ProxyCommand=\(proxyCommand)", "-o", "PubkeyAuthentication=no",
                                  "-o", "PreferredAuthentications=keyboard-interactive,password"] + SSHConfig.hostKeyArguments
                                 + ["-o", "ConnectTimeout=10", "-o", "NumberOfPasswordPrompts=1",
-                                 "\(user)@\(SSHConfig.hostAlias(for: bundle.name))", remote]
+                                 "\(user)@\(bundle.name)", remote]
             process.environment = environment
             process.standardInput = FileHandle.nullDevice
             let err = Pipe()

@@ -1,16 +1,12 @@
 public import Foundation
 public import MacVMModel
 
-/// 生成 `~/.config/macvm/ssh_config`：每台虚拟机一条 `Host macvm-<名>`，经 `macvm proxy` 连接，
+/// 生成 `~/.config/macvm/ssh_config`：每台虚拟机一条以虚拟机名为主机名的 `Host`，经 `macvm proxy` 连接，
 /// 不依赖客户机 IP 与网络模式。由用户的 `~/.ssh/config` Include 后，ssh 与读取 ssh 配置的工具（如 runode）都能直接使用。
 public enum SSHConfig {
-    public static let hostPrefix = "macvm-"
-
     public static var fileURL: URL { SSHKeys.directory.appending(path: "ssh_config") }
     public static var userConfigURL: URL { FileManager.default.homeDirectoryForCurrentUser.appending(path: ".ssh/config") }
     public static var includeLine: String { "Include \(fileURL.path)" }
-
-    public static func hostAlias(for name: String) -> String { hostPrefix + name }
 
     /// `macvm proxy <name>` 作为 ssh 的 ProxyCommand，`flags` 接在后面。
     public static func proxyCommand(macvmPath: String, name: String, flags: [String] = []) -> String {
@@ -38,7 +34,7 @@ public enum SSHConfig {
     public static func render(_ configs: [VMConfig], macvmPath: String) -> String {
         var out = "# 由 macvm 生成，会被覆盖。\n"
         for config in configs {
-            out += "\nHost \(hostAlias(for: config.name))\n  HostName \(config.name)\n"
+            out += "\nHost \(config.name)\n"
             if let user = config.guestUser { out += "  User \(user)\n" }
             out += "  IdentityFile \(SSHKeys.privateKeyURL.path)\n"
             for (key, value) in keyOptions(proxyCommand: proxyCommand(macvmPath: macvmPath, name: config.name)) {

@@ -21,7 +21,7 @@ struct SettingsView: View {
                 LabeledContent("虚拟机", value: capabilities.libraryPath).textSelection(.enabled)
             }
             Section {
-                Toggle("让 ssh 与 runode 看到虚拟机（macvm-<名>）", isOn: Binding(get: { sshIncluded }, set: { enable in
+                Toggle("让 ssh 与 runode 看到虚拟机（主机名即虚拟机名）", isOn: Binding(get: { sshIncluded }, set: { enable in
                     guard enable else { return }
                     do {
                         _ = try SSHConfig.write(library: model.library, macvmPath: CLILocation.path)

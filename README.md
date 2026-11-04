@@ -24,7 +24,7 @@ macvm create win --os windows --iso Win11_arm64.iso  # 需 brew install qemu；�
 macvm set win --engine vz                            # Windows 日常改用 VZ 运行，占用更低
 macvm suspend dev && macvm start dev                 # 挂起与恢复
 macvm snapshot save dev clean && macvm clone dev dev2
-macvm ssh-config --install                           # 之后 ssh macvm-dev，runode 也能直接看到
+macvm ssh-config --install                           # 之后 ssh dev，runode 也能直接看到
 ```
 
 完整命令、JSON 输出与退出码见 `docs/cli.md`，代理协议见 `protocol/agent.md`。

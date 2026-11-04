@@ -23,7 +23,7 @@
 | `stop <名> [--force]` / `suspend <名>` | 关机 / 挂起 |
 | `exec <名> [-t] [--cwd 目录] [--user 用户] -- 命令…` | 在客户机执行 |
 | `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand |
-| `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名 `macvm-<名>` |
+| `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名即虚拟机名 |
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
 | `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU） |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
@@ -47,6 +47,6 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 
 ## 与 runode 配合
 
-- 把虚拟机当远端主机：`macvm ssh-config --install`，runode 读取 `~/.ssh/config` 后列出 `macvm-<名>`。连接经 `macvm proxy` 走 vsock，虚拟机未运行时自动启动。
+- 把虚拟机当远端主机：`macvm ssh-config --install`，runode 读取 `~/.ssh/config` 后列出各虚拟机名。连接经 `macvm proxy` 走 vsock，虚拟机未运行时自动启动。
 - 在面板里开客户机 shell：`runode open --right -- macvm exec dev -t`。
 - 任务板的 agent 前缀：`macvm exec dev -t --cwd "$PWD" --`，配合 `create --share 目录` 让项目目录在客户机里可见。

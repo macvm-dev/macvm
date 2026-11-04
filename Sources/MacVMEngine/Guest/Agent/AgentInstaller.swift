@@ -150,6 +150,6 @@ public enum AgentInstaller {
 
     static func sshArguments(bundle: VMBundle, user: String, macvmPath: String) -> [String] {
         let proxy = SSHConfig.proxyCommand(macvmPath: macvmPath, name: bundle.name, flags: ["--tcp"])
-        return ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: proxy) + ["\(user)@\(SSHConfig.hostAlias(for: bundle.name))"]
+        return ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: proxy) + ["\(user)@\(bundle.name)"]
     }
 }

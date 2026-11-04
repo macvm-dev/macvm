@@ -119,7 +119,7 @@ public enum WindowsInstaller {
             if BundleLock.holder(of: bundle) == nil { throw MacVMError.engine("安装过程中虚拟机意外停止，日志：\(bundle.logURL.path)") }
             let output = try? await Subprocess.run("/usr/bin/ssh", ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: proxy) + [
                 "-o", "BatchMode=yes", "-o", "ConnectTimeout=20",
-                "\(user)@\(SSHConfig.hostAlias(for: bundle.name))", "Test-Path \(WindowsUnattend.doneMarker)",
+                "\(user)@\(bundle.name)", "Test-Path \(WindowsUnattend.doneMarker)",
             ])
             if output?.contains("True") == true { return }
             guard Date() < deadline else { throw MacVMError.timeout("Windows 安装超时") }
