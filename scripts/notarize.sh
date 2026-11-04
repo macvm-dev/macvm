@@ -11,7 +11,7 @@ result=$(xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait --o
 status=$(plutil -extract status raw -o - - <<<"$result")
 if [ "$status" != "Accepted" ]; then
   id=$(plutil -extract id raw -o - - <<<"$result")
-  echo "公证未通过（$status），日志：" >&2
+  echo "公证未通过（${status}），日志：" >&2
   xcrun notarytool log "$id" --keychain-profile "$PROFILE" >&2
   exit 1
 fi

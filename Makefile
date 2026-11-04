@@ -33,8 +33,19 @@ qemu:
 app:
 	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" scripts/bundle-app.sh
 
+# 公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用钥匙串里唯一的 Developer ID Application 证书，有零张或多张就停下。
 release:
-	$(MAKE) app CONFIG=release
+	@id='$(SIGN_IDENTITY)'; \
+	if [ "$$id" = "-" ]; then \
+	  ids=$$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"$$/\1/p'); \
+	  if [ $$(printf '%s' "$$ids" | grep -c .) -ne 1 ]; then \
+	    echo "找不到唯一的 Developer ID Application 证书，用 make release SIGN_IDENTITY=\"Developer ID Application: …\" 指定" >&2; \
+	    printf '%s\n' "$$ids" >&2; exit 1; \
+	  fi; \
+	  id=$$ids; \
+	fi; \
+	echo "签名身份：$$id"; \
+	$(MAKE) app CONFIG=release SIGN_IDENTITY="$$id"
 	scripts/notarize.sh dist/MacVM.app
 
 clean:
