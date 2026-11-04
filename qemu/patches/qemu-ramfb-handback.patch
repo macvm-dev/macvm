@@ -1,0 +1,95 @@
+virtio-ramfb: keep the ramfb on screen until the guest scans out a virtio-gpu
+resource. The firmware's virtio-gpu driver only disables the scanout and resets
+the device at ExitBootServices, while the firmware, the boot loader and the
+kernel's early console draw to the ramfb.
+
+--- a/include/hw/display/ramfb.h
++++ b/include/hw/display/ramfb.h
+@@ -6,6 +6,11 @@
+ /* ramfb.c */
+ typedef struct RAMFBState RAMFBState;
+ void ramfb_display_update(QemuConsole *con, RAMFBState *s);
++/*
++ * Rebuilds the surface from the guest's last configuration after the console
++ * has shown another one, so ramfb_display_update() puts it back.
++ */
++void ramfb_display_reattach(RAMFBState *s);
+ RAMFBState *ramfb_setup(bool romfile, Error **errp);
+ 
+ extern const VMStateDescription ramfb_vmstate;
+--- a/hw/display/ramfb.c
++++ b/hw/display/ramfb.c
+@@ -105,6 +105,13 @@
+     s->ds = surface;
+ }
+ 
++void ramfb_display_reattach(RAMFBState *s)
++{
++    if (!s->ds) {
++        ramfb_fw_cfg_write(s, 0, 0);
++    }
++}
++
+ void ramfb_display_update(QemuConsole *con, RAMFBState *s)
+ {
+     if (!s->width || !s->height) {
+--- a/hw/display/ramfb-stubs.c
++++ b/hw/display/ramfb-stubs.c
+@@ -8,6 +8,10 @@
+ {
+ }
+ 
++void ramfb_display_reattach(RAMFBState *s)
++{
++}
++
+ RAMFBState *ramfb_setup(bool romfile, Error **errp)
+ {
+     error_setg(errp, "ramfb support not available");
+--- a/hw/display/virtio-ramfb.h
++++ b/hw/display/virtio-ramfb.h
+@@ -17,6 +17,10 @@
+ 
+     VirtIOGPUBase *vgpu;
+     RAMFBState    *ramfb;
++    /* The guest has scanned out a resource since the device was reset. */
++    bool          gpu_shown;
++    /* The console has shown something other than the ramfb surface. */
++    bool          ramfb_hidden;
+ };
+ 
+ struct VirtIORAMFBBaseClass {
+--- a/hw/display/virtio-ramfb.c
++++ b/hw/display/virtio-ramfb.c
+@@ -43,11 +43,29 @@
+ {
+     VirtIORAMFBBase *vramfb = opaque;
+     VirtIOGPUBase *g = vramfb->vgpu;
++    QemuConsole *con = g->scanout[0].con;
++    DisplaySurface *surface = qemu_console_surface(con);
+ 
+-    if (g->enable) {
++    /*
++     * The ramfb stays on screen until the guest scans out a virtio-gpu
++     * resource. The firmware's virtio-gpu driver only disables the scanout and
++     * resets the device when it exits boot services, while the firmware, the
++     * boot loader and the kernel's early console all draw to the ramfb.
++     */
++    if (!g->enable) {
++        vramfb->gpu_shown = false;
++    } else if (g->scanout[0].resource_id) {
++        vramfb->gpu_shown = true;
++    }
++    if (vramfb->gpu_shown) {
++        vramfb->ramfb_hidden = true;
+         return g->hw_ops->gfx_update(g);
+     }
+-    ramfb_display_update(g->scanout[0].con, vramfb->ramfb);
++    if (vramfb->ramfb_hidden || (surface && surface_is_placeholder(surface))) {
++        vramfb->ramfb_hidden = false;
++        ramfb_display_reattach(vramfb->ramfb);
++    }
++    ramfb_display_update(con, vramfb->ramfb);
+     return true;
+ }
+ 
