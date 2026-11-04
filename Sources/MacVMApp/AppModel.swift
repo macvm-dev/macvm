@@ -214,7 +214,25 @@ final class AppModel {
     }
 
     func setEngine(_ name: String, to engine: Engine) {
-        updateConfig(name) { try $0.switchEngine(to: engine) }
+        updateConfig(name, requiresStopped: true) { try $0.switchEngine(to: engine) }
+    }
+
+    func setCPUCount(_ name: String, _ count: Int) {
+        updateConfig(name, requiresStopped: true) { $0.cpuCount = count }
+    }
+
+    func setMemory(_ name: String, gigabytes: Int) {
+        updateConfig(name, requiresStopped: true) { $0.memorySize = UInt64(gigabytes) << 30 }
+    }
+
+    func setAudio(_ name: String, _ on: Bool) {
+        updateConfig(name, requiresStopped: true) { $0.audio = on }
+    }
+
+    /// `runners` 覆盖本进程刚启动、锁的持有状态还没反映到界面的那一刻。
+    private func requireStopped(_ bundle: VMBundle) throws {
+        if runners[bundle.name] != nil { throw MacVMError.alreadyRunning(bundle.name) }
+        try bundle.requireStopped()
     }
 
     /// 运行中也可改：只影响画面窗口向客户机请求的分辨率与缩放。
@@ -224,13 +242,14 @@ final class AppModel {
 
     /// 返回是否已保存；失败时报告错误。
     @discardableResult
-    private func updateConfig(_ name: String, _ change: (inout VMConfig) throws -> Void) -> Bool {
+    private func updateConfig(_ name: String, requiresStopped: Bool = false, _ change: (inout VMConfig) throws -> Void) -> Bool {
         defer {
             configRevision += 1
             refresh()
         }
         do {
             let bundle = try library.bundle(named: name)
+            if requiresStopped { try requireStopped(bundle) }
             var config = try bundle.loadConfig()
             try change(&config)
             try bundle.saveConfig(config)

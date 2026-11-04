@@ -101,6 +101,9 @@ public struct VMConfig: Codable, Sendable, Equatable {
         graphicsAcceleration = try c.decodeIfPresent(Bool.self, forKey: .graphicsAcceleration) ?? false
     }
 
+    /// 能否挂声音设备。VZ 只有 virtio-sound，Windows 没有它的驱动。
+    public var supportsAudio: Bool { engine == .qemu || os != .windows }
+
     /// 能否挂起。VZ 下通用平台（Linux、Windows）带 USB 控制器或 USB 设备时恢复会报 invalid argument，
     /// 而 `validateSaveRestoreSupport()` 并不拦截，因此在这里排除。
     public var supportsSuspend: Bool {

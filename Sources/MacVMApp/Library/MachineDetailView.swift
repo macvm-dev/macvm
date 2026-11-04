@@ -17,20 +17,33 @@ struct MachineDetailView: View {
         let config = model.config(of: vm.name)
         Form {
             Section { header(config) }
-            Section("硬件") {
+            Section {
                 if let config, config.os != .macOS {
                     Picker("引擎", selection: Binding(get: { config.engine }, set: { model.setEngine(vm.name, to: $0) })) {
                         Text("VZ（占用低）").tag(Engine.vz)
                         Text("QEMU（声音、挂起）").tag(Engine.qemu)
                     }
-                    .disabled(vm.state != .stopped || !config.installMedia.isEmpty)
+                    .disabled(!editable || !config.installMedia.isEmpty)
                     if config.engine == .qemu {
                         Toggle("高分辨率（Retina）", isOn: Binding(get: { config.display.retina }, set: { model.setRetina(vm.name, $0) }))
                             .help("窗口里的分辨率按屏幕像素而不是点数，更清晰；Windows 同时把缩放比例调到相同倍数。运行中切换立即生效。")
                     }
                 }
-                LabeledContent("处理器", value: "\(vm.cpuCount) 核")
-                LabeledContent("内存", value: DisplaySize.format(vm.memorySize))
+                if let config, editable {
+                    NumberField(title: "处理器", unit: "核",
+                                value: Binding(get: { config.cpuCount }, set: { model.setCPUCount(vm.name, $0) }),
+                                invalid: .constant(false), range: ResourceRange.cpuCount)
+                    NumberField(title: "内存", unit: "GB",
+                                value: Binding(get: { Int(config.memorySize >> 30) }, set: { model.setMemory(vm.name, gigabytes: $0) }),
+                                invalid: .constant(false), range: ResourceRange.memoryGB)
+                } else {
+                    LabeledContent("处理器", value: "\(vm.cpuCount) 核")
+                    LabeledContent("内存", value: DisplaySize.format(vm.memorySize))
+                }
+                if let config, config.supportsAudio {
+                    Toggle("声音", isOn: Binding(get: { config.audio }, set: { model.setAudio(vm.name, $0) }))
+                        .disabled(!editable)
+                }
                 if let diskSize {
                     LabeledContent("磁盘") {
                         VStack(alignment: .trailing, spacing: 2) {
@@ -38,6 +51,12 @@ struct MachineDetailView: View {
                             Text("已占用 \(DisplaySize.format(diskSize.physical))").font(.caption).foregroundStyle(.tertiary)
                         }
                     }
+                }
+            } header: {
+                Text("硬件")
+            } footer: {
+                if let lockedReason {
+                    Text(lockedReason).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Section("访问") {
@@ -73,6 +92,17 @@ struct MachineDetailView: View {
             TextField("名称", text: $cloneName)
             Button("克隆") { Task { await model.clone(vm.name, as: cloneName) } }
             Button("取消", role: .cancel) {}
+        }
+    }
+
+    /// 硬件只在关机时可改，挂起或有进行中的任务（创建、安装）时也不行。
+    private var editable: Bool { vm.state == .stopped && model.activity[vm.name] == nil }
+
+    private var lockedReason: String? {
+        switch vm.state {
+        case .running: "关机后可修改处理器、内存与声音。"
+        case .suspended: "已挂起：继续运行并关机后才能修改。"
+        case .stopped: nil
         }
     }
 

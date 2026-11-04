@@ -28,8 +28,6 @@ struct CreateSheet: View {
     /// 表单打开时探测一次，免得每敲一个字都去找一遍 QEMU。
     @State private var hasQEMU = QEMUInstallation.locate() != nil
 
-    private let maxMemoryGB = Int(HostInfo.physicalMemory >> 30)
-
     var body: some View {
         VStack(spacing: 0) {
             Form {
@@ -44,8 +42,8 @@ struct CreateSheet: View {
                 Section("来源") { sourcePicker }
 
                 Section("资源") {
-                    NumberField(title: "CPU", unit: "核", value: $cpus, invalid: invalid("CPU"), range: 1...ProcessInfo.processInfo.activeProcessorCount)
-                    NumberField(title: "内存", unit: "GB", value: $memoryGB, invalid: invalid("内存"), range: 1...max(1, maxMemoryGB / 2 * 2))
+                    NumberField(title: "CPU", unit: "核", value: $cpus, invalid: invalid("CPU"), range: ResourceRange.cpuCount)
+                    NumberField(title: "内存", unit: "GB", value: $memoryGB, invalid: invalid("内存"), range: ResourceRange.memoryGB)
                     NumberField(title: "磁盘", unit: "GB（按实际写入占用）", value: $diskGB, invalid: invalid("磁盘"), range: 16...2048, step: 16)
                     if os == .linux { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
                 }
@@ -157,49 +155,5 @@ struct CreateSheet: View {
         let openWindow = openWindow
         dismiss()
         model.create(request) { openWindow(id: "machine", value: $0) }
-    }
-}
-
-/// 可直接输入、也可用步进器调整的整数。输入超出 `range` 或不是数字时不改 `value`，字标红并置 `invalid`；
-/// 离开输入框或回车后文字回到当前 `value`。
-private struct NumberField: View {
-    let title: String
-    let unit: String
-    @Binding var value: Int
-    @Binding var invalid: Bool
-    let range: ClosedRange<Int>
-    var step = 1
-
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    private var valid: Bool { Int(text).map(range.contains) ?? false }
-
-    var body: some View {
-        LabeledContent(title) {
-            HStack(spacing: 6) {
-                TextField(title, text: $text)
-                    .labelsHidden()
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 64)
-                    .foregroundStyle(valid ? Color.primary : Color.red)
-                    .focused($focused)
-                    .onSubmit { text = String(value) }
-                Text(unit).foregroundStyle(.secondary)
-                Stepper(title, value: $value, in: range, step: step).labelsHidden()
-            }
-        }
-        .help("\(range.lowerBound)–\(range.upperBound)")
-        .onAppear { text = String(value) }
-        .onChange(of: text) { _, new in
-            if let number = Int(new), range.contains(number), number != value { value = number }
-        }
-        .onChange(of: value) { _, new in
-            if Int(text) != new { text = String(new) }
-        }
-        .onChange(of: valid, initial: true) { _, valid in invalid = !valid }
-        .onChange(of: focused) { _, isFocused in
-            if !isFocused { text = String(value) }
-        }
     }
 }

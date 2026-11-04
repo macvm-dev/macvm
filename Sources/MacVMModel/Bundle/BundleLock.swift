@@ -48,3 +48,11 @@ public final class BundleLock: @unchecked Sendable {
         return Int32(String(decoding: buf[0..<n], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
     }
 }
+
+extension VMBundle {
+    /// 改只在冷启动时生效的配置或磁盘之前调用：运行中与挂起（保存的状态绑定原有硬件）时拒绝。
+    public func requireStopped() throws {
+        if BundleLock.holder(of: self) != nil { throw MacVMError.alreadyRunning(name) }
+        if hasSavedState { throw MacVMError.invalidConfig("\(name) 已挂起，继续运行再关机后才能修改") }
+    }
+}

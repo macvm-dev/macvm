@@ -175,9 +175,8 @@ public struct ConfigBuilder {
 
     // MARK: - 音频
 
-    /// Windows 没有 virtio-sound 驱动，挂上只会多一个无用设备。
     private func configureAudio(_ vz: VZVirtualMachineConfiguration) {
-        guard config.audio, config.os != .windows else { return }
+        guard config.audio, config.supportsAudio else { return }
         let sound = VZVirtioSoundDeviceConfiguration()
         let output = VZVirtioSoundDeviceOutputStreamConfiguration()
         output.sink = VZHostAudioOutputStreamSink()
