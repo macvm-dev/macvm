@@ -11,7 +11,8 @@ struct Create: AsyncParsableCommand {
           macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso
         Linux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。
           macvm create dev --image debian-13 --memory 8G
-        Linux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存），开机后在窗口里完成图形安装。
+        Linux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，
+        加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。
           macvm create desk --desktop ubuntu-desktop
         安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。
           macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso
@@ -38,13 +39,16 @@ struct Create: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Linux 云镜像。", valueName: LinuxImage.catalog.map(\.id).joined(separator: "|")))
     var image: String?
 
-    @Option(help: ArgumentHelp("Linux 桌面版：下载官方安装 ISO 并以它启动，在窗口里完成图形安装。", valueName: LinuxDesktop.allCases.map(\.rawValue).joined(separator: "|")))
+    @Option(help: ArgumentHelp("Linux 桌面版：下载官方安装 ISO 并以它启动。Ubuntu 自动安装，Fedora 在窗口里图形安装。", valueName: LinuxDesktop.allCases.map(\.rawValue).joined(separator: "|")))
     var desktop: String?
 
-    @Option(help: "云镜像与 Windows 里创建的登录用户，默认与主机用户同名。")
+    @Flag(help: "Ubuntu 桌面版：不自动安装，开机后在窗口里图形安装。")
+    var manualInstall = false
+
+    @Option(help: "云镜像、自动安装的 Ubuntu 桌面版与 Windows 里创建的登录用户，默认与主机用户同名。")
     var user: String?
 
-    @Option(help: "Linux 云镜像与 Windows：登录密码，保存在虚拟机包内的 guest-password。省略时云镜像只能用 SSH 密钥登录，Windows 随机生成。")
+    @Option(help: "Linux 云镜像、自动安装的 Ubuntu 桌面版与 Windows：登录密码，保存在虚拟机包内的 guest-password。省略时云镜像只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 随机生成。")
     var password: String?
 
     @Option(name: .customLong("iso"), help: "以只读 U 盘挂载的安装介质，可重复。Windows 只取一张，省略时从微软下载。")
@@ -89,7 +93,10 @@ struct Create: AsyncParsableCommand {
                 return try await createWindows()
             }
             if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
-            if password != nil, image == nil { throw MacVMError.invalidConfig("--password 只用于 Linux 云镜像（--image）与 Windows") }
+            let desktop = try desktop.map(LinuxDesktop.named)
+            if manualInstall, desktop?.supportsUnattended != true {
+                throw MacVMError.invalidConfig("--manual-install 只用于能自动安装的桌面版（--desktop ubuntu-desktop）")
+            }
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
@@ -97,9 +104,12 @@ struct Create: AsyncParsableCommand {
                 shares: try share.map(Self.parseShare).map {
                     ShareConfig(hostPath: $0.hostPath, tag: $0.tag ?? URL(filePath: $0.hostPath).lastPathComponent, readOnly: $0.readOnly)
                 }, rosetta: rosetta, serialConsole: console,
-                image: try image.map(LinuxImage.named), desktop: try desktop.map(LinuxDesktop.named), user: user ?? NSUserName(), password: password,
+                image: try image.map(LinuxImage.named), desktop: desktop, unattended: !manualInstall, user: user ?? NSUserName(), password: password,
                 showProgress: !global.json && isatty(STDERR_FILENO) == 1, headless: headless
             )
+            if password != nil, image == nil, !options.autoinstalls {
+                throw MacVMError.invalidConfig("--password 只用于 Linux 云镜像（--image）、自动安装的 Ubuntu 桌面版与 Windows")
+            }
             let bundle = try await VMFactory.createEFIGuest(options)
             if let engine, engine != .vz {
                 var config = try bundle.loadConfig()
@@ -107,8 +117,20 @@ struct Create: AsyncParsableCommand {
                 try bundle.saveConfig(config)
             }
             SSHConfigCommand.refresh()
+            if options.autoinstalls { try await installUbuntu(bundle) }
             return try VMStatus.summary(of: bundle)
         }
+    }
+
+    private func installUbuntu(_ bundle: VMBundle) async throws {
+        let interactive = !global.json && isatty(STDERR_FILENO) == 1
+        func say(_ text: String) { if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) } }
+        say("开始离线自动安装 Ubuntu…")
+        _ = try await Start.launch(bundle, timeout: 120)
+        try await UbuntuAutoinstall.completeSetup(bundle) {
+            _ = try await Start.launch(bundle, timeout: 120)
+        }
+        say("Ubuntu 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
     }
 
     private func createWindows() async throws -> VMSummary {

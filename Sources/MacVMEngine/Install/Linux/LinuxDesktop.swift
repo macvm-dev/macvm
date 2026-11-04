@@ -1,7 +1,7 @@
 public import Foundation
 import MacVMModel
 
-/// 可下载的 Linux 桌面版安装 ISO，装好后是带图形界面的完整系统，需要在虚拟机窗口里走一遍安装程序。
+/// 可下载的 Linux 桌面版安装 ISO，装好后是带图形界面的完整系统。
 /// 下载地址与 SHA-256 在下载时向发行方查询，点版本更新后不用改代码。
 public enum LinuxDesktop: String, CaseIterable, Sendable {
     case ubuntu = "ubuntu-desktop"
@@ -16,6 +16,9 @@ public enum LinuxDesktop: String, CaseIterable, Sendable {
         case .fedora: "Fedora Workstation"
         }
     }
+
+    /// 能由 `UbuntuAutoinstall` 无人值守安装；不能的只能在虚拟机窗口里走一遍安装程序。
+    public var supportsUnattended: Bool { self == .ubuntu }
 
     public static func named(_ id: String) throws -> LinuxDesktop {
         guard let desktop = LinuxDesktop(rawValue: id) else {

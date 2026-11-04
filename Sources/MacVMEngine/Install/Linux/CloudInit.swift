@@ -37,21 +37,26 @@ public enum CloudInit {
 
     /// `instanceID` 变化时 cloud-init 视为新实例重新执行；克隆后应传入新的值。
     public static func writeSeed(_ options: Options, instanceID: String, in bundle: VMBundle) async throws {
+        try await buildSeed(at: bundle.url.appending(path: seedFileName)) { staging in
+            try metaData(instanceID: instanceID, hostname: options.hostname).write(to: staging.appending(path: "meta-data"), atomically: true, encoding: .utf8)
+            try userData(options).write(to: staging.appending(path: "user-data"), atomically: true, encoding: .utf8)
+            try networkConfig(macAddress: options.macAddress).write(to: staging.appending(path: "network-config"), atomically: true, encoding: .utf8)
+            if let agent = options.agentBinary {
+                try FileManager.default.copyItem(at: agent, to: staging.appending(path: "macvm-agent"))
+            }
+        }
+    }
+
+    /// 把 `fill` 往临时目录里放的文件做成卷标 `cidata` 的 ISO，覆盖 `seed`。
+    /// 种子盘里可能有明文密码，只给本用户读。
+    static func buildSeed(at seed: URL, _ fill: (URL) throws -> Void) async throws {
         let staging = FileManager.default.temporaryDirectory.appending(path: "macvm-cidata-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: staging) }
+        try fill(staging)
 
-        try metaData(instanceID: instanceID, hostname: options.hostname).write(to: staging.appending(path: "meta-data"), atomically: true, encoding: .utf8)
-        try userData(options).write(to: staging.appending(path: "user-data"), atomically: true, encoding: .utf8)
-        try networkConfig(macAddress: options.macAddress).write(to: staging.appending(path: "network-config"), atomically: true, encoding: .utf8)
-        if let agent = options.agentBinary {
-            try FileManager.default.copyItem(at: agent, to: staging.appending(path: "macvm-agent"))
-        }
-
-        let seed = bundle.url.appending(path: seedFileName)
         try? FileManager.default.removeItem(at: seed)
         try await Subprocess.run("/usr/bin/hdiutil", ["makehybrid", "-quiet", "-iso", "-joliet", "-default-volume-name", "cidata", "-o", seed.path, staging.path])
-        // user-data 里可能有明文密码，种子盘只给本用户读。
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: seed.path)
     }
 
@@ -77,6 +82,9 @@ public enum CloudInit {
         """
     }
 
+    /// binfmt_misc 规则：x86_64 ELF 交给 Rosetta 解释执行；F 标志让注册在挂载命名空间切换后仍可用。
+    static let rosettaBinfmtRule = #":rosetta:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00:\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/media/rosetta/rosetta:CF"#
+
     static func userData(_ o: Options) -> String {
         var mounts: [String] = []
         var runcmd: [String] = ["[systemctl, enable, --now, fstrim.timer]"]
@@ -94,8 +102,7 @@ public enum CloudInit {
         }
         if o.rosetta {
             mounts.append("  - [rosetta, /media/rosetta, virtiofs, \"ro,nofail\", \"0\", \"0\"]")
-            // binfmt_misc 注册 x86_64 ELF 由 Rosetta 解释执行；F 标志让注册在挂载命名空间切换后仍可用。
-            runcmd.append(#"[sh, -c, "echo ':rosetta:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:/media/rosetta/rosetta:CF' > /etc/binfmt.d/rosetta.conf && systemctl restart systemd-binfmt"]"#)
+            runcmd.append("[sh, -c, \(yaml("echo '\(rosettaBinfmtRule)' > /etc/binfmt.d/rosetta.conf && systemctl restart systemd-binfmt"))]")
         }
         return """
         #cloud-config
@@ -121,7 +128,7 @@ public enum CloudInit {
     }
 
     /// 作为 YAML 双引号字符串输出，避免路径或密钥里的特殊字符破坏结构。
-    private static func yaml(_ s: String) -> String {
+    static func yaml(_ s: String) -> String {
         "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 }

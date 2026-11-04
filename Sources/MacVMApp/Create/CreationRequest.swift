@@ -11,6 +11,10 @@ struct CreationRequest: Codable, Sendable, Equatable {
         case iso, ipswLatest, ipswFile
         /// 从微软下载 Windows ISO。
         case windowsLatest
+
+        var isCloudImage: Bool {
+            if case .cloudImage = self { true } else { false }
+        }
     }
 
     var name: String
@@ -25,8 +29,10 @@ struct CreationRequest: Codable, Sendable, Equatable {
     var productKey: String?
     /// 客户机登录用户名；nil 时与主机用户同名。
     var user: String?
-    /// 客户机登录密码；nil 时 macOS、Windows 随机生成，Linux 云镜像只能用 SSH 密钥登录。
+    /// 客户机登录密码；nil 时 macOS、Windows、自动安装的 Ubuntu 桌面版随机生成，Linux 云镜像只能用 SSH 密钥登录。
     var password: String?
+    /// 桌面版不自动安装，开机后在窗口里图形安装；nil 等同 false。
+    var manualInstall: Bool?
     /// 建包时作为 `VMBundle.creationMarkerURL` 的令牌写进包里，用来认出本请求留下的半成品。
     var id = UUID()
 }

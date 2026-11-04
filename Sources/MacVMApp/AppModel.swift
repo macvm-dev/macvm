@@ -591,10 +591,20 @@ final class AppModel {
             let desktop = try LinuxDesktop.named(id)
             setActivity(name, "正在下载 \(desktop.title) 安装盘…")
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
-                                            rosetta: r.rosetta, desktop: desktop, creationToken: token)
-            _ = try await VMFactory.createEFIGuest(options, in: library)
-            // 安装程序要在窗口里操作，打开窗口即开机。
+                                            rosetta: r.rosetta, desktop: desktop, unattended: r.manualInstall != true,
+                                            user: r.user ?? NSUserName(), password: r.password, creationToken: token)
+            let bundle = try await VMFactory.createEFIGuest(options, in: library)
+            guard options.autoinstalls else {
+                // 安装程序要在窗口里操作，打开窗口即开机。
+                openMachineWindow(name)
+                return
+            }
+            setActivity(name, "正在自动安装 \(desktop.title)…")
+            guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name) 开始安装") }
             openMachineWindow(name)
+            try await UbuntuAutoinstall.completeSetup(bundle) {
+                guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name)") }
+            }
         case (_, .cloudImage(let id)):
             setActivity(name, "正在下载镜像…")
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,

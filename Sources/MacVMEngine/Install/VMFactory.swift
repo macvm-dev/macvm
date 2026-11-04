@@ -3,7 +3,8 @@ public import MacVMModel
 @preconcurrency import Virtualization
 
 /// 创建 EFI 客户机（Linux、Windows）的包：磁盘、机器标识、EFI 变量存储、配置。
-/// 指定云镜像时磁盘从镜像缓存克隆，并附带 cloud-init 种子盘注入用户与 SSH 公钥。
+/// 指定云镜像时磁盘从镜像缓存克隆，并附带 cloud-init 种子盘注入用户与 SSH 公钥；
+/// 无人值守安装的桌面版附带 autoinstall 种子盘，开机即自动安装。
 /// macOS 客户机的包由 `MacOSInstaller` 创建，因为硬件型号取决于安装镜像。
 public enum VMFactory {
     public struct Options: Sendable {
@@ -20,9 +21,11 @@ public enum VMFactory {
         public var image: LinuxImage?
         /// 下载该桌面版安装 ISO 作为安装介质，排在 `installMedia` 前面。
         public var desktop: LinuxDesktop?
-        /// 云镜像里创建的登录用户。
+        /// 桌面版支持时无人值守安装；false 时开机后在窗口里图形安装。
+        public var unattended: Bool
+        /// 云镜像与无人值守安装的桌面版里创建的登录用户。
         public var user: String
-        /// 云镜像里登录用户的密码，存进包内 `guest-password`；nil 时只能用 SSH 密钥登录。
+        /// 登录用户的密码，存进包内 `guest-password`；nil 时云镜像只能用 SSH 密钥登录，桌面版随机生成。
         public var password: String?
         public var showProgress: Bool
         /// 默认云镜像为 headless（可挂起），安装介质方式带键鼠。
@@ -32,7 +35,7 @@ public enum VMFactory {
 
         public init(name: String, os: GuestOS, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
                     installMedia: [String] = [], network: NetworkConfig = .init(), shares: [ShareConfig] = [],
-                    rosetta: Bool = false, serialConsole: Bool = false, image: LinuxImage? = nil, desktop: LinuxDesktop? = nil,
+                    rosetta: Bool = false, serialConsole: Bool = false, image: LinuxImage? = nil, desktop: LinuxDesktop? = nil, unattended: Bool = true,
                     user: String = NSUserName(), password: String? = nil, showProgress: Bool = false, headless: Bool? = nil,
                     creationToken: String? = nil) {
             self.name = name
@@ -47,12 +50,16 @@ public enum VMFactory {
             self.serialConsole = serialConsole
             self.image = image
             self.desktop = desktop
+            self.unattended = unattended
             self.user = user
             self.password = password
             self.showProgress = showProgress
             self.headless = headless
             self.creationToken = creationToken
         }
+
+        /// 由 `UbuntuAutoinstall` 无人值守安装。
+        public var autoinstalls: Bool { unattended && desktop?.supportsUnattended == true }
     }
 
     public static func createEFIGuest(_ options: Options, in library: VMLibrary = .default) async throws -> VMBundle {
@@ -66,6 +73,10 @@ public enum VMFactory {
         if options.image != nil, options.desktop != nil {
             throw MacVMError.invalidConfig("云镜像与桌面版只能选一个")
         }
+        let autoinstall = options.autoinstalls
+        if autoinstall, AgentInstaller.binary(for: .linux) == nil {
+            throw MacVMError.io("找不到 Linux 版客户机代理，先运行 make agent：自动安装要靠它判断装完")
+        }
         try ensureNameAvailable(options.name, in: library)
         // 先下载镜像再建包，下载中断不会留下半成品虚拟机。
         var imageDisk: URL?
@@ -74,7 +85,9 @@ public enum VMFactory {
         }
         var installMedia = options.installMedia
         if let desktop = options.desktop {
-            installMedia.insert(try await ISOCache.iso(for: desktop, showProgress: options.showProgress).path, at: 0)
+            var iso = try await ISOCache.iso(for: desktop, showProgress: options.showProgress)
+            if autoinstall { iso = try UbuntuAutoinstall.bootISO(for: iso) }
+            installMedia.insert(iso.path, at: 0)
         }
 
         var network = options.network
@@ -98,6 +111,16 @@ public enum VMFactory {
             } else {
                 try DiskImage.createSparse(at: bundle.diskURL, size: options.diskSize)
             }
+            if autoinstall {
+                let password = options.password ?? GuestCredentials.randomPassword()
+                let seed = UbuntuAutoinstall.Options(hostname: options.name, user: options.user, password: password,
+                                                     sshPublicKey: try await SSHKeys.ensurePublicKey(),
+                                                     shares: options.shares, rosetta: options.rosetta)
+                try await UbuntuAutoinstall.writeSeed(seed, in: bundle)
+                try GuestCredentials.storePassword(password, in: bundle)
+                hasAgent = seed.agentBinary != nil
+                disks.append(DiskConfig(path: UbuntuAutoinstall.seedFileName, readOnly: true))
+            }
             try MachineIdentity.createGeneric(in: bundle)
             _ = try VZEFIVariableStore(creatingVariableStoreAt: bundle.efiVariableStoreURL)
 
@@ -118,7 +141,7 @@ public enum VMFactory {
                 rosetta: options.rosetta,
                 installMedia: media,
                 headless: options.headless ?? (options.image != nil),
-                guestUser: options.image != nil ? options.user : nil,
+                guestUser: options.image != nil || autoinstall ? options.user : nil,
                 guestAgent: hasAgent,
                 serialConsole: options.serialConsole
             )

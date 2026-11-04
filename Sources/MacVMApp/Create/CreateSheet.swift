@@ -24,6 +24,7 @@ struct CreateSheet: View {
     @State private var user = ""
     @State private var password = ""
     @State private var revealsPassword = false
+    @State private var manualInstall = false
     /// 点了「从微软下载」的时刻；之后「下载」文件夹里出现的 Windows ISO 自动选上。
     @State private var downloadRequestedAt: Date?
     /// 输入框里的数字无效的 `NumberField`，按标题记。
@@ -55,7 +56,7 @@ struct CreateSheet: View {
                         TextField("用户名", text: $user, prompt: Text(NSUserName()))
                         LabeledContent("密码") {
                             HStack(spacing: 6) {
-                                let prompt = Text(os == .linux ? "可选，留空则只能用 SSH 登录" : "可选，留空则随机生成")
+                                let prompt = Text(source.isCloudImage ? "可选，留空则只能用 SSH 登录" : "可选，留空则随机生成")
                                 if revealsPassword {
                                     TextField("密码", text: $password, prompt: prompt)
                                 } else {
@@ -108,11 +109,24 @@ struct CreateSheet: View {
         case .linux:
             Picker("", selection: $source) {
                 ForEach(LinuxImage.catalog, id: \.id) { Text("\($0.title)（云镜像，免安装）").tag(Source.cloudImage($0.id)) }
-                ForEach(LinuxDesktop.allCases, id: \.self) { Text("\($0.title)（下载安装盘，在窗口里图形安装）").tag(Source.desktop($0.rawValue)) }
+                ForEach(LinuxDesktop.allCases, id: \.self) { Text("\($0.title)（下载安装盘）").tag(Source.desktop($0.rawValue)) }
                 Text("安装 ISO…").tag(Source.iso)
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+            if let desktop {
+                if desktop.supportsUnattended {
+                    Picker("安装方式", selection: $manualInstall) {
+                        Text("自动安装").tag(false)
+                        Text("手动安装").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Text(desktop.supportsUnattended && !manualInstall
+                     ? "离线无人值守安装，约 10 分钟；装好即带下方的账户、SSH 公钥与客户机代理，系统语言为英文，不含安装盘之后的更新。"
+                     : "开机后在虚拟机窗口里走一遍图形安装程序，账户、语言等在安装程序里设置。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         case .macOS:
             Picker("", selection: $source) {
                 Text("下载本机支持的最新版本").tag(Source.ipswLatest)
@@ -158,10 +172,11 @@ struct CreateSheet: View {
         }
     }
 
-    /// 图形安装（桌面版、ISO）的账户由安装程序设置。
+    /// 图形安装（Fedora 桌面版、ISO）的账户由安装程序设置。
     private var setsPassword: Bool {
         switch source {
         case .cloudImage: os == .linux
+        case .desktop: desktop?.supportsUnattended == true && !manualInstall
         default: os == .macOS || os == .windows
         }
     }
@@ -174,6 +189,10 @@ struct CreateSheet: View {
             return (error as? MacVMError)?.message ?? error.localizedDescription
         }
         return nil
+    }
+    /// 选中的桌面版。
+    private var desktop: LinuxDesktop? {
+        if os == .linux, case .desktop(let id) = source { try? LinuxDesktop.named(id) } else { nil }
     }
     private var needsFile: Bool { source == .iso || source == .ipswFile }
     private var allowedTypes: [UTType] { [UTType(filenameExtension: os == .macOS ? "ipsw" : "iso") ?? .data] }
@@ -207,7 +226,8 @@ struct CreateSheet: View {
         let request = CreationRequest(name: finalName, os: os, source: source, cpus: cpus, memoryGB: memoryGB, diskGB: diskGB,
                                       rosetta: rosetta, file: file, productKey: os == .windows && !productKey.isEmpty ? productKey : nil,
                                       user: setsPassword && !user.isEmpty ? user : nil,
-                                      password: setsPassword && !password.isEmpty ? password : nil)
+                                      password: setsPassword && !password.isEmpty ? password : nil,
+                                      manualInstall: desktop?.supportsUnattended == true && manualInstall ? true : nil)
         let openWindow = openWindow
         dismiss()
         model.create(request) { openWindow(id: "machine", value: $0) }

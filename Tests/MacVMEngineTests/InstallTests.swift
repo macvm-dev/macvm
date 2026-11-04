@@ -88,6 +88,7 @@ struct ISOCacheTests {
             "ubuntu-26.04-desktop-arm64.iso.part.seg-0", "ubuntu-26.04-desktop-arm64.iso.part.segments",
             "ubuntu-26.04-desktop-arm64.iso.part.lock",
             "ubuntu-26.04.2-desktop-arm64.iso.part", "Fedora-Workstation-Live-44-1.7.aarch64.iso.part",
+            "ubuntu-26.04.1-desktop-arm64.autoinstall.iso",
         ]
         for name in names { FileManager.default.createFile(atPath: root.appending(path: name).path, contents: nil) }
 
@@ -96,7 +97,164 @@ struct ISOCacheTests {
         ISOCache.removeStalePartials(of: .ubuntu, keeping: "ubuntu-26.04.2-desktop-arm64.iso", in: root)
         let left = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
         #expect(left == ["ubuntu-26.04-desktop-arm64.iso", "ubuntu-26.04.1-desktop-arm64.iso", "ubuntu-26.04-desktop-arm64.iso.part.lock",
-                         "ubuntu-26.04.2-desktop-arm64.iso.part", "Fedora-Workstation-Live-44-1.7.aarch64.iso.part"])
+                         "ubuntu-26.04.2-desktop-arm64.iso.part", "Fedora-Workstation-Live-44-1.7.aarch64.iso.part",
+                         "ubuntu-26.04.1-desktop-arm64.autoinstall.iso"])
+    }
+}
+
+struct UbuntuAutoinstallTests {
+    /// Ubuntu 26.04.1 桌面版 arm64 安装盘里的 `boot/grub/grub.cfg`。
+    static let grubConfig = """
+        set timeout=30
+
+        loadfont unicode
+
+        set menu_color_normal=white/black
+        set menu_color_highlight=black/light-gray
+
+        set cmdline=
+        smbios --type 4 --get-string 5 --set proc_version
+        regexp "Snapdragon.*" "$proc_version"
+        if [ $? = 0 ]; then
+          # Work around Snapdragon X firmware bug. cutmem is not allowed in lockdown mode.
+          if [ $lockdown != "y" ]; then
+            cutmem 0x8800000000 0x8fffffffff
+          fi
+          # arm64.nopauth works around 8cx Gen 3 firmware bug
+          cmdline="clk_ignore_unused pd_ignore_unused arm64.nopauth"
+        fi
+
+        menuentry "Try or Install Ubuntu" {
+            set gfxpayload=keep
+            linux  /casper/vmlinuz $cmdline  --- quiet splash console=tty0
+            initrd /casper/initrd
+        }
+        menuentry 'Boot from next volume' {
+            exit 1
+        }
+        menuentry 'UEFI Firmware Settings' {
+            fwsetup
+        }
+
+        """
+
+    private func options(agent: URL? = nil, shares: [ShareConfig] = [], rosetta: Bool = false) -> UbuntuAutoinstall.Options {
+        UbuntuAutoinstall.Options(hostname: "My_Desk.1", user: "ethan", password: "s3cret", sshPublicKey: "ssh-ed25519 AAAA test",
+                                  shares: shares, rosetta: rosetta, timezone: "Asia/Shanghai", agentBinary: agent)
+    }
+
+    @Test func sha512CryptMatchesGlibcVectors() {
+        #expect(ShadowPassword.sha512Crypt("Hello world!", salt: "saltstring")
+                == "$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1")
+        // 盐最长 16 个字符，多出的截掉。
+        #expect(ShadowPassword.sha512Crypt("This is just a test", salt: "toolongsaltstring")
+                == "$6$toolongsaltstrin$lQ8jolhgVRVhY4b5pZKaysCLi0QBxGoNeKQzQ3glMhwllF7oGDZxUhx1yxdYcz/e1JSbq3y6JMxxl8audkUEm0")
+    }
+
+    @Test func grubConfigBootsInstallerUnattendedAtSameLength() throws {
+        let patched = try UbuntuAutoinstall.grubConfig(patching: Self.grubConfig)
+        #expect(patched.utf8.count == Self.grubConfig.utf8.count)
+        #expect(patched.hasPrefix("set timeout=0\n"))
+        #expect(patched.contains("linux  /casper/vmlinuz $cmdline  autoinstall noprompt --- quiet splash console=tty0\n"))
+        #expect(patched.contains("initrd /casper/initrd\n"))
+        #expect(!patched.contains("Boot from next volume"))
+        #expect(throws: MacVMError.self) { try UbuntuAutoinstall.grubConfig(patching: "set timeout=5\n") }
+    }
+
+    @Test func bootISORewritesGrubConfigInPlace() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "macvm-autoinstall-\(UUID().uuidString)")
+        let tree = dir.appending(path: "tree/boot/grub")
+        try FileManager.default.createDirectory(at: tree, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Self.grubConfig.write(to: tree.appending(path: "grub.cfg"), atomically: true, encoding: .utf8)
+        try "x".write(to: dir.appending(path: "tree/boot/other.txt"), atomically: true, encoding: .utf8)
+        let iso = dir.appending(path: "ubuntu-26.04.1-desktop-arm64.iso")
+        try await Subprocess.run("/usr/bin/hdiutil", ["makehybrid", "-quiet", "-iso", "-joliet", "-o", iso.path, dir.appending(path: "tree").path])
+
+        let extent = try ISO9660.extent(of: "boot/grub/grub.cfg", in: iso)
+        #expect(extent.length == Self.grubConfig.utf8.count)
+        #expect(throws: MacVMError.self) { try ISO9660.extent(of: "boot/grub/missing.cfg", in: iso) }
+
+        let boot = try UbuntuAutoinstall.bootISO(for: iso)
+        #expect(boot.lastPathComponent == "ubuntu-26.04.1-desktop-arm64.autoinstall.iso")
+        let data = try Data(contentsOf: boot)
+        let start = Int(extent.offset)
+        let patched = String(decoding: data[start..<(start + extent.length)], as: UTF8.self)
+        #expect(patched == (try UbuntuAutoinstall.grubConfig(patching: Self.grubConfig)))
+        #expect(try Data(contentsOf: iso).count == data.count)
+        #expect(try UbuntuAutoinstall.bootISO(for: iso) == boot)
+    }
+
+    @Test func userDataHashesPasswordAndRunsSetupScript() {
+        let data = UbuntuAutoinstall.userData(options())
+        #expect(data.hasPrefix("#cloud-config\nautoinstall:\n  version: 1\n"))
+        #expect(data.contains("  locale: en_US.UTF-8\n"))
+        #expect(data.contains("    hostname: \"my-desk-1\"\n"))
+        #expect(data.contains("    password: \"$6$"))
+        #expect(!data.contains("s3cret"))
+        #expect(data.contains("      - \"ssh-ed25519 AAAA test\"\n"))
+        #expect(data.contains("sh /run/macvm-seed/macvm-setup.sh /run/macvm-seed /target"))
+        #expect(data.contains("  early-commands:\n    - \"nmcli networking off"))
+        #expect(data.contains("  apt:\n    geoip: false\n"))
+        #expect(data.contains(#"printf '[Manager]\\nDefaultTimeoutStopSec=5s\\n'"#))
+    }
+
+    @Test func setupScriptConfiguresTarget() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "macvm-target-\(UUID().uuidString)")
+        let seed = dir.appending(path: "seed"), target = dir.appending(path: "target")
+        for path in ["etc/sudoers.d", "etc/netplan", "etc/gdm3", "usr/local/bin"] {
+            try FileManager.default.createDirectory(at: target.appending(path: path), withIntermediateDirectories: true)
+        }
+        try FileManager.default.createDirectory(at: seed, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for name in ["00-installer-config.yaml", "01-network-manager-all.yaml"] {
+            FileManager.default.createFile(atPath: target.appending(path: "etc/netplan/\(name)").path, contents: Data())
+        }
+        try "# GDM configuration storage\n\n[daemon]\n# AutomaticLoginEnable = true\n\n[security]\n"
+            .write(to: target.appending(path: "etc/gdm3/custom.conf"), atomically: true, encoding: .utf8)
+        let o = options(shares: [ShareConfig(hostPath: "/Users/e/My Code", tag: "code", readOnly: true)], rosetta: true)
+        let script = seed.appending(path: UbuntuAutoinstall.setupScriptName)
+        try UbuntuAutoinstall.setupScript(o).write(to: script, atomically: true, encoding: .utf8)
+        try await Subprocess.run("/bin/sh", [script.path, seed.path, target.path])
+
+        func read(_ path: String) throws -> String { try String(contentsOf: target.appending(path: path), encoding: .utf8) }
+        #expect(try read("etc/sudoers.d/90-macvm") == "ethan ALL=(ALL) NOPASSWD:ALL\n")
+        #expect(try read("etc/NetworkManager/conf.d/90-macvm.conf") == "[connection]\nipv4.dhcp-client-id=mac\n")
+        #expect(try read("etc/binfmt.d/rosetta.conf") == CloudInit.rosettaBinfmtRule + "\n")
+        #expect(try read("etc/fstab") == "code /mnt/code virtiofs ro,nofail 0 0\nrosetta /media/rosetta virtiofs ro,nofail 0 0\n")
+        #expect(FileManager.default.fileExists(atPath: target.appending(path: "mnt/code").path))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: target.appending(path: "etc/netplan").path) == ["01-network-manager-all.yaml"])
+        #expect(try read("etc/dconf/profile/user") == "user-db:user\nsystem-db:local\n")
+        #expect(try read("etc/dconf/db/local.d/90-macvm") == """
+            [org/gnome/desktop/screensaver]
+            lock-enabled=false
+            ubuntu-lock-on-suspend=false
+
+            [org/gnome/settings-daemon/plugins/power]
+            sleep-inactive-ac-type='nothing'
+            sleep-inactive-battery-type='nothing'
+
+            """)
+        #expect(try read("etc/gdm3/custom.conf")
+                == "# GDM configuration storage\n\n[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=ethan\n# AutomaticLoginEnable = true\n\n[security]\n")
+    }
+
+    @Test func finishSetupDetachesBootISOAndSeed() async throws {
+        let library = VMLibrary(root: FileManager.default.temporaryDirectory.appending(path: "macvm-tests-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: library.root) }
+        let bundle = try await VMFactory.withNewBundle(named: "desk", in: library) { $0 }
+        let seed = bundle.url.appending(path: UbuntuAutoinstall.seedFileName)
+        FileManager.default.createFile(atPath: seed.path, contents: Data())
+        let network = NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01")
+        try bundle.saveConfig(VMConfig(name: "desk", os: .linux, cpuCount: 2, memorySize: 4 << 30,
+                                       disks: [DiskConfig(path: "disk.img"), DiskConfig(path: UbuntuAutoinstall.seedFileName, readOnly: true)],
+                                       networks: [network], installMedia: ["/tmp/ubuntu.autoinstall.iso", "/tmp/drivers.iso"]))
+        try UbuntuAutoinstall.finishSetup(bundle)
+        let config = try bundle.loadConfig()
+        #expect(config.installMedia == ["/tmp/drivers.iso"])
+        #expect(config.disks.map(\.path) == ["disk.img"])
+        #expect(config.networks == [network])
+        #expect(!FileManager.default.fileExists(atPath: seed.path))
     }
 }
 
