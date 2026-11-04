@@ -82,7 +82,7 @@ struct CreateSheet: View {
                     TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
                     Text(!hasQEMU
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
-                         : "自动下载时语言随系统首选语言。微软拒绝下载时（开着 VPN 或代理时常见）改选本地 ISO，点「从微软下载…」在浏览器里下载（选好语言后点 Download），下载完成会自动选上。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
+                         : "自动下载时语言随系统首选语言。微软拒绝下载时（同一网络短时间内下载多次，或开着 VPN、代理时常见）可过几个小时再试，或改选本地 ISO，点「从微软下载…」在浏览器里下载（选好语言后点 Download），下载完成会自动选上。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

@@ -129,7 +129,7 @@ public enum WindowsISO {
             ?? ((answer["ValidationContainer"] as? [String: Any])?["Errors"] as? [[String: Any]]) ?? []
         guard let first = errors.first else { return }
         let reason = (first["Value"] as? String) ?? (first["Key"] as? String) ?? "未说明原因"
-        throw MacVMError.io("微软拒绝了 Windows 下载请求（\(reason)），开着 VPN 或代理时常见。\(manualHint)")
+        throw MacVMError.io("微软拒绝了 Windows 下载请求（\(reason)）。同一网络短时间内要了多次下载链接，或开着 VPN、代理时常见，过一段时间（可能要几个小时）再试；也\(manualHint)")
     }
 
     private static var unexpectedAnswer: MacVMError {
