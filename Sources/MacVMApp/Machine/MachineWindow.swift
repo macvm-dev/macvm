@@ -15,6 +15,10 @@ struct MachineWindow: View {
     @State private var notice: String?
     /// 从本窗口发起、还没返回的挂起；期间挂起按钮换成转圈，关机按钮不可点。
     @State private var suspending = false
+    /// 本窗口启动了虚拟机、VZ 画面还没收到第一帧；在那之前画面是黑的，盖上启动提示。
+    @State private var awaitingFirstFrame = false
+    /// 启动提示的文字，挂起的虚拟机是从存档恢复。
+    @State private var startingTitle = "正在启动…"
 
     private var isRunning: Bool { model.summary(name)?.state == .running }
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
@@ -32,7 +36,10 @@ struct MachineWindow: View {
         let config = model.config(of: name)
         Group {
             if let vz = runner as? VZRunner {
-                VirtualMachineView(runner: vz)
+                VirtualMachineView(runner: vz, onFirstFrame: awaitingFirstFrame ? { withAnimation { awaitingFirstFrame = false } } : nil)
+                    .overlay {
+                        if awaitingFirstFrame { startingView.transition(.opacity) }
+                    }
             } else if let bundle, config?.engine == .qemu, runner != nil || runningElsewhere {
                 QEMUMachineView(bundle: bundle)
             } else if runningElsewhere {
@@ -46,7 +53,7 @@ struct MachineWindow: View {
             } else if failed {
                 ContentUnavailableView("无法启动", systemImage: "exclamationmark.triangle")
             } else {
-                ProgressView("正在启动…")
+                startingView
             }
         }
         .frame(minWidth: 640, minHeight: 400)
@@ -72,8 +79,11 @@ struct MachineWindow: View {
         .navigationTitle(name)
         .task(id: name) {
             guard !runningElsewhere else { return }
+            if model.summary(name)?.state == .suspended { startingTitle = "正在恢复…" }
+            awaitingFirstFrame = !model.isRunningHere(name)
             runner = await model.start(name)
             failed = runner == nil
+            if !(runner is VZRunner) { awaitingFirstFrame = false }
         }
         .onChange(of: isRunning) { wasRunning, running in
             // 虚拟机停止（客户机关机、挂起）后窗口没有内容可显示。
@@ -135,6 +145,15 @@ struct MachineWindow: View {
 }
 
 extension MachineWindow {
+    /// 启动到出画面之前的占位，与客户机画面同为黑底，出画面时不闪一下。
+    fileprivate var startingView: some View {
+        ZStack {
+            Color.black
+            ProgressView(startingTitle)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
     /// 画面顶部浮着的胶囊提示。
     fileprivate func banner(@ViewBuilder _ content: () -> some View) -> some View {
         content()

@@ -5,8 +5,19 @@ import SwiftUI
 
 struct VirtualMachineView: NSViewRepresentable {
     let runner: VZRunner
+    /// 视图收到客户机的第一帧，或认不出第一帧而放弃等待时调用。
+    var onFirstFrame: (() -> Void)?
 
-    func makeNSView(context: Context) -> NSView { runner.makeDisplayView() }
+    func makeNSView(context: Context) -> NSView {
+        let view = runner.makeDisplayView()
+        if let onFirstFrame {
+            Task {
+                _ = await VZRunner.waitForFirstFrame(in: view)
+                onFirstFrame()
+            }
+        }
+        return view
+    }
 
     func updateNSView(_ view: NSView, context: Context) {}
 
