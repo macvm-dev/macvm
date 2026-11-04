@@ -17,6 +17,7 @@ public final class QEMURunner: MachineRunner {
     private let display: Bool
     private var process: Process?
     private var qmp: QMPClient?
+    private var bridge: BridgeSession?
     private var gpuDriverSync: Task<Void, Never>?
 
     /// `display` 为 true 时由 QEMU 自己开一个 Cocoa 窗口显示画面。
@@ -133,16 +134,31 @@ public final class QEMURunner: MachineRunner {
     /// 装了代理的 Windows 请代理关机：它对 ACPI 电源键时常没有反应。代理不可用时再按电源键。
     public func requestStop() throws {
         guard let qmp, process?.isRunning == true else { throw MacVMError.notRunning(bundle.name) }
-        let agent = config.os == .windows && config.guestAgent ? QEMUCommand.portSocket(bundle, port: AgentProtocol.port).path : nil
+        let agent = config.os == .windows && config.guestAgent
+        let bundle = bundle, config = config
         Task.detached {
-            if let agent, Self.askAgentToShutDown(socketPath: agent, reboot: false) { return }
+            if agent, Self.askAgentToShutDown(bundle, config, reboot: false) { return }
             _ = try? await qmp.execute("system_powerdown")
         }
     }
 
-    nonisolated private static func askAgentToShutDown(socketPath: String, reboot: Bool) -> Bool {
-        guard let socket = try? UnixSocket.connect(to: socketPath) else { return false }
+    nonisolated private static func askAgentToShutDown(_ bundle: VMBundle, _ config: VMConfig, reboot: Bool) -> Bool {
+        guard let socket = try? connectToGuest(bundle, config, port: AgentProtocol.port) else { return false }
         return AgentClient.call(.shutdown(reboot: reboot), over: socket, timeout: 3)
+    }
+
+    /// NAT 下经 QEMU 转发到 Unix socket 的端口，只有 `QEMUCommand.forwardedPorts`；桥接下直连客户机 IP 上的任意端口。
+    nonisolated static func connectToGuest(_ bundle: VMBundle, _ config: VMConfig, port: UInt32) throws -> UnixSocket {
+        if config.networks.first?.mode == .bridged {
+            guard let ip = GuestAddress.current(bundle, config) else { throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址") }
+            let fd = GuestConnection.tcpConnect(ip, UInt16(port))
+            guard fd >= 0 else { throw MacVMError.posix("连接 \(ip):\(port)") }
+            return UnixSocket(fd: fd)
+        }
+        guard QEMUCommand.forwardedPorts.contains(port) else {
+            throw MacVMError.unsupported("QEMU 引擎在 NAT 网络下只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")
+        }
+        return try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
     }
 
     public func forceStop() async throws {
@@ -200,12 +216,9 @@ public final class QEMURunner: MachineRunner {
         Task { _ = try? await qmp.execute("x-macvm-set-display-size", ["width": width, "height": height]) }
     }
 
-    /// 只有 `QEMUCommand.forwardedPorts` 中的端口可达。
     public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
-        guard QEMUCommand.forwardedPorts.contains(port) else {
-            throw MacVMError.unsupported("QEMU 引擎只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")
-        }
-        let fd = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path).duplicateDescriptor()
+        let bundle = bundle, config = config
+        let fd = try await Task.detached { try Self.connectToGuest(bundle, config, port: port).duplicateDescriptor() }.value
         return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
     }
 
@@ -223,16 +236,24 @@ public final class QEMURunner: MachineRunner {
         var command = QEMUCommand(bundle: bundle, config: config, qemu: qemu)
         command.display = display
         command.incoming = incoming
+        let arguments = try command.arguments()
+
+        closeBridge()
+        if let net = config.networks.first, net.mode == .bridged {
+            BridgeSession.clearAddress(of: bundle)
+            let bundle = bundle
+            bridge = try await Task.detached { try BridgeSession.open(net, bundle: bundle) }.value
+        }
 
         let process = Process()
         process.executableURL = qemu.binary
-        process.arguments = try command.arguments()
+        process.arguments = arguments
         // QEMU 与它加载的库可能在当前目录留下日志等文件，别落在调用方的目录里。
         process.currentDirectoryURL = RuntimeDirectory.url
         if !qemu.environment.isEmpty {
             process.environment = ProcessInfo.processInfo.environment.merging(qemu.environment) { $1 }
         }
-        process.standardInput = FileHandle.nullDevice
+        process.standardInput = bridge?.fileHandle ?? FileHandle.nullDevice
         let stderr = StderrTail()
         process.standardError = stderr.pipe
         let token = ObjectIdentifier(process)
@@ -241,6 +262,7 @@ public final class QEMURunner: MachineRunner {
             Task { @MainActor in self?.processExited(token, status: status) }
         }
         do { try process.run() } catch {
+            closeBridge()
             throw MacVMError.engine("无法启动 QEMU：\(error.localizedDescription)")
         }
         self.process = process
@@ -283,6 +305,7 @@ public final class QEMURunner: MachineRunner {
     /// 结束当前 QEMU 进程并等它退出。先摘下 `process`，它的退出不再触发停止回调，由调用方决定停止原因。
     private func terminate() async {
         gpuDriverSync?.cancel()
+        defer { closeBridge() }
         guard let process else { return }
         let client = qmp
         self.process = nil
@@ -299,17 +322,23 @@ public final class QEMURunner: MachineRunner {
         guard let process, ObjectIdentifier(process) == token else { return }
         self.process = nil
         qmp = nil
+        closeBridge()
         stateLabel = "stopped"
         finish(status == 0 ? .guestShutdown : .error("QEMU 退出码 \(status)"))
     }
 
     private func finish(_ reason: MachineStopReason) { stopLatch.fire(reason) }
 
+    private func closeBridge() {
+        bridge?.close()
+        bridge = nil
+    }
+
     /// 开了 3D 加速的 Windows：代理上线后把自带的驱动包推过去。驱动要与自带 QEMU 的图形组件配套，
     /// 升级 App 换了图形组件而客户机还是旧驱动时，桌面合成会崩溃；换了驱动就重启客户机，桌面合成才用上新驱动。
     private func syncGuestGPUDriver() {
         guard config.os == .windows, config.guestAgent, config.graphicsAcceleration, let zip = WindowsGPUDriver.package(qemu) else { return }
-        let socket = QEMUCommand.portSocket(bundle, port: AgentProtocol.port).path
+        let bundle = bundle, config = config
         let name = bundle.name
         gpuDriverSync?.cancel()
         gpuDriverSync = Task.detached {
@@ -321,8 +350,8 @@ public final class QEMURunner: MachineRunner {
             // 代理在客户机登录后才启动，开机慢时要等好几分钟。
             for _ in 0..<Self.agentWaitAttempts {
                 do {
-                    if try WindowsGPUDriver.push(payload, to: socket) {
-                        let rebooting = Self.askAgentToShutDown(socketPath: socket, reboot: true)
+                    if try WindowsGPUDriver.push(payload, connect: { try Self.connectToGuest(bundle, config, port: AgentProtocol.port) }) {
+                        let rebooting = Self.askAgentToShutDown(bundle, config, reboot: true)
                         let next = rebooting ? "正在重启客户机" : "重启客户机失败，请手动重启"
                         FileHandle.standardError.write(Data("macvm: 已为 \(name) 更新显卡驱动，\(next)\n".utf8))
                     }

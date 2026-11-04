@@ -90,6 +90,7 @@ struct Create: AsyncParsableCommand {
             }
             if os == .windows {
                 if image != nil || desktop != nil { throw MacVMError.invalidConfig("--image 与 --desktop 只用于 Linux 客户机") }
+                if network != "nat" { throw MacVMError.invalidConfig("Windows 用 NAT 网络安装，装好后再用 macvm set --network 改") }
                 return try await createWindows()
             }
             if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }

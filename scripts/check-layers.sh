@@ -16,4 +16,7 @@ bad=$(grep -rlE '^\s*(public\s+)?import\s+MacVM(Engine|Private)' Sources/MacVMMo
 bad=$(grep -rlE '^\s*(public\s+)?import\s+MacVMEngine' Sources/MacVMPrivate || true)
 [ -n "$bad" ] && { echo "MacVMPrivate 不能依赖 MacVMEngine："; echo "$bad"; fail=1; }
 
+bad=$(grep -rlE '^\s*(public\s+)?import\s+MacVM(Engine|Private)' Sources/MacVMNetHelper || true)
+[ -n "$bad" ] && { echo "MacVMNetHelper 只能依赖 MacVMModel："; echo "$bad"; fail=1; }
+
 exit $fail

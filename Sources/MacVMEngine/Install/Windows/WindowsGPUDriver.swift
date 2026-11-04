@@ -30,10 +30,10 @@ enum WindowsGPUDriver {
         }
     }
 
-    /// 把驱动包推给客户机代理（`socketPath` 是代理端口转发出来的 socket）：代理已有同一个包时什么也不做，
+    /// 把驱动包推给客户机代理（`connect` 连到代理端口）：代理已有同一个包时什么也不做，
     /// 否则收下后立即安装。返回客户机是否换了驱动。
-    static func push(_ payload: Payload, to socketPath: String) throws -> Bool {
-        guard let socket = try? UnixSocket.connect(to: socketPath) else { throw AgentNotReady() }
+    static func push(_ payload: Payload, connect: () throws -> UnixSocket) throws -> Bool {
+        guard let socket = try? connect() else { throw AgentNotReady() }
         socket.setTimeout(seconds: 30)
         let request = AgentProtocol.Request.gpuDriver(sha256: payload.sha256, size: payload.data.count)
         guard let first = try? socket.exchange(request, as: AgentProtocol.Response.self) else { throw AgentNotReady() }

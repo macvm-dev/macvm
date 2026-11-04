@@ -12,8 +12,8 @@
 
 | 命令 | 作用 |
 | --- | --- |
-| `create <名> [--image ID \| --desktop ID [--manual-install] \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--password 密码] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机；`--user` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录用户名（默认与主机用户同名，自己指定时须为 1–20 个小写字母、数字或 `_ . -`、以字母或 `_` 开头，且不能是 root、administrator 等系统账户），`--password` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录密码（不能为空、首尾不能有空格、不能含换行等控制字符）并存进包内 `guest-password`（云镜像省略时只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 省略时随机生成），云镜像的 SSH 始终只认密钥；`--desktop ubuntu-desktop\|fedora-workstation` 下载发行方最新的 arm64 桌面版安装 ISO（校验 SHA-256，缓存在下载目录的 `iso/`）：Ubuntu 默认无人值守安装（缓存里另存一份内核参数带 `autoinstall` 的引导副本 `<名>.autoinstall.iso`，安装环境里关掉网络、只用安装盘里的软件包离线安装，不装更新；命令开机后等到装好的系统里的客户机代理响应才返回，安装盘与种子盘下次开机时卸下；需要随程序分发的 Linux 版客户机代理；装好即带登录用户、macvm 专用 SSH 公钥、免密 sudo 与客户机代理，系统语言为英文（en_US.UTF-8）、时区同主机、键盘为美式，之后卸下安装盘），加 `--manual-install` 则和 Fedora 一样开机后在窗口里完成图形安装；Windows 从原版 ISO 无人值守部署，不给 `--iso` 时从微软下载 Windows 11 ARM64 ISO（语言取系统首选语言里微软提供的第一个，都没有时用英语；缓存在下载目录的 `windows/`，只留最新的一份；问不到微软或微软拒绝时用缓存里的，缓存里也没有时报错，可到 https://www.microsoft.com/software-download/windows11arm64 手动下载后用 `--iso` 指定），给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态） |
-| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off] [--disk-size 256G] [--add-share 路径[:名称][:ro]]… [--remove-share 路径或名称]…` | 修改已关机虚拟机的配置，可切换引擎；运行中报 `already_running`，挂起时报 `invalid_config`。只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效）。`--disk-size` 只扩大系统盘镜像、不能缩小，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。共享目录只用于 vz 引擎的 macOS、Linux 客户机，名称缺省取目录名（Linux 只留 ASCII 字母数字与 `._-`，重名加 `-2`…），不超过 36 字节；先执行 `--remove-share` 再执行 `--add-share`，移除后加回即可改只读。有共享目录时不能切到 qemu |
+| `create <名> [--image ID \| --desktop ID [--manual-install] \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--network nat\|bridged[:网卡]] [--password 密码] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机；`--network` 见下文「网络」，Windows 只能用 NAT 安装；`--user` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录用户名（默认与主机用户同名，自己指定时须为 1–20 个小写字母、数字或 `_ . -`、以字母或 `_` 开头，且不能是 root、administrator 等系统账户），`--password` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录密码（不能为空、首尾不能有空格、不能含换行等控制字符）并存进包内 `guest-password`（云镜像省略时只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 省略时随机生成），云镜像的 SSH 始终只认密钥；`--desktop ubuntu-desktop\|fedora-workstation` 下载发行方最新的 arm64 桌面版安装 ISO（校验 SHA-256，缓存在下载目录的 `iso/`）：Ubuntu 默认无人值守安装（缓存里另存一份内核参数带 `autoinstall` 的引导副本 `<名>.autoinstall.iso`，安装环境里关掉网络、只用安装盘里的软件包离线安装，不装更新；命令开机后等到装好的系统里的客户机代理响应才返回，安装盘与种子盘下次开机时卸下；需要随程序分发的 Linux 版客户机代理；装好即带登录用户、macvm 专用 SSH 公钥、免密 sudo 与客户机代理，系统语言为英文（en_US.UTF-8）、时区同主机、键盘为美式，之后卸下安装盘），加 `--manual-install` 则和 Fedora 一样开机后在窗口里完成图形安装；Windows 从原版 ISO 无人值守部署，不给 `--iso` 时从微软下载 Windows 11 ARM64 ISO（语言取系统首选语言里微软提供的第一个，都没有时用英语；缓存在下载目录的 `windows/`，只留最新的一份；问不到微软或微软拒绝时用缓存里的，缓存里也没有时报错，可到 https://www.microsoft.com/software-download/windows11arm64 手动下载后用 `--iso` 指定），给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态） |
+| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--network nat\|bridged[:网卡]] [--display 宽x高] [--retina on\|off] [--disk-size 256G] [--add-share 路径[:名称][:ro]]… [--remove-share 路径或名称]…` | 修改已关机虚拟机的配置，可切换引擎；运行中报 `already_running`，挂起时报 `invalid_config`。只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效）。`--disk-size` 只扩大系统盘镜像、不能缩小，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。共享目录只用于 vz 引擎的 macOS、Linux 客户机，名称缺省取目录名（Linux 只留 ASCII 字母数字与 `._-`，重名加 `-2`…），不超过 36 字节；先执行 `--remove-share` 再执行 `--add-share`，移除后加回即可改只读。有共享目录时不能切到 qemu |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `install-macos <名> [--ipsw 文件] [--user 用户] [--password 密码] [--no-tune]` | 安装 macOS 虚拟机并开通 SSH 与代理，再执行 `tune` 的全部项；`--user` 的规则与 `create` 相同，`--password` 省略时随机生成，存在包内 `guest-password`；结果里的 `tuning` 是调优报告，跳过或出错时没有该字段，出错原因在 `tuningError`，安装本身仍算成功 |
@@ -49,7 +49,7 @@
 | macOS 客户机 | 支持 | 不支持 |
 | Windows 声音 / 挂起 | 无 | 有 |
 | 共享目录（virtio-fs） | 支持 | 不支持 |
-| 客户机端口访问 | vsock、NAT IP | 只有 22 与代理端口，经 Unix socket 转发 |
+| 客户机端口访问 | vsock、客户机 IP | NAT 下只有 22 与代理端口，经 Unix socket 转发；桥接下直连客户机 IP |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 截不到）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Linux 分辨率 | 跟随窗口大小（按点数，最小 800x600，画面放大显示；`--retina on` 时按屏幕像素，有客户机代理时把 GNOME 的缩放倍数调到屏幕倍数，没有代理时 Retina 屏上界面会变小，要在客户机里调缩放） | 自带的 QEMU 下与 Windows 一样跟随窗口，有客户机代理时同样调 GNOME 的缩放倍数；Homebrew 的 QEMU 由客户机设定 |
 | Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600；`--retina on` 时按屏幕像素，并把 Windows 缩放比例调到相同倍数；总像素不超过约 780 万）；否则由客户机设定 |
@@ -57,6 +57,15 @@
 | Windows 3D | 无 | 自带的 QEMU 下装 viogpu3d（Direct3D 11.1，桌面合成用 GPU）；装上后只能用自带的 QEMU 运行，不能再改用 vz。驱动要与 App 自带的图形组件配套，每次开机后自动推送，换了驱动就自动重启客户机 |
 
 Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改用 vz 运行。
+
+## 网络
+
+| 模式 | 写法 | 说明 |
+| --- | --- | --- |
+| NAT（默认） | `nat` | 客户机在主机内置的 NAT 网络里，IP 从主机 DHCP 服务的租约里查 |
+| 桥接 | `bridged[:网卡]` | 客户机直接接入主机网卡（BSD 名，如 `en0`，可用的见 `doctor`）所在的局域网，从局域网的路由器取得地址；不写网卡时开机桥接到第一块可桥接的网卡。两种引擎都支持 |
+
+桥接要用到随 App 安装的网络辅助程序 macvm-netd：在 App 的设置里启用，再到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM；`doctor` 的 `bridgedNetworking` 为 true 时可用。没启用就开机报 `unsupported`。桥接下 IP 是从客户机发出的 ARP 里认出来的，客户机开机拿到地址前 `ip` 查不到。改网络只能在关机时；MAC 地址保持不变。
 
 ## 与 runode 配合
 

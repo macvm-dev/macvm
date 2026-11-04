@@ -87,7 +87,7 @@ struct SSH: AsyncParsableCommand {
             throw MacVMError.unsupported("不知道 \(config.name) 的登录用户（从安装介质安装的虚拟机需自行配置 SSH）")
         }
         let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: config.name)
-        // 未装代理时 sshd 走 NAT 网络；先确保虚拟机在运行，免得 ssh 的连接超时先于开机完成。
+        // 未装代理时经网络连 sshd；先确保虚拟机在运行，免得 ssh 的连接超时先于开机完成。
         var args = ["ssh", "-q", tty ? "-tt" : "-T"] + SSHConfig.keyArguments(proxyCommand: proxy)
             + ["\(user)@\(config.name)"]
         if let remoteCommand { args += ["--", remoteCommand] }

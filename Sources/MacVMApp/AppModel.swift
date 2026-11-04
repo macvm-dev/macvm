@@ -287,6 +287,10 @@ final class AppModel {
         updateConfig(name, requiresStopped: true) { $0.memorySize = UInt64(gigabytes) << 30 }
     }
 
+    func setNetwork(_ name: String, _ mode: NetworkConfig.Mode, interface: String?) {
+        updateConfig(name, requiresStopped: true) { $0.setNetwork(mode, interface: interface) }
+    }
+
     func addShares(_ name: String, _ urls: [URL]) {
         updateShares(name) { config in
             for url in urls { try config.addShare(hostPath: url.standardizedFileURL.path) }

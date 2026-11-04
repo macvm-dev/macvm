@@ -4,7 +4,7 @@ import MacVMEngine
 import MacVMModel
 
 struct IP: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "显示虚拟机的 IP 地址（NAT 与 vmnet shared 模式）。")
+    static let configuration = CommandConfiguration(abstract: "显示虚拟机的 IP 地址。")
 
     @OptionGroup var global: GlobalOptions
     @Argument(help: "虚拟机名称。") var name: String

@@ -285,3 +285,13 @@ extension VMConfig {
         guard shares.count < before else { throw MacVMError.invalidConfig("没有这个共享目录：\(pathOrTag)") }
     }
 }
+
+extension VMConfig {
+    /// 改第一块网卡的网络模式，保留它的 MAC 地址：客户机按 MAC 认网卡，换了地址网络配置就对不上。
+    /// `interface` 只用于 `bridged`，为 nil 时开机桥接到第一块可桥接的网卡。
+    public mutating func setNetwork(_ mode: NetworkConfig.Mode, interface: String? = nil) {
+        let mac = networks.first?.macAddress
+        let net = NetworkConfig(mode: mode, interface: mode == .bridged ? interface : nil, macAddress: mac)
+        if networks.isEmpty { networks = [net] } else { networks[0] = net }
+    }
+}

@@ -13,6 +13,8 @@ struct MachineDetailView: View {
     /// 磁盘镜像的容量与实际占用；读文件系统，不放在 body 里每次重绘都算。
     @State private var diskSize: (logical: UInt64, physical: UInt64)?
     @State private var growingDisk = false
+    /// 查系统网络配置，不放在 `@State` 的初始值里：视图结构体每次重建都会再算一遍初始值。
+    @State private var bridgeInterfaces: [NetworkAttachments.BridgeInterface] = []
 
     var body: some View {
         let config = model.config(of: vm.name)
@@ -46,6 +48,9 @@ struct MachineDetailView: View {
                 } else {
                     LabeledContent("处理器", value: "\(vm.cpuCount) 核")
                     LabeledContent("内存", value: DisplaySize.format(vm.memorySize))
+                }
+                if let config, let net = config.networks.first {
+                    networkPicker(net)
                 }
                 if let config, config.supportsAudio {
                     Toggle("声音", isOn: Binding(get: { config.audio }, set: { model.setAudio(vm.name, $0) }))
@@ -104,6 +109,7 @@ struct MachineDetailView: View {
         .formStyle(.grouped)
         .acceptsShareDrops(vmName: vm.name, editable: config?.supportsShares == true && (editable || model.canEditSharesLive(vm.name)))
         .task(id: vm) { loadDiskSize(config) }
+        .task { bridgeInterfaces = NetworkAttachments.bridgeInterfaces }
         .onAppear { model.refreshSSHIncluded() }
         .sheet(isPresented: $growingDisk, onDismiss: { loadDiskSize(model.config(of: vm.name)) }) {
             if let config, let diskSize { DiskGrowSheet(vmName: vm.name, config: config, currentSize: diskSize.logical) }
@@ -125,10 +131,35 @@ struct MachineDetailView: View {
 
     private var lockedReason: String? {
         switch vm.state {
-        case .running: "关机后可修改处理器、内存、声音、麦克风与磁盘容量。"
+        case .running: "关机后可修改处理器、内存、网络、声音、麦克风与磁盘容量。"
         case .suspended: "已挂起：继续运行并关机后才能修改。"
         case .stopped: nil
         }
+    }
+
+    /// 选项按本机当前可桥接的网卡列出；配置里的网卡不在其中（如拔掉的扩展坞网口）时也列出，免得选择变成空白。
+    private func networkPicker(_ net: NetworkConfig) -> some View {
+        let current = net.mode == .bridged ? NetworkChoice.bridged(net.interface) : .nat
+        var bridges = bridgeInterfaces.map { (choice: NetworkChoice.bridged($0.identifier), label: "桥接：\($0.name)（\($0.identifier)）") }
+        if case .bridged(let id) = current, !bridges.contains(where: { $0.choice == current }) {
+            bridges.append((current, "桥接：\(id ?? "第一块可桥接的网卡")"))
+        }
+        return Picker("网络", selection: Binding(get: { current }, set: { choice in
+            switch choice {
+            case .nat: model.setNetwork(vm.name, .nat, interface: nil)
+            case .bridged(let id): model.setNetwork(vm.name, .bridged, interface: id)
+            }
+        })) {
+            Text("NAT").tag(NetworkChoice.nat)
+            ForEach(bridges, id: \.choice) { Text($0.label).tag($0.choice) }
+        }
+        .disabled(!editable)
+        .help("桥接让客户机直接接入主机所在的局域网，要先在设置里启用网络辅助程序")
+    }
+
+    private enum NetworkChoice: Hashable {
+        case nat
+        case bridged(String?)
     }
 
     private func header(_ config: VMConfig?) -> some View {

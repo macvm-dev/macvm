@@ -4,7 +4,6 @@ import Security
 /// 读取本进程签名里的 entitlement。
 enum Entitlements {
     static let virtualization = "com.apple.security.virtualization"
-    static let bridgedNetworking = "com.apple.vm.networking"
 
     static func has(_ key: String) -> Bool {
         guard let task = SecTaskCreateFromSelf(nil),

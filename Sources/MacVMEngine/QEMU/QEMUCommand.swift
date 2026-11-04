@@ -5,7 +5,7 @@ import MacVMModel
 
 /// 拼出 qemu-system-aarch64 的参数。设备选择以 Windows ARM64 为准，Linux 同样适用。
 struct QEMUCommand {
-    /// 经 QEMU 用户态网络转发到 Unix socket 的客户机端口：SSH 与客户机代理。
+    /// NAT 下经 QEMU 用户态网络转发到 Unix socket 的客户机端口：SSH 与客户机代理。
     static let forwardedPorts: [UInt32] = [22, AgentProtocol.port]
 
     let bundle: VMBundle
@@ -100,7 +100,7 @@ struct QEMUCommand {
             "-device", "usb-kbd,bus=usb.0",
             "-device", "usb-tablet,bus=usb.0",
             "-device", "virtio-rng-pci",
-            "-device", "virtio-balloon-pci",
+            "-device", "virtio-balloon-pci,free-page-reporting=on",
         ]
 
         for (i, disk) in config.disks.enumerated() {
@@ -124,9 +124,16 @@ struct QEMUCommand {
         }
 
         if let net = config.networks.first {
-            guard net.mode == .nat else { throw MacVMError.unsupported("QEMU 引擎只支持 NAT 网络") }
-            let forwards = Self.forwardedPorts.map { "hostfwd=unix:\(Self.portSocket(bundle, port: $0).path)-:\($0)" }.joined(separator: ",")
-            a += ["-netdev", "user,id=net0,\(forwards)"]
+            switch net.mode {
+            case .nat:
+                let forwards = Self.forwardedPorts.map { "hostfwd=unix:\(Self.portSocket(bundle, port: $0).path)-:\($0)" }.joined(separator: ",")
+                a += ["-netdev", "user,id=net0,\(forwards)"]
+            case .bridged:
+                // `BridgeSession` 的 socket 作为 QEMU 的标准输入交给它：`Process` 只把标准输入输出传给子进程。
+                a += ["-netdev", "dgram,id=net0,local.type=fd,local.str=0"]
+            case .vmnetShared, .vmnetHost:
+                throw MacVMError.unsupported("QEMU 引擎不支持 vmnet 网络")
+            }
             // 固件自带 virtio-net 驱动，不加载网卡的选项 ROM（自带的 QEMU 也没带）。
             a += ["-device", "virtio-net-pci,netdev=net0,romfile=\(net.macAddress.map { ",mac=\($0)" } ?? "")"]
         }

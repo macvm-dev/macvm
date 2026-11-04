@@ -20,8 +20,7 @@ public enum VMStatus {
         let config = try bundle.loadConfig()
         let pid = BundleLock.holder(of: bundle)
         let state: VMSummary.State = pid != nil ? .running : (bundle.hasSavedState ? .suspended : .stopped)
-        let mac = pid == nil ? nil : config.networks.first?.macAddress
-        let ip = mac.flatMap { mac in leases.text.flatMap { DHCPLeases.ipAddress(forMAC: mac, hostname: config.name, in: $0) } }
+        let ip = pid == nil ? nil : GuestAddress.current(bundle, config, hostname: config.name) { leases.text }
         return VMSummary(
             name: config.name, os: config.os, state: state,
             cpuCount: config.cpuCount, memorySize: config.memorySize,
@@ -49,7 +48,7 @@ public enum VMStatus {
         try await poll(timeout: timeout) { BundleLock.holder(of: bundle) == nil }
     }
 
-    /// 等到 DHCP 租约里出现 `bundle` 的 IP 地址；超时返回 nil。
+    /// 等到查得到 `bundle` 的 IP 地址；超时返回 nil。
     public static func waitForIPAddress(_ bundle: VMBundle, timeout: TimeInterval, interval: TimeInterval) async throws -> String? {
         var ip: String?
         _ = try await poll(timeout: timeout, interval: interval) {

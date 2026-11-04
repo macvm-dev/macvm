@@ -5,7 +5,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    @State private var capabilities = HostCapabilities.current()
+    @State private var capabilities = HostCapabilities.current(probeNetworkHelper: false)
     @AppStorage(StatusMenu.visibleKey) private var showsMenuBarExtra = true
 
     var body: some View {
@@ -16,8 +16,8 @@ struct SettingsView: View {
                 LabeledContent("内存", value: DisplaySize.format(capabilities.physicalMemory))
                 capability("Windows 客户机", capabilities.windows)
                 capability("Linux Rosetta", capabilities.rosetta)
-                capability("桥接网络", capabilities.bridgedNetworking)
             }
+            NetworkHelperSection()
             Section("通用") {
                 Toggle("在菜单栏显示", isOn: $showsMenuBarExtra)
             }

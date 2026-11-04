@@ -20,7 +20,7 @@ struct Doctor: AsyncParsableCommand {
         \(mark(c.windows)) Windows 客户机用 VZ 运行（Virtualization.framework PMU 模拟）
         \(mark(c.qemu != nil)) QEMU 引擎\(c.qemu.map { "：" + $0 } ?? "（brew install qemu；安装 Windows 需要）")
         \(mark(c.rosetta)) Linux Rosetta\(c.rosetta ? "" : "（softwareupdate --install-rosetta）")
-        \(mark(c.bridgedNetworking)) 桥接网络（com.apple.vm.networking）\(c.bridgeInterfaces.isEmpty ? "" : "：" + c.bridgeInterfaces.joined(separator: ", "))
+        \(mark(c.bridgedNetworking)) 桥接网络\(c.bridgedNetworking ? "" : "（在 App 的设置里启用网络辅助程序）")\(c.bridgeInterfaces.isEmpty ? "" : "：" + c.bridgeInterfaces.joined(separator: ", "))
         \(mark(c.saveRestore)) 挂起恢复
         虚拟机目录：\(c.libraryPath)
         下载目录：\(c.downloadPath)

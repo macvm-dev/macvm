@@ -115,8 +115,9 @@ public enum RunnerFactory {
     @MainActor
     public static func make(_ bundle: VMBundle, console: ConfigBuilder.Console = .none, display: Bool = false) async throws -> any MachineRunner {
         try await prepare(bundle)
-        return switch try bundle.loadConfig().engine {
-        case .vz: try VZRunner(bundle: bundle, console: console)
+        let config = try bundle.loadConfig()
+        return switch config.engine {
+        case .vz: try VZRunner(bundle: bundle, console: console, bridges: try await BridgeSession.openAll(for: config, bundle: bundle))
         case .qemu: try QEMURunner(bundle: bundle, display: display)
         }
     }

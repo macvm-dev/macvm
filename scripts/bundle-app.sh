@@ -11,12 +11,15 @@ swift build -c "$CONFIG" ${SWIFT_FLAGS:-}
 BIN=.build/$CONFIG
 APP=${APP:-dist/MacVM.app}
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/guest"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/guest" "$APP/Contents/Library/LaunchDaemons"
 
 cp packaging/Info.plist "$APP/Contents/Info.plist"
 cp packaging/icon/Assets.car packaging/icon/AppIcon.icns "$APP/Contents/Resources/"
 cp "$BIN/MacVMApp" "$APP/Contents/MacOS/MacVM"
 cp "$BIN/macvm" "$APP/Contents/Resources/bin/macvm"
+# 网络辅助程序由 App 经 SMAppService 注册成 launchd 守护进程，路径与 plist 里的 BundleProgram 对应。
+cp "$BIN/macvm-netd" "$APP/Contents/MacOS/macvm-netd"
+cp packaging/launchd/cn.barey.macvm.netd.plist "$APP/Contents/Library/LaunchDaemons/"
 # 代理与引导程序是可选产物，缺失时 App 仍可运行，只是相应功能不可用。
 for f in .build/guest/*; do
   [ -f "$f" ] && cp "$f" "$APP/Contents/Resources/guest/"
@@ -41,6 +44,7 @@ sign() { codesign -f "${SIGN_OPTIONS[@]}" -s "$SIGN_IDENTITY" --entitlements "$E
 # 库与辅助程序不带权限。
 sign_plain() { codesign -f "${SIGN_OPTIONS[@]}" -s "$SIGN_IDENTITY" "$1"; }
 sign "$APP/Contents/Resources/bin/macvm"
+sign_plain "$APP/Contents/MacOS/macvm-netd"
 # 公证检查 App 里的每个 Mach-O，放进 macOS 客户机的代理也得重签，不能留着链接器的 ad-hoc 签名。
 for f in "$APP"/Contents/Resources/guest/*; do
   if file -b "$f" | grep -q '^Mach-O'; then sign_plain "$f"; fi

@@ -20,7 +20,8 @@ public final class VZRunner: NSObject, MachineRunner {
         set { stopLatch.onStop = newValue }
     }
 
-    public init(bundle: VMBundle, console: ConfigBuilder.Console = .none) throws {
+    /// `bridges` 是 `BridgeSession.openAll` 为本包配置打开的桥接。
+    init(bundle: VMBundle, console: ConfigBuilder.Console = .none, bridges: [BridgeSession]) throws {
         guard VZVirtualMachine.isSupported else {
             throw MacVMError.unsupported("本机不支持虚拟化（需要 Apple Silicon，且进程签名带 com.apple.security.virtualization）")
         }
@@ -29,7 +30,14 @@ public final class VZRunner: NSObject, MachineRunner {
         config = try bundle.loadConfig()
         var builder = ConfigBuilder(bundle: bundle, config: config)
         builder.console = console
+        BridgeSession.clearAddress(of: bundle)
+        var pending = bridges.makeIterator()
+        builder.openBridge = { _ in
+            guard let session = pending.next() else { throw MacVMError.engine("桥接与配置里的网卡数不符") }
+            return session.fileHandle
+        }
         vzConfiguration = try builder.build()
+        self.bridges = bridges
         virtualMachine = VZVirtualMachine(configuration: vzConfiguration)
         super.init()
         virtualMachine.delegate = self
@@ -38,12 +46,13 @@ public final class VZRunner: NSObject, MachineRunner {
     /// 开机后等代理上线，请它把 virtio-gpu 设为唯一的主显示器、取 `WindowsSupport.displaySize`：
     /// 引导垫片的帧缓冲在 Windows 里是另一块显示器，常被选为主显示器，宿主却看不到它。
     private func fitGuestDisplayAfterBoot() {
-        guard let mac = guestMAC else { return }
+        guard config.networks.first?.macAddress != nil else { return }
+        let bundle = bundle, config = config
         guestDisplayFit = Task.detached {
             let size = WindowsSupport.displaySize
             for _ in 0..<Self.guestDisplayAttempts {
                 guard !Task.isCancelled else { return }
-                if let ip = DHCPLeases.ipAddress(forMAC: mac),
+                if let ip = GuestAddress.current(bundle, config),
                    Self.callAgent(ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
                     return
                 }
@@ -59,9 +68,10 @@ public final class VZRunner: NSObject, MachineRunner {
     /// 客户机切换显示设置要重建桌面，可能耗时数秒。
     nonisolated private static let displaySwitchTimeout = 20
 
-    private var guestMAC: String? { config.networks.first?.macAddress }
-    /// 读 DHCP 租约文件，不要在主线程反复调用。
-    private var guestIP: String? { guestMAC.flatMap { DHCPLeases.ipAddress(forMAC: $0) } }
+    /// 读文件，不要在主线程反复调用。
+    private var guestIP: String? { GuestAddress.current(bundle, config) }
+    /// 开着的桥接，关机时拆掉。
+    private var bridges: [BridgeSession]
 
     public var stateLabel: String { virtualMachine.state.label }
 
@@ -168,10 +178,11 @@ public final class VZRunner: NSObject, MachineRunner {
         case .linux:
             try pressPowerButton()
         case .windows:
-            guard let mac = guestMAC else { return try pressPowerButton() }
+            guard config.networks.first?.macAddress != nil else { return try pressPowerButton() }
+            let bundle = bundle, config = config
             let agent = config.guestAgent, user = config.guestUser
             Task.detached { [weak self] in
-                if let ip = DHCPLeases.ipAddress(forMAC: mac) {
+                if let ip = GuestAddress.current(bundle, config) {
                     if agent, Self.callAgent(ip, .shutdown(reboot: false)) { return }
                     if let user, Self.sshShutdown(user: user, ip: ip) { return }
                 }
@@ -256,7 +267,7 @@ public final class VZRunner: NSObject, MachineRunner {
         return (try? process.run()) != nil
     }
 
-    /// 经 NAT 直连 Windows 客户机的代理发一个请求，返回是否成功。
+    /// 经网络直连 Windows 客户机的代理发一个请求，返回是否成功。
     nonisolated private static func callAgent(_ ip: String, _ request: AgentProtocol.Request, timeout: Int = 3) -> Bool {
         let fd = GuestConnection.tcpConnect(ip, UInt16(AgentProtocol.port))
         guard fd >= 0 else { return false }
@@ -328,7 +339,7 @@ public final class VZRunner: NSObject, MachineRunner {
         throw MacVMError.unsupported("VZ 引擎不支持截屏")
     }
 
-    /// Windows 没有 VZ 能用的 vsock 驱动，改经 NAT 网络连客户机 IP 上的同号 TCP 端口。
+    /// Windows 没有 VZ 能用的 vsock 驱动，改经网络连客户机 IP 上的同号 TCP 端口。
     public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
         if config.os == .windows {
             guard let ip = guestIP else {
@@ -362,6 +373,7 @@ public final class VZRunner: NSObject, MachineRunner {
 
     private func finish(_ reason: MachineStopReason) {
         guestDisplayFit?.cancel()
+        bridges.forEach { $0.close() }
         stopLatch.fire(reason)
     }
 }

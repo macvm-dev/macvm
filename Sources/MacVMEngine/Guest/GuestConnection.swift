@@ -4,7 +4,7 @@ public import MacVMModel
 /// 连到客户机内的 TCP 端口。
 public enum GuestConnection {
     /// 返回连到客户机 `port` 的文件描述符，调用方负责关闭：
-    /// QEMU 引擎经其转发到 Unix socket 的端口；装有代理时经代理转发；否则经 NAT 网络直连客户机 IP。
+    /// QEMU 引擎经其转发到 Unix socket 的端口；装有代理时经代理转发；否则经网络直连客户机 IP。
     public static func open(_ bundle: VMBundle, config: VMConfig, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
         if config.engine == .qemu || config.guestAgent {
             let socket = config.engine == .qemu
