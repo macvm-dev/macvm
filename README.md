@@ -115,8 +115,26 @@ macvm ssh-config --install        # 之后直接 ssh dev
 | 共享目录 | ✓ | — |
 | Windows 声音、挂起 | — | ✓ |
 | Windows 3D 加速、分辨率跟随窗口 | — | ✓（App 自带的 QEMU） |
+| Linux 客户机不用的内存还给 macOS | — | ✓（App 自带的 QEMU） |
 
 虚拟机停止时，可以用 `macvm set <名称> --engine vz|qemu` 或在 App 详情页里切换。注意 Windows 装上 3D 显卡驱动后只能继续用 QEMU 运行。
+
+## 网络连接方式
+
+| 方式 | 说明 |
+| --- | --- |
+| NAT（默认） | 客户机在 Mac 内置的 NAT 网络里，能上网，Mac 能访问客户机，局域网里的其他设备访问不到 |
+| 桥接 | 客户机直接接入 Mac 网卡所在的局域网，从路由器取得地址，局域网里的其他设备可以直接访问它 |
+
+两种引擎都支持桥接。桥接要用到随 App 安装的网络辅助程序：先在 App 的「设置」里启用，再到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM。之后在虚拟机详情页里选择 NAT 或某块网卡的桥接，或者用命令行：
+
+```sh
+macvm set dev --network bridged:en0   # 桥接到 en0；不写网卡时桥接到第一块可桥接的网卡
+macvm set dev --network nat           # 改回 NAT
+macvm doctor                          # 查看辅助程序是否可用、有哪些网卡可以桥接
+```
+
+网络只能在虚拟机关机时修改，MAC 地址保持不变。Windows 只能用 NAT 安装，装好后再改成桥接。更多细节见 [docs/cli.md](docs/cli.md) 的「网络」一节。
 
 ## 数据存放位置
 
@@ -137,6 +155,9 @@ macvm ssh-config --install        # 之后直接 ssh dev
 
 **Windows 为什么要用 QEMU 部署？**
 MacVM 的无人值守部署流程是在 QEMU 下完成的。装好之后可以换成 VZ 引擎日常使用，资源占用更低。
+
+**为什么 VZ 下虚拟机占用的内存只涨不降？**
+这是 Virtualization.framework 的限制：客户机用过的内存，即使之后释放了，在虚拟机关机前也不会还给 macOS，它的内存气球同样收不回来。想让占用跟着客户机的实际用量走，可以把 Linux 虚拟机切到 QEMU 引擎（需要 App 自带的 QEMU）：客户机释放的内存几秒内就还给 macOS；装了客户机代理时，还会每分钟修剪多余的页缓存。较早创建的虚拟机要先用 `macvm agent install <名称>` 更新代理。用 VZ 时，给虚拟机分配够用的内存即可，不要分得过多。
 
 **能同时运行几台 macOS 虚拟机？**
 受 macOS 许可协议和 Virtualization.framework 的限制，同一时间最多运行两台 macOS 客户机；Linux 和 Windows 没有这个限制。
