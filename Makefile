@@ -8,7 +8,7 @@ BIN           := .build/$(CONFIG)
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
 SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
-.PHONY: build sign test test-swift test-guest lint lint-guest agent boot qemu app release clean
+.PHONY: build sign run test test-swift test-guest lint lint-guest agent boot qemu app release clean
 
 build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
@@ -17,6 +17,12 @@ build:
 sign: build
 	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/macvm
 	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/MacVMApp
+
+# 按 CONFIG（默认 debug）组装 App 并在前台运行，日志打在终端，Ctrl-C 退出。
+# 组装进 .build 而不是 dist，不覆盖发布产物；直接运行可执行文件而不用 open，免得 LaunchServices 转去激活已在运行的同 bundle ID 的 App。
+run:
+	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+	.build/MacVM.app/Contents/MacOS/MacVM
 
 test: test-swift test-guest
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 组装并签名 dist/MacVM.app。环境变量：CONFIG、SIGN_IDENTITY、ENTITLEMENTS、SWIFT_FLAGS（swift build 的额外参数）、PROVISIONING_PROFILE（可选）。
+# 组装并签名 App。环境变量：APP（输出路径，默认 dist/MacVM.app）、CONFIG、SIGN_IDENTITY、ENTITLEMENTS、SWIFT_FLAGS（swift build 的额外参数）、PROVISIONING_PROFILE（可选）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG=${CONFIG:-release}
@@ -9,7 +9,7 @@ ENTITLEMENTS=${ENTITLEMENTS:-packaging/entitlements/base.entitlements}
 # shellcheck disable=SC2086 # SWIFT_FLAGS 是多个参数
 swift build -c "$CONFIG" ${SWIFT_FLAGS:-}
 BIN=.build/$CONFIG
-APP=dist/MacVM.app
+APP=${APP:-dist/MacVM.app}
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/guest"
 
