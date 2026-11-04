@@ -190,6 +190,8 @@ struct MachineDetailView: View {
             .fixedSize()
             .help("更多操作")
         }
+        // 按钮按理想宽度排，空间不够时由左侧的名字截断。
+        .fixedSize()
     }
 
     private func revealInFinder() {
