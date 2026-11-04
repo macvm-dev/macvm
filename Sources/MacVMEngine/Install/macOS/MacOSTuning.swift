@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import MacVMModel
 
 /// 经 SSH 调整 macOS 客户机里的系统设置，降低空闲时的 CPU、磁盘与内存占用。
