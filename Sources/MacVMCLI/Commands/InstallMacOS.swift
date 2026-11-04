@@ -42,6 +42,7 @@ struct InstallMacOS: AsyncParsableCommand {
         try await Output.run(json: global.json, human: Self.render) {
             if let user { try GuestAccount.validate(user: user) }
             if let password { try GuestAccount.validate(password: password) }
+            try Create.validateDefaultUser(user)
             let user = user ?? NSUserName()
             guard let (width, height) = Display.parse(resolution) else {
                 throw MacVMError.invalidConfig("分辨率格式应为 宽x高：\(resolution)")

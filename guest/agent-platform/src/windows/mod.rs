@@ -12,7 +12,7 @@ pub use display::set_display;
 pub use dpi::set_display_scale;
 pub use gpu::{gpu_driver_package_is, install_gpu_driver, replace_gpu_driver};
 pub use exec::spawn;
-pub use listener::{Conn, Listener, agent_token, set_read_timeout, shutdown_write};
+pub use listener::{Conn, Listener, agent_token, peer_closed, set_read_timeout, shutdown_write};
 pub use system::*;
 
 /// virtio-gpu 的 PCI 厂商与设备号，出现在适配器的 PnP ID 与硬件号里。

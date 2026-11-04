@@ -7,7 +7,9 @@ import SwiftUI
 /// 网络辅助程序 macvm-netd 的启用与停用。只有 App 能注册它：`SMAppService` 按主 bundle 找 launchd plist。
 struct NetworkHelperSection: View {
     @State private var status = Self.service.status
-    @State private var running = false
+    /// 辅助进程是否响应 ping；未启用或首次查询还没完成时为 nil。
+    @State private var running: Bool?
+    @State private var confirmingReenable = false
     @State private var error: String?
 
     private static var service: SMAppService { .daemon(plistName: NetworkHelper.launchdPlistName) }
@@ -31,7 +33,7 @@ struct NetworkHelperSection: View {
                     case .requiresApproval:
                         Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
                     case .enabled:
-                        if !running { Button("重新启用", action: reenable) }
+                        if running == false { Button("重新启用") { confirmingReenable = true } }
                         Button("停用", action: disable)
                     default:
                         EmptyView()
@@ -49,6 +51,11 @@ struct NetworkHelperSection: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .confirmationDialog("重新启用网络辅助程序？", isPresented: $confirmingReenable) {
+            Button("重新启用", action: reenable)
+        } message: {
+            Text("辅助程序会先停用再启用，正在使用桥接网络的虚拟机会断网。")
+        }
         .task { await refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await refresh() }
@@ -57,7 +64,7 @@ struct NetworkHelperSection: View {
 
     private var statusText: String {
         switch status {
-        case .enabled: running ? "已启用" : "已启用，未响应"
+        case .enabled: running == false ? "已启用，未响应" : "已启用"
         case .requiresApproval: "等待在系统设置里允许"
         case .notRegistered: "未启用"
         case .notFound: Self.bundled ? "未启用" : "未打包运行，不可用"
@@ -67,7 +74,7 @@ struct NetworkHelperSection: View {
 
     private func refresh() async {
         status = Self.service.status
-        running = status == .enabled ? await Task.detached { HostCapabilities.networkHelperRunning() }.value : false
+        running = status == .enabled ? await Task.detached { HostCapabilities.networkHelperRunning() }.value : nil
     }
 
     private func enable() {
@@ -84,7 +91,10 @@ struct NetworkHelperSection: View {
     private func reenable() {
         error = nil
         Task {
-            try? await Self.service.unregister()
+            do { try await Self.service.unregister() } catch {
+                self.error = "重新启用失败：\(error.localizedDescription)"
+                return await refresh()
+            }
             enable()
         }
     }

@@ -42,6 +42,7 @@ struct DHCPLeasesTests {
         let beforeExpiry = Date(timeIntervalSince1970: 0x6FFF_FFFF)
         #expect(DHCPLeases.ipAddress(forMAC: "02:00:00:0a:0b:0f", hostname: "deb", in: duid, now: beforeExpiry) == "192.168.64.20")
         #expect(DHCPLeases.ipAddress(forMAC: "02:00:00:0a:0b:0f", hostname: "deb", in: duid, now: Date(timeIntervalSince1970: 0x7000_0001)) == nil)
+        #expect(DHCPLeases.ipAddress(forMAC: "02:00:00:0a:0b:0f", hostname: "DEB", in: duid, now: beforeExpiry) == "192.168.64.20")
         #expect(DHCPLeases.ipAddress(forMAC: "02:00:00:0a:0b:0f", in: duid) == nil)
     }
 

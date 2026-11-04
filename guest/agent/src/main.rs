@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -310,26 +310,27 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
 
     let writer = Arc::new(Mutex::new(conn.try_clone()?));
     let mut pumps = Vec::new();
-    let mut input: Option<File>;
+    let input: File;
     let resize: Option<Box<dyn Fn(u16, u16) + Send + Sync>>;
     let is_pty;
     match spawned.io {
         SpawnedIo::Pty { input: pty_in, output, resize: r } => {
             pumps.push(pump_output(output, FrameKind::Stdout, writer.clone()));
-            input = Some(pty_in);
+            input = pty_in;
             resize = Some(r);
             is_pty = true;
         }
         SpawnedIo::Pipes { stdin, stdout, stderr } => {
             pumps.push(pump_output(stdout, FrameKind::Stdout, writer.clone()));
             pumps.push(pump_output(stderr, FrameKind::Stderr, writer.clone()));
-            input = Some(stdin);
+            input = stdin;
             resize = None;
             is_pty = false;
         }
     }
 
     let hangup = spawned.child.hangup().ok();
+    let stdin = spawn_stdin_writer(input, is_pty);
     // 宿主输入：在独立线程读帧，连接关闭使它结束。宿主收到 exit 帧之前不关连接，所以那之前读到结束就是宿主已断开：
     // 挂断子进程，否则不读不写的子进程会连同输出泵一直留着。
     let mut reader = conn;
@@ -337,20 +338,13 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
         while let Ok(Some((kind, payload))) = proto::read_frame(&mut reader) {
             match kind {
                 FrameKind::Stdin => {
-                    if let Some(w) = input.as_mut()
-                        && w.write_all(&payload).is_err()
-                    {
-                        input = None;
+                    if !forward_stdin(&stdin, &reader, StdinChunk::Data(payload)) {
+                        break;
                     }
                 }
                 FrameKind::StdinEof => {
-                    // 终端没有半关闭，发送 EOT 让行规程向程序报告文件结束。
-                    if is_pty {
-                        if let Some(w) = input.as_mut() {
-                            let _ = w.write_all(&[4]);
-                        }
-                    } else {
-                        input = None;
+                    if !forward_stdin(&stdin, &reader, StdinChunk::Eof) {
+                        break;
                     }
                 }
                 FrameKind::Resize => {
@@ -370,6 +364,8 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
     for p in pumps {
         let _ = p.join();
     }
+    // 先释放子进程再发 exit 帧：宿主收到后关连接，输入线程随即调用的挂断函数此时已不起作用，不会误伤留在后台的进程。
+    drop(spawned.child);
     let status = ExitStatus { code: exit.code, signal: exit.signal };
     {
         let mut w = writer.lock().unwrap();
@@ -380,6 +376,64 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
     drop(input_thread);
     Ok(())
 }
+
+enum StdinChunk {
+    Data(Vec<u8>),
+    Eof,
+}
+
+/// 在独立线程把宿主输入写给子进程：子进程不读输入时写会阻塞，读帧的线程不能因此察觉不到宿主断开。
+/// 写失败后丢弃之后的输入。
+fn spawn_stdin_writer(input: File, is_pty: bool) -> mpsc::SyncSender<StdinChunk> {
+    let (tx, rx) = mpsc::sync_channel::<StdinChunk>(STDIN_QUEUE);
+    thread::spawn(move || {
+        let mut input = Some(input);
+        for chunk in rx {
+            match chunk {
+                StdinChunk::Data(data) => {
+                    if let Some(w) = input.as_mut()
+                        && w.write_all(&data).is_err()
+                    {
+                        input = None;
+                    }
+                }
+                // 终端没有半关闭，发送 EOT 让行规程向程序报告文件结束。
+                StdinChunk::Eof if is_pty => {
+                    if let Some(w) = input.as_mut() {
+                        let _ = w.write_all(&[4]);
+                    }
+                }
+                StdinChunk::Eof => input = None,
+            }
+        }
+    });
+    tx
+}
+
+/// 写 stdin 的线程积压的输入块上限；积满时读帧的线程停下来，宿主那端随之受阻。
+const STDIN_QUEUE: usize = 16;
+
+/// 交给写 stdin 的线程；队列满时等它腾出位置，其间宿主断开则返回 false。
+/// 等待间隔从短到长：子进程读得比宿主送得慢时，腾出位置后要尽快补上，吞吐才不被等待间隔卡住。
+fn forward_stdin(stdin: &mpsc::SyncSender<StdinChunk>, conn: &Conn, mut chunk: StdinChunk) -> bool {
+    let mut pause = Duration::from_millis(1);
+    loop {
+        match stdin.try_send(chunk) {
+            Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => return true,
+            Err(mpsc::TrySendError::Full(back)) => {
+                if platform::peer_closed(conn) {
+                    return false;
+                }
+                chunk = back;
+                thread::sleep(pause);
+                pause = (pause * 2).min(STDIN_MAX_PAUSE);
+            }
+        }
+    }
+}
+
+/// 队列满时两次检查之间最长的间隔，也是宿主断开后最晚多久察觉。
+const STDIN_MAX_PAUSE: Duration = Duration::from_millis(100);
 
 /// 把子进程输出转成帧。PTY 主端在子进程及其后代都退出后返回 EIO，视为结束。
 fn pump_output(mut source: File, kind: FrameKind, writer: Arc<Mutex<Conn>>) -> thread::JoinHandle<()> {

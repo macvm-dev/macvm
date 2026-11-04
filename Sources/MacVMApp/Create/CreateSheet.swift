@@ -216,8 +216,11 @@ struct CreateSheet: View {
         default: os == .macOS || os == .windows
         }
     }
-    /// 用户名留空时用主机用户名，密码留空时按系统默认处理，都不另做检查。
+    /// 用户名留空时用主机用户名，它也要合规；密码留空时按系统默认处理，不另做检查。
     private var accountProblem: String? {
+        if user.isEmpty, (try? GuestAccount.validate(user: NSUserName())) == nil {
+            return "主机用户名 \(NSUserName()) 不能用作客户机登录用户，请填写用户名"
+        }
         do {
             if !user.isEmpty { try GuestAccount.validate(user: user) }
             if !password.isEmpty { try GuestAccount.validate(password: password) }

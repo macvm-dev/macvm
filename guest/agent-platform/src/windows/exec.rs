@@ -8,11 +8,12 @@ use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 use windows_sys::Win32::System::Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole};
+use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW, TerminateJobObject};
 use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::Threading::{
-    CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
     INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-    PROCESS_INFORMATION, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+    PROCESS_INFORMATION, ResumeThread, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 use super::{CREATE_NO_WINDOW, wide};
@@ -41,32 +42,81 @@ fn spawn_pipes(o: &ExecOptions) -> io::Result<Spawned> {
     if let Some(cwd) = o.cwd { cmd.current_dir(cwd); }
     for (k, v) in o.env { cmd.env(k, v); }
     let mut child = cmd.spawn()?;
+    // shortcut: std 的 Command 不能挂起创建，子进程在加入作业前的瞬间启动的进程挂断不到；要补时改用 CreateProcessW 挂起创建。
+    let group = {
+        use std::os::windows::io::AsRawHandle;
+        Group::new(child.as_raw_handle() as HANDLE)
+    };
     let stdin = File::from(OwnedHandle::from(child.stdin.take().unwrap()));
     let stdout = File::from(OwnedHandle::from(child.stdout.take().unwrap()));
     let stderr = File::from(OwnedHandle::from(child.stderr.take().unwrap()));
-    Ok(Spawned { io: SpawnedIo::Pipes { stdin, stdout, stderr }, child: Box::new(PipeChild(child)) })
+    Ok(Spawned { io: SpawnedIo::Pipes { stdin, stdout, stderr }, child: Box::new(PipeChild { child, group }) })
 }
 
-struct PipeChild(Child);
+struct PipeChild {
+    child: Child,
+    group: Group,
+}
 
 impl ChildProcess for PipeChild {
     fn wait(&mut self) -> io::Result<Exit> {
-        let status = self.0.wait()?;
+        let status = self.child.wait()?;
         Ok(Exit { code: status.code().unwrap_or(1), signal: None })
     }
 
     fn hangup(&self) -> io::Result<Box<dyn Fn() + Send + Sync>> {
         use std::os::windows::io::AsHandle;
-        Ok(terminator(self.0.as_handle().try_clone_to_owned()?))
+        self.group.terminator(self.child.as_handle().try_clone_to_owned()?)
     }
 }
 
-/// 结束 `process` 本身，不含它启动的进程。句柄在闭包里一直有效，进程退出后再调用只会失败、不误伤别的进程。
-fn terminator(process: OwnedHandle) -> Box<dyn Fn() + Send + Sync> {
-    Box::new(move || {
-        // SAFETY: 进程句柄由闭包持有。
-        unsafe { TerminateProcess(raw(&process), 1) };
-    })
+/// 子进程和它启动的进程所在的作业；建不成作业时为空，挂断只结束子进程本身。
+/// 作业不设随句柄关闭而结束：exec 结束后留在后台的进程照常运行。
+struct Group {
+    job: Option<Arc<OwnedHandle>>,
+    /// 子进程对象已释放。挂断函数持锁检查，释放后不再结束作业里留在后台的进程。
+    released: Arc<Mutex<bool>>,
+}
+
+impl Group {
+    fn new(process: HANDLE) -> Self {
+        // SAFETY: 无名作业、默认安全属性；成功后句柄归 OwnedHandle。进程句柄在调用期间有效。
+        let job = unsafe {
+            let job = CreateJobObjectW(ptr::null(), ptr::null());
+            if job.is_null() {
+                None
+            } else {
+                let job = OwnedHandle::from_raw_handle(job as _);
+                (AssignProcessToJobObject(raw(&job), process) != 0).then(|| Arc::new(job))
+            }
+        };
+        Self { job, released: Arc::new(Mutex::new(false)) }
+    }
+
+    /// 挂断函数：结束作业里的所有进程，没有作业时结束 `process`。进程句柄在闭包里一直有效，进程退出后再调用不误伤别的进程。
+    fn terminator(&self, process: OwnedHandle) -> io::Result<Box<dyn Fn() + Send + Sync>> {
+        let job = self.job.clone();
+        let released = self.released.clone();
+        Ok(Box::new(move || {
+            let released = released.lock().unwrap();
+            if *released {
+                return;
+            }
+            // SAFETY: 作业与进程句柄由闭包持有。
+            unsafe {
+                match &job {
+                    Some(job) => TerminateJobObject(raw(job), 1),
+                    None => TerminateProcess(raw(&process), 1),
+                }
+            };
+        }))
+    }
+}
+
+impl Drop for Group {
+    fn drop(&mut self) {
+        *self.released.lock().unwrap() = true;
+    }
 }
 
 /// 伪控制台句柄，在调整尺寸的闭包与等待进程的一方之间共享；进程退出后关闭。
@@ -92,7 +142,7 @@ fn spawn_pty(o: &ExecOptions, cols: u16, rows: u16) -> io::Result<Spawned> {
     }
     let console = Arc::new(PseudoConsole(Mutex::new(Some(hpc))));
 
-    let process = match create_process_with_console(o, hpc) {
+    let (process, group) = match create_process_with_console(o, hpc) {
         Ok(p) => p,
         Err(e) => {
             // SAFETY: 进程没起来，伪控制台无人使用。
@@ -110,13 +160,14 @@ fn spawn_pty(o: &ExecOptions, cols: u16, rows: u16) -> io::Result<Spawned> {
     });
     Ok(Spawned {
         io: SpawnedIo::Pty { input: File::from(pty_in_write), output: File::from(pty_out_read), resize },
-        child: Box::new(PtyChild { process, console }),
+        child: Box::new(PtyChild { process, console, group }),
     })
 }
 
 struct PtyChild {
     process: OwnedHandle,
     console: Arc<PseudoConsole>,
+    group: Group,
 }
 
 impl ChildProcess for PtyChild {
@@ -137,11 +188,12 @@ impl ChildProcess for PtyChild {
     }
 
     fn hangup(&self) -> io::Result<Box<dyn Fn() + Send + Sync>> {
-        Ok(terminator(self.process.try_clone()?))
+        self.group.terminator(self.process.try_clone()?)
     }
 }
 
-fn create_process_with_console(o: &ExecOptions, hpc: HPCON) -> io::Result<OwnedHandle> {
+/// 挂起创建，加入作业后再放行，子进程启动的进程都在作业里。
+fn create_process_with_console(o: &ExecOptions, hpc: HPCON) -> io::Result<(OwnedHandle, Group)> {
     let mut attr_size = 0usize;
     // SAFETY: 第一次调用只查询所需大小，按约定返回失败。
     unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &mut attr_size) };
@@ -172,7 +224,7 @@ fn create_process_with_console(o: &ExecOptions, hpc: HPCON) -> io::Result<OwnedH
             ptr::null(),
             ptr::null(),
             0,
-            EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
             env.as_ptr() as *const _,
             cwd.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
             &startup.StartupInfo,
@@ -180,8 +232,17 @@ fn create_process_with_console(o: &ExecOptions, hpc: HPCON) -> io::Result<OwnedH
         );
         DeleteProcThreadAttributeList(attrs);
         if created == 0 { return Err(io::Error::last_os_error()) }
+        let process = OwnedHandle::from_raw_handle(info.hProcess as _);
+        let group = Group::new(info.hProcess);
+        let resumed = ResumeThread(info.hThread) != u32::MAX;
+        let err = io::Error::last_os_error();
         CloseHandle(info.hThread);
-        Ok(OwnedHandle::from_raw_handle(info.hProcess as _))
+        if !resumed {
+            // 放行失败时进程会一直挂起，等它退出的一方永远等不到。
+            TerminateProcess(info.hProcess, 1);
+            return Err(err);
+        }
+        Ok((process, group))
     }
 }
 

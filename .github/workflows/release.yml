@@ -32,6 +32,8 @@ jobs:
           else
             version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)-dev
           fi
+          # 客户机程序的 Cargo 版本号要求完整的 x.y.z。
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "版本号须为 x.y.z：$version" >&2; exit 1; }
           plutil -replace CFBundleShortVersionString -string "$version" packaging/Info.plist
           plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" packaging/Info.plist
           sed -i '' -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$version\"/" guest/Cargo.toml

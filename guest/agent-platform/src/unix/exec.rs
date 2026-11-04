@@ -88,7 +88,7 @@ pub fn spawn(o: &ExecOptions) -> io::Result<Spawned> {
 
 struct UnixChild {
     child: Child,
-    /// 子进程尚未回收。挂断函数持锁发信号，`wait` 持锁改成 false 后才回收，进程号不会在发信号时已被复用。
+    /// 子进程尚未回收。挂断函数持锁发信号，释放时持锁改成 false 后才回收，进程号不会在发信号时已被复用。
     unreaped: Arc<Mutex<bool>>,
 }
 
@@ -99,15 +99,15 @@ impl UnixChild {
 }
 
 impl ChildProcess for UnixChild {
+    /// 只等不收：退出的子进程留作僵尸直到本对象释放，期间进程号和进程组号不会被复用，
+    /// 仍持有输出的后台后代在宿主断开时还能被挂断。
     fn wait(&mut self) -> io::Result<Exit> {
-        use std::os::unix::process::ExitStatusExt;
-        wait_exited(self.child.id())?;
-        *self.unreaped.lock().unwrap() = false;
-        let status = self.child.wait()?;
-        Ok(match (status.code(), status.signal()) {
-            (Some(code), _) => Exit { code, signal: None },
-            (None, Some(sig)) => Exit { code: 128 + sig, signal: Some(sig) },
-            _ => Exit { code: 1, signal: None },
+        let info = wait_exited(self.child.id())?;
+        // SAFETY: waitid 以 WEXITED 返回成功时 si_status 有效。
+        let status = unsafe { info.si_status() };
+        Ok(match info.si_code {
+            libc::CLD_KILLED | libc::CLD_DUMPED => Exit { code: 128 + status, signal: Some(status) },
+            _ => Exit { code: status, signal: None },
         })
     }
 
@@ -125,14 +125,22 @@ impl ChildProcess for UnixChild {
     }
 }
 
+/// 只回收已退出的子进程，不等：没走到 `wait` 就释放时（如宿主在应答前断开）不能卡住调用方。
+impl Drop for UnixChild {
+    fn drop(&mut self) {
+        *self.unreaped.lock().unwrap() = false;
+        let _ = self.child.try_wait();
+    }
+}
+
 /// 等子进程退出但不回收它。
-fn wait_exited(pid: libc::id_t) -> io::Result<()> {
+fn wait_exited(pid: libc::id_t) -> io::Result<libc::siginfo_t> {
     loop {
         // SAFETY: siginfo_t 是普通 C 结构体，全零是合法值。
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
         // SAFETY: info 指向本地变量；WNOWAIT 让子进程留待 `Child::wait` 回收。
         if unsafe { libc::waitid(libc::P_PID, pid, &mut info, libc::WEXITED | libc::WNOWAIT) } == 0 {
-            return Ok(());
+            return Ok(info);
         }
         let err = io::Error::last_os_error();
         if err.kind() != io::ErrorKind::Interrupted {
@@ -254,4 +262,38 @@ fn resize(pty: &File, cols: u16, rows: u16) {
     let ws = libc::winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 };
     // SAFETY: 对 PTY 主端设置窗口大小。
     unsafe { libc::ioctl(pty.as_raw_fd(), libc::TIOCSWINSZ as _, &ws) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    fn run(argv: &[&str]) -> Spawned {
+        let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
+        spawn(&ExecOptions { argv: &argv, cwd: None, env: &[], tty: None, user: None, default_user: None }).unwrap()
+    }
+
+    #[test]
+    fn wait_reports_exit_code_and_signal() {
+        let mut exited = run(&["sh", "-c", "exit 3"]);
+        let exit = exited.child.wait().unwrap();
+        assert_eq!((exit.code, exit.signal), (3, None));
+
+        let mut killed = run(&["sh", "-c", "kill -9 $$"]);
+        let exit = killed.child.wait().unwrap();
+        assert_eq!((exit.code, exit.signal), (128 + 9, Some(9)));
+    }
+
+    #[test]
+    fn hangup_after_wait_reaches_background_descendants() {
+        let mut spawned = run(&["sh", "-c", "sleep 100 &"]);
+        let SpawnedIo::Pipes { mut stdout, .. } = spawned.io else { panic!("expected pipes") };
+        let hangup = spawned.child.hangup().unwrap();
+        spawned.child.wait().unwrap();
+        hangup();
+        // 后台的 sleep 被挂断后输出管道才会结束。
+        let mut rest = Vec::new();
+        stdout.read_to_end(&mut rest).unwrap();
+    }
 }

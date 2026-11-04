@@ -53,7 +53,7 @@ pub struct Exit {
 
 pub trait ChildProcess: Send {
     fn wait(&mut self) -> io::Result<Exit>;
-    /// 返回可在任意线程调用的挂断函数，宿主断开时用它结束子进程。`wait` 返回之后再调用不起作用。
+    /// 返回可在任意线程调用的挂断函数，宿主断开时用它结束子进程。本对象释放后再调用不起作用。
     fn hangup(&self) -> io::Result<Box<dyn Fn() + Send + Sync>>;
 }
 

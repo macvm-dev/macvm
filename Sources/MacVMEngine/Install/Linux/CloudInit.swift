@@ -134,7 +134,6 @@ public enum CloudInit {
     }
 
     /// 虚拟机名里主机名不认的字符（`.` `_`）换成 `-`，去掉首尾的 `-`，大小写不变；什么都不剩时用 `fallback`。
-    /// 只含字母、数字与 `-` 的名字须原样保留：按主机名找 DHCP 租约时用的是 `VMConfig.name`。
     static func hostname(for name: String, fallback: String) -> String {
         let mapped = String(name.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }.prefix(63))
         let trimmed = mapped.trimmingCharacters(in: CharacterSet(charactersIn: "-"))

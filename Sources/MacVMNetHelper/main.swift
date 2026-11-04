@@ -91,6 +91,7 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate, Sendable {
 
 /// 只接受与本程序同在一个 App 包里的 App 主程序与 `macvm` CLI：取它们各自的指定要求（designated requirement），
 /// 正式签名时固定 identifier 与 Team ID，ad-hoc 签名时固定 cdhash。一个也取不到时拒绝所有连接。
+/// 包里的文件可能被换成别人签名的程序，本程序正式签名时每条要求还须满足本程序自己的 Team ID。
 func clientRequirement() -> String {
     var code: SecCode?
     var staticCode: SecStaticCode?
@@ -104,8 +105,18 @@ func clientRequirement() -> String {
         guard app.pathComponents.count > 1 else { return "never" }
         app.deleteLastPathComponent()
     }
+    guard let signing = signingInformation(of: staticCode) else { return "never" }
+    let team = (signing[kSecCodeInfoTeamIdentifier as String] as? String)
+        .map { " and anchor apple generic and certificate leaf[subject.OU] = \"\($0)\"" } ?? ""
     let requirements = [app, app.appending(path: "Contents/Resources/bin/macvm")].compactMap(designatedRequirement(of:))
-    return requirements.isEmpty ? "never" : requirements.map { "(\($0))" }.joined(separator: " or ")
+    return requirements.isEmpty ? "never" : requirements.map { "((\($0))\(team))" }.joined(separator: " or ")
+}
+
+/// 取不到时为 nil；ad-hoc 签名时其中没有 Team ID。
+func signingInformation(of code: SecStaticCode) -> [String: Any]? {
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess else { return nil }
+    return info as? [String: Any]
 }
 
 func designatedRequirement(of url: URL) -> String? {

@@ -45,6 +45,19 @@ pub fn shutdown_write(conn: &Conn) {
     unsafe { libc::shutdown(conn.as_raw_fd(), libc::SHUT_WR) };
 }
 
+/// 宿主已关闭连接或连接出错，不等待；连接里还有没读的数据时也能察觉。
+pub fn peer_closed(conn: &Conn) -> bool {
+    use std::os::fd::AsRawFd;
+    // Linux 上对端关闭只报 POLLRDHUP；macOS 没有它，要关注 POLLIN 才会以 POLLHUP 报告。
+    #[cfg(target_os = "linux")]
+    let (events, closed) = (libc::POLLRDHUP, libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL);
+    #[cfg(target_os = "macos")]
+    let (events, closed) = (libc::POLLIN, libc::POLLHUP | libc::POLLERR | libc::POLLNVAL);
+    let mut fd = libc::pollfd { fd: conn.as_raw_fd(), events, revents: 0 };
+    // SAFETY: fd 指向本地变量，只查询一个描述符。
+    unsafe { libc::poll(&mut fd, 1, 0) > 0 && fd.revents & closed != 0 }
+}
+
 /// 宿主经 vsock 连入。Linux 上没有 virtio vsock 设备（QEMU 引擎）时改为监听 TCP：用户态网络把宿主的 Unix socket
 /// 转发到这个端口，宿主以默认网关的地址出现；桥接网络下宿主直连客户机地址。TCP 连接按来源交出 `Origin`。
 /// 有 vsock 设备时不开 TCP。
@@ -224,4 +237,25 @@ pub fn set_read_timeout(conn: &Conn, timeout: Option<std::time::Duration>) -> io
         libc::setsockopt(conn.as_raw_fd(), libc::SOL_SOCKET, libc::SO_RCVTIMEO, (&tv as *const libc::timeval).cast(), std::mem::size_of::<libc::timeval>() as libc::socklen_t)
     };
     if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+}
+
+#[cfg(test)]
+mod peer_closed_tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::{TcpListener, TcpStream};
+    use std::os::fd::OwnedFd;
+
+    #[test]
+    fn sees_close_behind_unread_data() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut host = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let conn = File::from(OwnedFd::from(listener.accept().unwrap().0));
+        host.write_all(&[1; 4096]).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!peer_closed(&conn));
+        drop(host);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(peer_closed(&conn));
+    }
 }

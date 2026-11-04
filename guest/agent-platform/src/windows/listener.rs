@@ -9,6 +9,15 @@ pub fn shutdown_write(conn: &Conn) {
     let _ = conn.shutdown(std::net::Shutdown::Write);
 }
 
+/// 宿主已关闭连接或连接出错，不等待；连接里还有没读的数据时也能察觉。
+pub fn peer_closed(conn: &Conn) -> bool {
+    use std::os::windows::io::AsRawSocket;
+    use windows_sys::Win32::Networking::WinSock::{POLLERR, POLLHUP, POLLNVAL, POLLRDNORM, WSAPOLLFD, WSAPoll};
+    let mut fd = WSAPOLLFD { fd: conn.as_raw_socket() as _, events: POLLRDNORM, revents: 0 };
+    // SAFETY: fd 指向本地变量，只查询一个套接字。
+    unsafe { WSAPoll(&mut fd, 1, 0) > 0 && fd.revents & (POLLHUP | POLLERR | POLLNVAL) != 0 }
+}
+
 /// Windows 客户机经 TCP 提供服务：QEMU 引擎没有 vsock，用户态网络把宿主的 Unix socket 转发到这个端口；
 /// VZ 引擎下宿主直连客户机 NAT 地址。这两种情况下宿主以默认网关的地址出现；桥接网络下宿主直连客户机地址。
 /// 连接按来源交出 `Origin`。

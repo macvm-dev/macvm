@@ -12,7 +12,7 @@ public enum DHCPLeases {
     /// 租约表全文；文件不存在（从未有客户机走过内置 DHCP）时为 nil。
     static func read() -> String? { try? String(contentsOfFile: defaultPath, encoding: .utf8) }
 
-    /// 优先按 MAC 匹配。客户机若用 DUID 作客户端标识，租约里没有 MAC，再按 `hostname` 匹配；
+    /// 优先按 MAC 匹配。客户机若用 DUID 作客户端标识，租约里没有 MAC，再按 `hostname` 不区分大小写地匹配；
     /// 主机名可能被已删除的同名虚拟机用过，所以这一步只认 `now` 时仍未过期的租约。
     /// 同一键有多条租约时取 lease 字段（到期时间）最大的那条。
     public static func ipAddress(forMAC mac: String, hostname: String? = nil, in text: String, now: Date = Date()) -> String? {
@@ -21,7 +21,7 @@ public enum DHCPLeases {
         if let hit = newest(leases.filter { $0.hardware.map(normalize) == wanted }) { return hit }
         guard let hostname else { return nil }
         let current = UInt64(now.timeIntervalSince1970)
-        return newest(leases.filter { $0.name == hostname && $0.lease > current })
+        return newest(leases.filter { $0.name?.caseInsensitiveCompare(hostname) == .orderedSame && $0.lease > current })
     }
 
     private struct Lease {
