@@ -67,20 +67,36 @@ jobs:
           key="$RUNNER_TEMP/notary-key.p8"
           python3 - "$key" <<'EOF'
           import base64, binascii, os, re, sys, textwrap
-          raw = os.environ["NOTARY_KEY_P8"].replace("\\n", "\n").replace("\r", "").strip()
-          if "BEGIN" not in raw:
-              try:
-                  decoded = base64.b64decode(raw).decode()
-              except (binascii.Error, UnicodeDecodeError):
-                  decoded = ""
-              if "BEGIN" in decoded:
-                  raw = decoded
-          match = re.search(r"-----BEGIN [A-Z ]+-----(.*?)-----END [A-Z ]+-----", raw, re.S)
-          body = re.sub(r"\s", "", match.group(1) if match else raw)
-          try:
-              base64.b64decode(body, validate=True)
-          except binascii.Error:
-              sys.exit("NOTARY_KEY_P8 不是有效的 .p8 密钥")
+          secret = os.environ["NOTARY_KEY_P8"]
+
+          def pem_body(text):
+              """返回密钥正文（DER 的 base64），认不出时返回 None。"""
+              text = text.replace("\\n", "\n").replace("\r", "").strip().strip('"').strip("'")
+              match = re.search(r"-----BEGIN [A-Z ]+-----(.*?)-----END [A-Z ]+-----", text, re.S)
+              if match:
+                  return re.sub(r"\s", "", match.group(1))
+              compact = re.sub(r"\s", "", text)
+              for decode in (base64.b64decode, base64.urlsafe_b64decode):
+                  try:
+                      data = decode(compact + "=" * (-len(compact) % 4))
+                  except (binascii.Error, ValueError):
+                      continue
+                  try:
+                      inner = pem_body(data.decode())
+                      if inner:
+                          return inner
+                  except UnicodeDecodeError:
+                      pass
+                  # 解出二进制：PKCS#8 DER 以 SEQUENCE（0x30）开头，即不带头尾的正文。
+                  if data[:1] == b"\x30":
+                      return base64.b64encode(data).decode()
+              return None
+
+          body = pem_body(secret)
+          if not body:
+              odd = sorted({c for c in secret if not (c.isalnum() or c in "+/=-_ \n\r\t")})
+              sys.exit(f"NOTARY_KEY_P8 不是有效的 .p8 密钥：长度 {len(secret)}，{secret.count(chr(10)) + 1} 行，"
+                       f"{'含' if 'BEGIN' in secret else '不含'} PEM 头，非 base64 字符 {odd}")
           with open(sys.argv[1], "w") as f:
               f.write("-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(body, 64)) + "\n-----END PRIVATE KEY-----\n")
           EOF

@@ -10,7 +10,12 @@ trap 'rm -rf "$stage"' EXIT
 ditto "$APP" "$stage/$(basename "$APP")"
 ln -s /Applications "$stage/Applications"
 rm -f "$DMG"
-hdiutil create -quiet -volname MacVM -srcfolder "$stage" -fs HFS+ -format ULFO "$DMG"
+# hdiutil create 偶尔因映像被系统服务短暂占用而失败（Resource busy），隔一会儿重试。
+for attempt in 1 2 3; do
+  hdiutil create -quiet -volname MacVM -srcfolder "$stage" -fs HFS+ -format ULFO -ov "$DMG" && break
+  [ "$attempt" -lt 3 ] || exit 1
+  sleep 5
+done
 
 if [ "$SIGN_IDENTITY" = "-" ]; then
   codesign -f -s - --timestamp=none "$DMG"

@@ -28,8 +28,17 @@ public enum DiskImage {
     /// 把 `staging` 目录做成无分区表的 FAT raw 镜像写到 `output`；`fat32` 为 false 时由 hdiutil 按大小选 FAT 位数。
     static func createFAT(from staging: URL, to output: URL, size: String, volumeName: String, fat32: Bool = false) async throws {
         let dmg = output.deletingPathExtension().appendingPathExtension("dmg")
-        try await Subprocess.run("/usr/bin/hdiutil", ["create", "-quiet", "-size", size, "-fs", "MS-DOS"] + (fat32 ? ["-fsargs", "-F 32"] : [])
-            + ["-volname", volumeName, "-layout", "NONE", "-format", "UDRW", "-srcfolder", staging.path, "-ov", dmg.path])
+        let arguments = ["create", "-size", size, "-fs", "MS-DOS"] + (fat32 ? ["-fsargs", "-F 32"] : [])
+            + ["-volname", volumeName, "-layout", "NONE", "-format", "UDRW", "-srcfolder", staging.path, "-ov", dmg.path]
+        // hdiutil create 偶尔因新建的映像被系统服务短暂占用而失败（Resource busy），隔一会儿重试。
+        for attempt in 1... {
+            do {
+                try await Subprocess.run("/usr/bin/hdiutil", arguments)
+                break
+            } catch MacVMError.io where attempt < 3 {
+                try await Task.sleep(for: .seconds(2))
+            }
+        }
         try FileManager.default.moveItem(at: dmg, to: output)
     }
 
