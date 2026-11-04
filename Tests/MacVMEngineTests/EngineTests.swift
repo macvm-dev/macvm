@@ -390,3 +390,61 @@ struct DownloadLockTests {
         try await waiter.value.release()
     }
 }
+
+struct LinuxDesktopTests {
+    @Test func ubuntuPicksLatestPointReleaseOfDesktopArm64() throws {
+        let sums = """
+        c2afd538 *ubuntu-26.04-desktop-arm64.iso
+        c8b5d454 *ubuntu-26.04-preinstalled-desktop-arm64+raspi.img.xz
+        C54D1964 *ubuntu-26.04.1-desktop-arm64.iso
+        a7110f6c *ubuntu-26.04.1-desktop-riscv64.iso
+        601e30fb *ubuntu-26.04.1-desktop-amd64.iso
+        """
+        let release = try #require(LinuxDesktop.ubuntuRelease(sha256sums: sums, series: "26.04", base: URL(string: "https://example.com/r/")!))
+        #expect(release.fileName == "ubuntu-26.04.1-desktop-arm64.iso")
+        #expect(release.url.absoluteString == "https://example.com/r/ubuntu-26.04.1-desktop-arm64.iso")
+        #expect(release.sha256 == "c54d1964")
+    }
+
+    @Test func ubuntuWithoutArm64DesktopIsNil() {
+        #expect(LinuxDesktop.ubuntuRelease(sha256sums: "aa *ubuntu-26.04-desktop-amd64.iso", series: "26.04", base: URL(string: "https://e/")!) == nil)
+    }
+
+    @Test func fedoraPicksNewestFinalWorkstationAarch64() throws {
+        let json = """
+        [
+          {"version":"45 Beta","arch":"aarch64","variant":"Workstation","link":"https://f/test/45_Beta/W.aarch64.iso","sha256":"bb"},
+          {"version":"44","arch":"aarch64","variant":"Workstation","link":"https://f/44/Fedora-Workstation-Live-44-1.7.aarch64.iso","sha256":"CC"},
+          {"version":"44","arch":"x86_64","variant":"Workstation","link":"https://f/44/x.iso","sha256":"dd"},
+          {"version":"44","arch":"aarch64","variant":"KDE","link":"https://f/44/k.iso","sha256":"ee"},
+          {"version":"43","arch":"aarch64","variant":"Workstation","link":"https://f/43/old.aarch64.iso","sha256":"ff"},
+          {"version":"44","arch":"aarch64","variant":"Workstation","link":"https://f/44/raw.xz"}
+        ]
+        """
+        let release = try #require(LinuxDesktop.fedoraRelease(releasesJSON: Data(json.utf8)))
+        #expect(release.fileName == "Fedora-Workstation-Live-44-1.7.aarch64.iso")
+        #expect(release.sha256 == "cc")
+    }
+}
+
+struct ISOCacheTests {
+    @Test func cachedAndStaleFilesAreScopedToDesktop() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "macvm-iso-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let names = [
+            "ubuntu-26.04-desktop-arm64.iso", "ubuntu-26.04.1-desktop-arm64.iso",
+            "ubuntu-26.04-desktop-arm64.iso.part.seg-0", "ubuntu-26.04-desktop-arm64.iso.part.segments",
+            "ubuntu-26.04-desktop-arm64.iso.part.lock",
+            "ubuntu-26.04.2-desktop-arm64.iso.part", "Fedora-Workstation-Live-44-1.7.aarch64.iso.part",
+        ]
+        for name in names { FileManager.default.createFile(atPath: root.appending(path: name).path, contents: nil) }
+
+        #expect(ISOCache.cachedISOs(of: .ubuntu, in: root).map(\.lastPathComponent)
+                == ["ubuntu-26.04-desktop-arm64.iso", "ubuntu-26.04.1-desktop-arm64.iso"])
+        ISOCache.removeStalePartials(of: .ubuntu, keeping: "ubuntu-26.04.2-desktop-arm64.iso", in: root)
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
+        #expect(left == ["ubuntu-26.04-desktop-arm64.iso", "ubuntu-26.04.1-desktop-arm64.iso", "ubuntu-26.04-desktop-arm64.iso.part.lock",
+                         "ubuntu-26.04.2-desktop-arm64.iso.part", "Fedora-Workstation-Live-44-1.7.aarch64.iso.part"])
+    }
+}

@@ -12,7 +12,7 @@
 
 | 命令 | 作用 |
 | --- | --- |
-| `create <名> [--image ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机；Windows 从原版 ISO 无人值守部署，给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态） |
+| `create <名> [--image ID \| --desktop ID \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机；`--desktop ubuntu-desktop\|fedora-workstation` 下载发行方最新的 arm64 桌面版安装 ISO（校验 SHA-256，缓存在下载目录的 `iso/`），开机后在窗口里完成图形安装；Windows 从原版 ISO 无人值守部署，给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态） |
 | `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off]` | 修改已停止虚拟机的配置，可切换引擎；只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效） |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
@@ -36,7 +36,7 @@
 | 目录 | 默认 | 覆盖顺序 |
 | --- | --- | --- |
 | 虚拟机 | `~/Library/Application Support/MacVM/VMs` | 环境变量 `MACVM_HOME` > `libraryPath` > 默认 |
-| 下载（`ipsw/`、`images/`、`virtio-win.iso`） | `~/Library/Caches/MacVM` | `downloadPath` > 默认 |
+| 下载（`ipsw/`、`images/`、`iso/`、`virtio-win.iso`） | `~/Library/Caches/MacVM` | `downloadPath` > 默认 |
 
 `doctor --json` 的结果里有 `libraryPath` 与 `downloadPath`，是当前实际生效的位置。
 

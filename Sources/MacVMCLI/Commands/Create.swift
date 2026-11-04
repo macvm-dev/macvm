@@ -11,6 +11,8 @@ struct Create: AsyncParsableCommand {
           macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso
         Linux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。
           macvm create dev --image debian-13 --memory 8G
+        Linux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存），开机后在窗口里完成图形安装。
+          macvm create desk --desktop ubuntu-desktop
         安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。
           macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso
         """
@@ -35,6 +37,9 @@ struct Create: AsyncParsableCommand {
 
     @Option(help: ArgumentHelp("Linux 云镜像。", valueName: LinuxImage.catalog.map(\.id).joined(separator: "|")))
     var image: String?
+
+    @Option(help: ArgumentHelp("Linux 桌面版：下载官方安装 ISO 并以它启动，在窗口里完成图形安装。", valueName: LinuxDesktop.allCases.map(\.rawValue).joined(separator: "|")))
+    var desktop: String?
 
     @Option(help: "云镜像里创建的登录用户，默认与主机用户同名。")
     var user: String = NSUserName()
@@ -74,14 +79,17 @@ struct Create: AsyncParsableCommand {
             guard os.usesEFI else {
                 throw MacVMError.invalidConfig("macOS 客户机请用 macvm install-macos 创建")
             }
-            if os == .windows { return try await createWindows() }
+            if os == .windows {
+                if image != nil || desktop != nil { throw MacVMError.invalidConfig("--image 与 --desktop 只用于 Linux 客户机") }
+                return try await createWindows()
+            }
             if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
                 installMedia: installMedia, network: try Self.parseNetwork(network),
                 shares: try share.map(Self.parseShare), rosetta: rosetta, serialConsole: console,
-                image: try image.map(LinuxImage.named), user: user,
+                image: try image.map(LinuxImage.named), desktop: try desktop.map(LinuxDesktop.named), user: user,
                 showProgress: !global.json && isatty(STDERR_FILENO) == 1, headless: headless
             )
             let bundle = try await VMFactory.createEFIGuest(options)

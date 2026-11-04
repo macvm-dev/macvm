@@ -18,6 +18,8 @@ public enum VMFactory {
         public var rosetta: Bool
         public var serialConsole: Bool
         public var image: LinuxImage?
+        /// 下载该桌面版安装 ISO 作为安装介质，排在 `installMedia` 前面。
+        public var desktop: LinuxDesktop?
         /// 云镜像里创建的登录用户。
         public var user: String
         public var showProgress: Bool
@@ -26,7 +28,7 @@ public enum VMFactory {
 
         public init(name: String, os: GuestOS, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
                     installMedia: [String] = [], network: NetworkConfig = .init(), shares: [ShareConfig] = [],
-                    rosetta: Bool = false, serialConsole: Bool = false, image: LinuxImage? = nil,
+                    rosetta: Bool = false, serialConsole: Bool = false, image: LinuxImage? = nil, desktop: LinuxDesktop? = nil,
                     user: String = NSUserName(), showProgress: Bool = false, headless: Bool? = nil) {
             self.name = name
             self.os = os
@@ -39,6 +41,7 @@ public enum VMFactory {
             self.rosetta = rosetta
             self.serialConsole = serialConsole
             self.image = image
+            self.desktop = desktop
             self.user = user
             self.showProgress = showProgress
             self.headless = headless
@@ -50,14 +53,21 @@ public enum VMFactory {
         if options.os == .windows, !WindowsSupport.isAvailable {
             throw MacVMError.unsupported("当前 macOS 不支持运行 Windows 客户机")
         }
-        if options.image != nil, options.os != .linux {
-            throw MacVMError.invalidConfig("云镜像只用于 Linux 客户机")
+        if options.image != nil || options.desktop != nil, options.os != .linux {
+            throw MacVMError.invalidConfig("云镜像与桌面版只用于 Linux 客户机")
+        }
+        if options.image != nil, options.desktop != nil {
+            throw MacVMError.invalidConfig("云镜像与桌面版只能选一个")
         }
         try ensureNameAvailable(options.name, in: library)
         // 先下载镜像再建包，下载中断不会留下半成品虚拟机。
         var imageDisk: URL?
         if let image = options.image {
             imageDisk = try await ImageCache.disk(for: image, showProgress: options.showProgress)
+        }
+        var installMedia = options.installMedia
+        if let desktop = options.desktop {
+            installMedia.insert(try await ISOCache.iso(for: desktop, showProgress: options.showProgress).path, at: 0)
         }
 
         var network = options.network
@@ -82,7 +92,7 @@ public enum VMFactory {
             try MachineIdentity.createGeneric(in: bundle)
             _ = try VZEFIVariableStore(creatingVariableStoreAt: bundle.efiVariableStoreURL)
 
-            let media = try options.installMedia.map { path -> String in
+            let media = try installMedia.map { path -> String in
                 let url = URL(filePath: (path as NSString).expandingTildeInPath).standardizedFileURL
                 guard FileManager.default.fileExists(atPath: url.path) else { throw MacVMError.invalidConfig("安装介质不存在：\(url.path)") }
                 return url.path
