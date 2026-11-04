@@ -141,9 +141,18 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 存在挂起状态时从它恢复，否则冷启动。恢复失败会丢弃状态文件后冷启动，
-    /// 因为状态与磁盘已不一致，留着只会每次都失败。
+    /// 因为状态与磁盘已不一致，留着只会每次都失败。启动失败时按停止处理：释放包锁并回调 `onStop`，再抛出原错误。
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
+        do {
+            return try await boot(recovery: recovery)
+        } catch {
+            finish(.error(describeEngineError(error)))
+            throw error
+        }
+    }
+
+    private func boot(recovery: Bool) async throws -> MachineStartOutcome {
         var outcome = MachineStartOutcome.coldBoot
         if bundle.hasSavedState, !recovery {
             do {

@@ -174,9 +174,19 @@ final class AppModel {
 
     // MARK: - 运行
 
-    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。
+    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。失败时报告并返回 nil。
     @discardableResult
     func start(_ name: String) async -> (any MachineRunner)? {
+        do {
+            return try await launch(name)
+        } catch {
+            report(error)
+            return nil
+        }
+    }
+
+    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。失败时不报告、不打断本虚拟机的其他任务。
+    private func launch(_ name: String) async throws -> any MachineRunner {
         if let runner = runners[name] { return runner }
         do {
             let bundle = try library.bundle(named: name)
@@ -184,16 +194,19 @@ final class AppModel {
             let server = try ControlServer(runner: runner)
             runners[name] = runner
             servers[name] = server
-            runner.onStop = { [weak self] _ in
-                Task { @MainActor in self?.detach(name) }
+            runner.onStop = { [weak self, weak runner] _ in
+                Task { @MainActor in
+                    // 这台停下后同名的可能已换了新运行器。
+                    guard let self, let runner, self.runners[name] === runner else { return }
+                    self.detach(name)
+                }
             }
             try await runner.start()
             refresh()
             return runner
         } catch {
-            detach(name)
-            report(error)
-            return nil
+            release(name)
+            throw error
         }
     }
 
@@ -246,6 +259,11 @@ final class AppModel {
             // 进行中的那次 ssh 要等它自己超时才返回，提示先撤掉，免得停下的虚拟机一直显示在配置。
             if activity[name]?.title == Self.sshKeyTitle { setActivity(name, nil) }
         }
+        release(name)
+    }
+
+    /// 撤掉本进程里这台的运行器与控制 socket，不动它的其他任务。
+    private func release(_ name: String) {
         servers[name]?.close()
         servers[name] = nil
         runners[name] = nil
@@ -559,7 +577,7 @@ final class AppModel {
                     if activity[name]?.title == Self.sshKeyTitle { setActivity(name, nil) }
                 }
             }
-            guard await start(name) != nil else { return }
+            guard await startAfterInstall(name) else { return }
             openMachineWindow(name)
             let proxy = SSHConfig.proxyCommand(macvmPath: CLILocation.path, name: name, flags: ["--tcp"])
             do {
@@ -571,6 +589,28 @@ final class AppModel {
     }
 
     private static let sshKeyTitle = "正在首次开机并配置 SSH…"
+
+    /// 安装用的虚拟机在安装结束后还要一会儿才放开辅助储存，这期间开机会失败：隔 `firstBootRetryInterval` 重试，
+    /// 共 `firstBootAttempts` 次，只报告最后一次的错误。
+    private func startAfterInstall(_ name: String) async -> Bool {
+        for attempt in 1...Self.firstBootAttempts {
+            do {
+                _ = try await launch(name)
+                return true
+            } catch {
+                guard !Task.isCancelled else { return false }
+                guard attempt < Self.firstBootAttempts else {
+                    report(error)
+                    return false
+                }
+            }
+            do { try await Task.sleep(for: Self.firstBootRetryInterval) } catch { return false }
+        }
+        return false
+    }
+
+    private static let firstBootAttempts = 10
+    private static let firstBootRetryInterval: Duration = .seconds(2)
 
     /// 取消正在进行的新建：终止下载与安装，删掉建了一半的包；已下载的部分留在下载目录里，下次新建接着用。
     func cancelCreation(_ name: String) {
