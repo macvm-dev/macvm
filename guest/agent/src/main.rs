@@ -62,6 +62,15 @@ fn parse_args() -> Config {
         match arg.as_str() {
             "--port" => config.port = args.next().and_then(|v| v.parse().ok()).unwrap_or(proto::PORT),
             "--user" => config.default_user = args.next(),
+            // 同步写好显卡 udev 规则后退出，不监听。
+            #[cfg(target_os = "linux")]
+            "--ignore-firmware-framebuffer" => match platform::ignore_firmware_framebuffer() {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("macvm-agent: 写显卡 udev 规则失败：{e}");
+                    std::process::exit(1);
+                }
+            },
             "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);

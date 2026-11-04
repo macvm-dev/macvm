@@ -143,6 +143,56 @@ pub fn shutdown(reboot: bool) -> io::Result<()> {
     }
 }
 
+/// 有别的显卡时给固件帧缓冲接出的 simpledrm 显卡写一条 udev 规则，规则已在且相同时不动；规则做两件事：
+/// - QEMU 的 ramfb 帧缓冲在 virtio-gpu 驱动加载后仍作为一块显卡留着，GNOME 会选它作主显卡、画到宿主看不到的地方，
+///   所以让 GNOME 忽略它；
+/// - gdm 要等到一块带 boot_vga 或 boot_display 的显卡、或挂在 platform 上的显卡才启动登录界面，virtio-gpu 都不是，
+///   否则白等 10 秒；它按 `ID_PATH` 跳过 simpledrm，改掉 `ID_PATH` 后它就算 platform 显卡，gdm 立即放行。
+///
+/// simpledrm 是唯一的显卡时（只有 ramfb 的 QEMU）删掉规则，否则 GNOME 没有显卡可用。
+/// 判断前先等 udev 处理完开机时的设备事件：代理可能早于 virtio-gpu 驱动加载启动，那时只看得到 simpledrm。
+/// 改了规则就重新触发 drm 设备；GNOME 与 gdm 只在启动时按规则挑显卡，已在运行的下次启动才生效。
+pub fn ignore_firmware_framebuffer() -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        const PATH: &str = "/etc/udev/rules.d/61-macvm-ignore-simpledrm.rules";
+        const RULE: &str =
+            "SUBSYSTEM==\"drm\", KERNEL==\"card*\", DRIVERS==\"simple-framebuffer\", TAG+=\"mutter-device-ignore\", ENV{ID_PATH}=\"macvm-firmware-framebuffer\"\n";
+        let _ = run("udevadm", &["settle"]);
+        let current = std::fs::read_to_string(PATH).ok();
+        if has_other_gpu() {
+            if current.as_deref() == Some(RULE) {
+                return Ok(());
+            }
+            std::fs::create_dir_all("/etc/udev/rules.d")?;
+            std::fs::write(PATH, RULE)?;
+        } else {
+            if current.is_none() {
+                return Ok(());
+            }
+            std::fs::remove_file(PATH)?;
+        }
+        run("udevadm", &["control", "--reload"])?;
+        run("udevadm", &["trigger", "--subsystem-match=drm", "--action=change", "--settle"])
+    }
+    #[cfg(target_os = "macos")]
+    Ok(())
+}
+
+/// 除 simpledrm 外是否还有 DRM 显卡（`/sys/class/drm/cardN` 的驱动不是 simple-framebuffer）。
+#[cfg(target_os = "linux")]
+fn has_other_gpu() -> bool {
+    let Ok(entries) = std::fs::read_dir("/sys/class/drm") else { return false };
+    entries.flatten().any(|entry| {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let is_card = name.strip_prefix("card").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+        is_card
+            && std::fs::read_link(entry.path().join("device/driver"))
+                .is_ok_and(|driver| driver.file_name().is_some_and(|d| d != "simple-framebuffer"))
+    })
+}
+
 pub fn set_time(unix_ms: i64) -> io::Result<()> {
     let ts = libc::timespec { tv_sec: (unix_ms / 1000) as _, tv_nsec: ((unix_ms % 1000) * 1_000_000) as _ };
     // SAFETY: ts 为有效 timespec；非 root 时内核返回 EPERM。

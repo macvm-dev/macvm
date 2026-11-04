@@ -16,14 +16,18 @@ public enum AgentInstaller {
         }
     }
 
-    /// cloud-init 用：systemd 单元与从种子盘安装代理的命令。
+    /// 种子盘装代理用：systemd 单元，与 cloud-init 从种子盘安装代理的命令。
+    /// 显卡 udev 规则要赶在 GNOME 挑显卡之前生效：由 `ExecStartPre` 同步写好，单元排在显示管理器之前，
+    /// 显示管理器要等它写完才启动；写失败不挡代理启动。
     static func linuxCloudInit(user: String) -> (unit: String, install: String) {
         let unit = """
         [Unit]
         Description=macvm guest agent
         After=local-fs.target
+        Before=display-manager.service
 
         [Service]
+        ExecStartPre=-\(linuxPath) --ignore-firmware-framebuffer
         ExecStart=\(linuxPath) --user \(user)
         Restart=always
         RestartSec=1
