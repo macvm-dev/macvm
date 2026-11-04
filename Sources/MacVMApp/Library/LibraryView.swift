@@ -15,8 +15,8 @@ struct LibraryView: View {
         }
         .navigationSubtitle(subtitle)
         .task { model.resumeInterruptedCreations { openWindow(id: "machine", value: $0) } }
-        // 列表增删后选中项可能已不存在，落到第一台，免得详情区空着。
-        .onChange(of: model.machines.map(\.name), initial: true) { _, names in
+        // 列表增删后选中项可能已不存在，落到第一行，免得详情区空着。
+        .onChange(of: selectableNames, initial: true) { _, names in
             if model.selection.map({ !names.contains($0) }) ?? true { model.selection = names.first }
         }
         .toolbar {
@@ -57,16 +57,24 @@ struct LibraryView: View {
                 }
                 ForEach(model.pendingCreations, id: \.self) { name in
                     if let activity = model.activity[name] {
-                        PendingRow(name: name, activity: activity) { model.cancelCreation(name) }.selectionDisabled()
+                        PendingRow(name: name, activity: activity) { model.cancelCreation(name) }.tag(name)
                     }
                 }
                 ForEach(model.interruptedCreations, id: \.name) { request in
-                    InterruptedRow(request: request, resume: { resume(request.name) }, discard: { model.discardCreation(request.name) })
-                        .selectionDisabled()
+                    let row = InterruptedRow(request: request) { resume(request.name) }
+                    // 半成品包有配置时同名的虚拟机行已在上面，这一行不参与选中，免得两行共用一个标签。
+                    if model.summary(request.name) == nil {
+                        row.tag(request.name)
+                    } else {
+                        row.selectionDisabled().contextMenu {
+                            Button("继续创建") { resume(request.name) }
+                            Button("放弃", role: .destructive) { model.discardCreation(request.name) }
+                        }
+                    }
                 }
             }
             .contextMenu(forSelectionType: String.self) { names in
-                if let name = names.first, let vm = model.summary(name) { rowMenu(vm) }
+                if let name = names.first { rowMenu(name) }
             } primaryAction: { names in
                 if let name = names.first, let vm = model.summary(name) { open(vm) }
             }
@@ -80,9 +88,9 @@ struct LibraryView: View {
     @ViewBuilder private var detail: some View {
         if let name = model.selection, let vm = model.summary(name) {
             MachineDetailView(vm: vm)
-        } else if model.machines.isEmpty, let name = model.pendingCreations.first, let activity = model.activity[name] {
+        } else if let name = model.selection, let activity = model.activity[name] {
             CreatingView(name: name, activity: activity) { model.cancelCreation(name) }
-        } else if model.machines.isEmpty, let request = model.interruptedCreations.first {
+        } else if let name = model.selection, let request = model.interruptedCreations.first(where: { $0.name == name }) {
             ContentUnavailableView {
                 Label("\(request.name) 的创建被中断", systemImage: "exclamationmark.triangle")
             } description: {
@@ -96,7 +104,18 @@ struct LibraryView: View {
         }
     }
 
-    @ViewBuilder private func rowMenu(_ vm: VMSummary) -> some View {
+    @ViewBuilder private func rowMenu(_ name: String) -> some View {
+        if let vm = model.summary(name) {
+            machineMenu(vm)
+        } else if model.activity[name] != nil {
+            Button("取消创建") { model.cancelCreation(name) }
+        } else if model.interruptedCreations.contains(where: { $0.name == name }) {
+            Button("继续创建") { resume(name) }
+            Button("放弃", role: .destructive) { model.discardCreation(name) }
+        }
+    }
+
+    @ViewBuilder private func machineMenu(_ vm: VMSummary) -> some View {
         switch vm.state {
         case .stopped, .suspended:
             Button(vm.state == .suspended ? "继续" : "启动") { open(vm) }.disabled(model.activity[vm.name] != nil)
@@ -112,6 +131,11 @@ struct LibraryView: View {
     private func open(_ vm: VMSummary) {
         let canOpen = vm.state == .running ? model.canDisplay(vm.name) : model.activity[vm.name] == nil
         if canOpen { openWindow(id: "machine", value: vm.name) }
+    }
+
+    /// 侧栏各行的名字，按显示顺序。
+    private var selectableNames: [String] {
+        model.machines.map(\.name) + model.pendingCreations + model.interruptedCreations.map(\.name)
     }
 
     /// 既没有虚拟机，也没有正在创建或中断的。
@@ -156,7 +180,7 @@ struct MachineRow: View {
     }
 }
 
-/// 第一台虚拟机还在创建时的详情区。进度只在这里读，更新时不重算整个窗口。
+/// 选中还在创建的虚拟机时的详情区。进度只在这里读，更新时不重算整个窗口。
 struct CreatingView: View {
     let name: String
     let activity: AppModel.Activity
@@ -201,7 +225,6 @@ struct PendingRow: View {
                 .help("取消创建")
         }
         .padding(.vertical, 4)
-        .contextMenu { Button("取消创建", action: cancel) }
     }
 }
 
@@ -209,7 +232,6 @@ struct PendingRow: View {
 struct InterruptedRow: View {
     let request: CreationRequest
     let resume: () -> Void
-    let discard: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -222,20 +244,19 @@ struct InterruptedRow: View {
             Button("继续", action: resume).controlSize(.small)
         }
         .padding(.vertical, 4)
-        .contextMenu {
-            Button("继续创建", action: resume)
-            Button("放弃", role: .destructive, action: discard)
-        }
     }
 }
 
 /// 有进度时画进度条，进度未知时不画（文字已说明在做什么）。
 struct ActivityBar: View {
     let activity: AppModel.Activity
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         if let fraction = activity.fraction {
+            // 选中行的底色就是强调色，默认的进度填充会融进去。
             ProgressView(value: fraction).controlSize(.small)
+                .tint(prominence == .increased ? .white : nil)
         }
     }
 }
