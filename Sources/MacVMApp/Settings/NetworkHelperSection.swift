@@ -12,6 +12,12 @@ struct NetworkHelperSection: View {
 
     private static var service: SMAppService { .daemon(plistName: NetworkHelper.launchdPlistName) }
 
+    /// 从没注册过的守护进程 `status` 也是 `.notFound`，要看包里有没有 plist 才分得清是不是没打包。
+    private static var bundled: Bool {
+        FileManager.default.fileExists(atPath: Bundle.main.bundleURL
+            .appending(path: "Contents/Library/LaunchDaemons/\(NetworkHelper.launchdPlistName)").path)
+    }
+
     var body: some View {
         Section {
             LabeledContent("网络辅助程序") {
@@ -19,6 +25,8 @@ struct NetworkHelperSection: View {
                     Text(statusText).foregroundStyle(.secondary)
                     switch status {
                     case .notRegistered:
+                        Button("启用", action: enable)
+                    case .notFound where Self.bundled:
                         Button("启用", action: enable)
                     case .requiresApproval:
                         Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
@@ -51,7 +59,7 @@ struct NetworkHelperSection: View {
         case .enabled: running ? "已启用" : "已启用，未响应"
         case .requiresApproval: "等待在系统设置里允许"
         case .notRegistered: "未启用"
-        case .notFound: "未打包运行，不可用"
+        case .notFound: Self.bundled ? "未启用" : "未打包运行，不可用"
         @unknown default: "未知"
         }
     }
