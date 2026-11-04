@@ -39,7 +39,7 @@ final class AppModel {
             var parts = [title]
             if let detail { parts.append(detail) }
             if let fraction, detail != nil { parts.append("\(Int(fraction * 100))%") }
-            if let bytesPerSecond { parts.append(ByteSize.format(UInt64(bytesPerSecond)) + "/s") }
+            if let bytesPerSecond { parts.append(DisplaySize.format(UInt64(bytesPerSecond)) + "/s") }
             return parts.joined(separator: " ")
         }
 
@@ -55,7 +55,7 @@ final class AppModel {
 
         /// 记下一次下载进度，并据与上次的差值更新速度。
         func record(received: Int64, total: Int64?, at now: Date = .now) {
-            detail = total.map { "\(ByteSize.format(UInt64(received))) / \(ByteSize.format(UInt64($0)))" } ?? ByteSize.format(UInt64(received))
+            detail = total.map { "\(DisplaySize.format(UInt64(received))) / \(DisplaySize.format(UInt64($0)))" } ?? DisplaySize.format(UInt64(received))
             fraction = total.map { min(1, Double(received) / Double($0)) }
             if let sampledAt, let sampledBytes, received >= sampledBytes, now.timeIntervalSince(sampledAt) > 0 {
                 let instant = Double(received - sampledBytes) / now.timeIntervalSince(sampledAt)

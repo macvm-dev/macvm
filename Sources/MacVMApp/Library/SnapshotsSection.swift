@@ -10,32 +10,48 @@ struct SnapshotsSection: View {
     @State private var newName = ""
     @State private var naming = false
     @State private var restoring: Snapshot?
+    @State private var deleting: Snapshot?
 
     var body: some View {
         Section {
             if snapshots.isEmpty {
-                Text("没有快照").foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("没有快照").foregroundStyle(.secondary)
+                    Text("快照保存磁盘的当前状态，之后可以随时还原。").font(.caption).foregroundStyle(.tertiary)
+                }
             }
             ForEach(snapshots, id: \.name) { snap in
-                HStack {
-                    VStack(alignment: .leading) {
+                HStack(spacing: 10) {
+                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary).frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(snap.name)
                         Text("\(snap.createdAt.formatted(date: .abbreviated, time: .shortened))\(snap.includesMemory ? " · 含内存" : "")")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("还原") { restoring = snap }.disabled(state == .running)
-                    Button(role: .destructive) { perform { try Snapshot.delete($0, name: snap.name) } } label: { Image(systemName: "trash") }
+                    Button("还原…") { restoring = snap }
+                        .controlSize(.small)
+                        .disabled(state == .running)
+                        .help(state == .running ? "运行中不能还原，先关机或挂起" : "")
+                    Button { deleting = snap } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .help("删除快照")
+                }
+                .contextMenu {
+                    Button("还原…") { restoring = snap }.disabled(state == .running)
+                    Button("删除…", role: .destructive) { deleting = snap }
                 }
             }
         } header: {
             HStack {
                 Text("快照")
                 Spacer()
-                Button("创建快照…") { newName = Self.defaultName(); naming = true }
+                Button { newName = Self.defaultName(); naming = true } label: { Label("创建快照", systemImage: "plus") }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
                     .disabled(state == .running)
-                    .help(state == .running ? "先关机或挂起" : "")
+                    .help(state == .running ? "运行中不能创建快照，先关机或挂起" : "")
             }
         }
         .task(id: "\(vmName)-\(state)") { reload() }
@@ -44,10 +60,19 @@ struct SnapshotsSection: View {
             Button("创建") { perform { _ = try Snapshot.save($0, name: newName) } }
             Button("取消", role: .cancel) {}
         }
-        .confirmationDialog("还原到 \(restoring?.name ?? "")？当前未保存为快照的改动会丢失。", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
+        .confirmationDialog("还原到「\(restoring?.name ?? "")」？", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
             Button("还原", role: .destructive) {
                 if let snap = restoring { perform { try Snapshot.restore($0, name: snap.name) } }
             }
+        } message: {
+            Text("当前未保存为快照的改动会丢失。")
+        }
+        .confirmationDialog("删除快照「\(deleting?.name ?? "")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("删除", role: .destructive) {
+                if let snap = deleting { perform { try Snapshot.delete($0, name: snap.name) } }
+            }
+        } message: {
+            Text("删除后无法恢复。")
         }
     }
 

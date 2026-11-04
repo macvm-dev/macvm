@@ -13,9 +13,10 @@ struct MacVMApp: App {
         Window("MacVM", id: "library") {
             LibraryView()
                 .environment(model)
-                .frame(minWidth: 760, minHeight: 460)
+                .frame(minHeight: 460)
         }
         .commands {
+            SidebarCommands()
             CommandGroup(replacing: .newItem) {
                 Button("新建虚拟机…") { model.showingCreate = true }
                     .keyboardShortcut("n")

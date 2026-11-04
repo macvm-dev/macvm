@@ -1,3 +1,4 @@
+import AppKit
 import MacVMEngine
 import MacVMModel
 import SwiftUI
@@ -30,6 +31,9 @@ struct LibraryView: View {
         }
     }
 
+    private static let sidebarIdealWidth: CGFloat = 240
+    private static let detailMinWidth: CGFloat = 520
+
     private var emptyLibrary: some View {
         ContentUnavailableView {
             Label("还没有虚拟机", systemImage: "desktopcomputer")
@@ -40,6 +44,7 @@ struct LibraryView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
         }
+        .frame(minWidth: Self.sidebarIdealWidth + Self.detailMinWidth)
     }
 
     private var library: some View {
@@ -60,25 +65,53 @@ struct LibraryView: View {
                         .selectionDisabled()
                 }
             }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-        } detail: {
-            if let name = model.selection, let vm = model.summary(name) {
-                MachineDetailView(vm: vm)
-            } else if model.machines.isEmpty, let name = model.pendingCreations.first, let activity = model.activity[name] {
-                CreatingView(name: name, activity: activity) { model.cancelCreation(name) }
-            } else if model.machines.isEmpty, let request = model.interruptedCreations.first {
-                ContentUnavailableView {
-                    Label("\(request.name) 的创建被中断", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text("自动继续没有成功。继续会从头再建，已下载的部分不用重下。")
-                } actions: {
-                    Button("继续创建") { resume(request.name) }.buttonStyle(.borderedProminent)
-                    Button("放弃") { model.discardCreation(request.name) }
-                }
-            } else {
-                ContentUnavailableView("选择一台虚拟机", systemImage: "desktopcomputer")
+            .contextMenu(forSelectionType: String.self) { names in
+                if let name = names.first, let vm = model.summary(name) { rowMenu(vm) }
+            } primaryAction: { names in
+                if let name = names.first, let vm = model.summary(name) { open(vm) }
             }
+            .navigationSplitViewColumnWidth(min: 200, ideal: Self.sidebarIdealWidth)
+        } detail: {
+            // 最小宽度只能加在详情列上：加在整个分栏视图外面时，展开侧栏的动画走到一半会直接跳到终点。
+            detail.frame(minWidth: Self.detailMinWidth)
         }
+    }
+
+    @ViewBuilder private var detail: some View {
+        if let name = model.selection, let vm = model.summary(name) {
+            MachineDetailView(vm: vm)
+        } else if model.machines.isEmpty, let name = model.pendingCreations.first, let activity = model.activity[name] {
+            CreatingView(name: name, activity: activity) { model.cancelCreation(name) }
+        } else if model.machines.isEmpty, let request = model.interruptedCreations.first {
+            ContentUnavailableView {
+                Label("\(request.name) 的创建被中断", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("自动继续没有成功。继续会从头再建，已下载的部分不用重下。")
+            } actions: {
+                Button("继续创建") { resume(request.name) }.buttonStyle(.borderedProminent)
+                Button("放弃") { model.discardCreation(request.name) }
+            }
+        } else {
+            ContentUnavailableView("选择一台虚拟机", systemImage: "desktopcomputer")
+        }
+    }
+
+    @ViewBuilder private func rowMenu(_ vm: VMSummary) -> some View {
+        switch vm.state {
+        case .stopped, .suspended:
+            Button(vm.state == .suspended ? "继续" : "启动") { open(vm) }.disabled(model.activity[vm.name] != nil)
+        case .running:
+            Button("显示") { open(vm) }.disabled(!model.canDisplay(vm.name))
+            Button("关机") { Task { await model.stop(vm.name) } }
+        }
+        Divider()
+        Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: vm.path)]) }
+    }
+
+    /// 双击行：停着的启动，运行中且能显示画面的打开窗口。
+    private func open(_ vm: VMSummary) {
+        let canOpen = vm.state == .running ? model.canDisplay(vm.name) : model.activity[vm.name] == nil
+        if canOpen { openWindow(id: "machine", value: vm.name) }
     }
 
     /// 既没有虚拟机，也没有正在创建或中断的。
@@ -104,16 +137,20 @@ struct MachineRow: View {
         HStack(spacing: 10) {
             Image(systemName: vm.os.symbol)
                 .font(.title2)
+                .symbolRenderingMode(.hierarchical)
                 .frame(width: 28)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text(vm.name).font(.headline)
+                Text(vm.name).font(.headline).lineLimit(1)
                 Text(activity?.text ?? vm.state.label).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1)
                 if let activity { ActivityBar(activity: activity) }
             }
-            Spacer()
-            Circle().fill(vm.state.color).frame(width: 8, height: 8)
+            Spacer(minLength: 4)
+            // 停止是常态，不画圆点，只有运行中和挂起才提示。
+            if vm.state != .stopped {
+                Circle().fill(vm.state.color).frame(width: 7, height: 7)
+            }
         }
         .padding(.vertical, 4)
     }

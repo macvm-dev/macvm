@@ -14,7 +14,7 @@ struct SettingsView: View {
             Section("本机") {
                 LabeledContent("macOS", value: capabilities.hostOS)
                 LabeledContent("性能核", value: "\(capabilities.performanceCores)")
-                LabeledContent("内存", value: ByteSize.format(capabilities.physicalMemory))
+                LabeledContent("内存", value: DisplaySize.format(capabilities.physicalMemory))
                 capability("Windows 客户机", capabilities.windows)
                 capability("Linux Rosetta", capabilities.rosetta)
                 capability("桥接网络", capabilities.bridgedNetworking)
