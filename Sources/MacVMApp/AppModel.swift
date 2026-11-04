@@ -122,6 +122,9 @@ final class AppModel {
         activity.filter { $0.value.title != Self.stoppingTitle }.keys.sorted()
     }
 
+    /// 已请求正常关机、还在等客户机自己关。
+    func isStopping(_ name: String) -> Bool { activity[name]?.title == Self.stoppingTitle }
+
     /// 正在创建、还没出现在 `machines` 里的虚拟机名。
     var pendingCreations: [String] {
         activity.keys.filter { name in !machines.contains { $0.name == name } }.sorted()
@@ -203,7 +206,7 @@ final class AppModel {
     }
 
     private func clearStopping(_ name: String) {
-        if activity[name]?.title == Self.stoppingTitle { setActivity(name, nil) }
+        if isStopping(name) { setActivity(name, nil) }
     }
 
     private static let stoppingTitle = "正在关机…"

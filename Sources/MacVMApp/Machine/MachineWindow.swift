@@ -13,9 +13,19 @@ struct MachineWindow: View {
     @State private var showingShares = false
     /// 改了声音或麦克风后在画面顶部短暂显示的说明。
     @State private var notice: String?
+    /// 从本窗口发起、还没返回的挂起；期间挂起按钮换成转圈，关机按钮不可点。
+    @State private var suspending = false
 
     private var isRunning: Bool { model.summary(name)?.state == .running }
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
+    /// 等客户机自己关机期间关机按钮换成转圈；挂起仍可点，客户机不理会关机时还能挂起。
+    private var stopping: Bool { model.isStopping(name) }
+    /// 进行中的挂起或关机，在画面顶部一直显示到结束。
+    private var progress: String? {
+        if suspending { return "正在挂起…" }
+        if stopping { return "正在关机…" }
+        return nil
+    }
 
     var body: some View {
         let bundle = try? model.library.bundle(named: name)
@@ -41,18 +51,19 @@ struct MachineWindow: View {
         }
         .frame(minWidth: 640, minHeight: 400)
         .overlay(alignment: .top) {
-            if let notice {
-                Label(notice, systemImage: "info.circle")
-                    .font(.callout)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: .capsule)
-                    .shadow(radius: 6, y: 2)
-                    .padding(.top, 10)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            if let progress {
+                banner {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(progress)
+                    }
+                }
+            } else if let notice {
+                banner { Label(notice, systemImage: "info.circle") }
                     .onTapGesture { withAnimation { self.notice = nil } }
             }
         }
+        .animation(.default, value: progress)
         .task(id: notice) {
             guard notice != nil else { return }
             try? await Task.sleep(for: .seconds(4))
@@ -96,9 +107,26 @@ struct MachineWindow: View {
                     .help(config.audio ? "声音：开（下次开机生效）" : "声音：关（下次开机生效）")
                 }
                 if config?.supportsSuspend == true {
-                    Button { Task { await model.suspend(name) } } label: { Label("挂起", systemImage: "pause.fill") }
+                    if suspending {
+                        busyItem("正在挂起…")
+                    } else {
+                        Button {
+                            suspending = true
+                            Task {
+                                await model.suspend(name)
+                                suspending = false
+                            }
+                        } label: { Label("挂起", systemImage: "pause.fill") }
+                        .help("挂起")
+                    }
                 }
-                Button { Task { await model.stop(name) } } label: { Label("关机", systemImage: "power") }
+                if stopping {
+                    busyItem("正在关机…")
+                } else {
+                    Button { Task { await model.stop(name) } } label: { Label("关机", systemImage: "power") }
+                        .help("关机")
+                        .disabled(suspending)
+                }
             }
         }
         // 用 sheet 而不是 popover：添加时要弹文件选择面板，popover 一失去焦点就关闭。
@@ -107,6 +135,27 @@ struct MachineWindow: View {
 }
 
 extension MachineWindow {
+    /// 画面顶部浮着的胶囊提示。
+    fileprivate func banner(@ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .font(.callout)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: .capsule)
+            .shadow(radius: 6, y: 2)
+            .padding(.top, 10)
+            .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    /// 工具栏里代替按钮的转圈，占着按钮的位置，其他按钮不跟着挪。
+    fileprivate func busyItem(_ text: String) -> some View {
+        ProgressView()
+            .controlSize(.small)
+            .frame(width: 28, height: 28)
+            .help(text)
+            .accessibilityLabel(text)
+    }
+
     /// 改了声音或麦克风后的提示。与本进程开机时的设置不同时，补一句这次开机不能挂起。
     fileprivate func announce(_ text: String) {
         var text = text
