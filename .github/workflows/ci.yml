@@ -12,23 +12,26 @@ concurrency:
 jobs:
   swift:
     name: Swift
-    # 托管 runner 还没有 Xcode 27，先用最新的稳定版。
-    runs-on: macos-26
+    # 引擎用到 macOS 27 SDK 的 API，用带 Xcode 27 的镜像。
+    runs-on: xcode-27
     env:
       MACVM_HOME: ${{ github.workspace }}/.ci-home
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '27'
       - run: swift --version
       - uses: actions/cache@v4
         with:
           path: .build
-          key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+          key: swiftpm-xcode27-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: swiftpm-xcode27-${{ hashFiles('Package.resolved', 'Package.swift') }}-
       - run: make lint
       - run: make build
+      # 配置构建测试要找 UEFI 引导程序。
+      - run: rustup toolchain install stable --profile minimal
+      - run: make boot
       - run: make test-swift
 
   guest:

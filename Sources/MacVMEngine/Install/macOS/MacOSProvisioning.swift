@@ -19,10 +19,8 @@ public enum MacOSProvisioning {
     }
 
     /// 有待开通的凭据且系统支持时，写入启动选项并返回 true。
-    /// shortcut: Swift 6.4 之前的编译器（Xcode 26）没有 macOS 27 SDK，这样构建出的程序不开通，只为让托管 CI 能编译；CI 有 Xcode 27 后去掉条件编译。
     @available(macOS 27, *)
     static func apply(to options: VZMacOSVirtualMachineStartOptions, bundle: VMBundle) throws -> Bool {
-        #if compiler(>=6.4)
         guard let data = try? Data(contentsOf: pendingURL(bundle)) else { return false }
         let credentials = try JSONDecoder().decode(Credentials.self, from: data)
         let provisioning = VZMacGuestProvisioningOptions()
@@ -33,9 +31,6 @@ public enum MacOSProvisioning {
         provisioning.enablesRemoteLogin = true
         try options.setGuestProvisioning(provisioning)
         return true
-        #else
-        return false
-        #endif
     }
 
     static func markApplied(_ bundle: VMBundle) {
