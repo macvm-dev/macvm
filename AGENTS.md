@@ -24,13 +24,14 @@
 | 子目录 | 内容 |
 | --- | --- |
 | `VZ` | VZ 引擎：由 `VMConfig` 构建 VZ 配置（按客户机系统分文件）、运行与显示 |
-| `QEMU` | QEMU 引擎：命令行、运行、QMP、VNC/SPICE 显示 |
+| `QEMU` | QEMU 引擎：命令行、运行、QMP；`Display` 下是 VNC/SPICE 显示 |
 | `Runtime` | 与引擎无关的运行时：`MachineRunner`、控制 socket、状态查询、换引擎 |
 | `Install` | 创建虚拟机（`VMFactory`）与各客户机系统的安装，按 `macOS` / `Linux` / `Windows` 分 |
 | `Guest` | 与客户机通信：代理（`Agent`）、SSH（`SSH`）、端口连接、随程序分发的客户机文件 |
 | `Storage` | 包内文件：磁盘镜像、机器标识、克隆、快照 |
 | `Network` | 网卡附件与 DHCP 租约 |
-| `Host` | 宿主信息：硬件、能力、entitlement、子进程 |
+| `Download` | 镜像、安装盘、IPSW 的分块并行下载与进度回报 |
+| `Host` | 宿主系统设施：硬件、能力、entitlement、子进程、Unix socket |
 
 ## 分层
 
