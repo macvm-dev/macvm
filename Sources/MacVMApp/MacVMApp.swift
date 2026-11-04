@@ -15,6 +15,8 @@ struct MacVMApp: App {
                 .environment(model)
                 .frame(minHeight: 460)
         }
+        // 详情页一屏放下头部与硬件，常用的设置不用滚动就能看到。
+        .defaultSize(width: 840, height: 580)
         .commands {
             SidebarCommands()
             CommandGroup(replacing: .newItem) {
