@@ -78,4 +78,28 @@ public struct ControlResponse: Codable, Sendable, Equatable {
         let error = error as? MacVMError ?? .engine(error.localizedDescription)
         self.init(ok: false, state: state, errorCode: error.code, message: error.message)
     }
+
+    /// 失败响应还原成的错误，成功时为 nil：`errorCode` 是 `MacVMError.code` 的取值时还原成同一个 case，否则按 `MacVMError.engine` 报。
+    var failure: MacVMError? {
+        guard !ok else { return nil }
+        let message = self.message ?? "未知错误"
+        guard let kind = MacVMError.catalog.first(where: { $0.code == errorCode }) else { return .engine(message) }
+        // 以名字为参数的 case 会给 `message` 加固定前缀，还原时去掉，免得再加一遍。
+        let prefix = kind.message
+        let payload = message.hasPrefix(prefix) ? String(message.dropFirst(prefix.count)) : message
+        return switch kind {
+        case .vmNotFound: .vmNotFound(payload)
+        case .alreadyExists: .alreadyExists(payload)
+        case .alreadyRunning: .alreadyRunning(payload)
+        case .notRunning: .notRunning(payload)
+        case .invalidConfig: .invalidConfig(payload)
+        case .unsupported: .unsupported(payload)
+        case .entitlementMissing: .entitlementMissing(payload)
+        case .timeout: .timeout(payload)
+        case .io: .io(payload)
+        case .engine: .engine(payload)
+        case .snapshotNotFound: .snapshotNotFound(payload)
+        case .templateNotFound: .templateNotFound(payload)
+        }
+    }
 }

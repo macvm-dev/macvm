@@ -4,6 +4,7 @@ use std::os::fd::{FromRawFd, RawFd};
 
 const AF_VSOCK: libc::c_int = 40;
 const VMADDR_CID_ANY: u32 = u32::MAX;
+const VMADDR_CID_HOST: u32 = 2;
 
 #[cfg(target_os = "linux")]
 #[repr(C)]
@@ -132,6 +133,9 @@ fn bind_vsock(port: u32) -> io::Result<RawFd> {
     if fd < 0 {
         return Err(io::Error::last_os_error());
     }
+    // exec 出的子进程不能继承监听 socket：否则它能抢接宿主的连接，代理重启后端口也仍被占着。
+    #[cfg(target_os = "macos")]
+    set_cloexec(fd);
     let addr = SockaddrVm::any(port);
     // SAFETY: addr 是按内核布局定义的 sockaddr_vm，长度与类型一致。
     let rc = unsafe {
@@ -147,17 +151,28 @@ fn bind_vsock(port: u32) -> io::Result<RawFd> {
     Ok(fd)
 }
 
-/// 被信号打断时返回 None，由调用方重新等待。
+/// 被信号打断、或对端不是宿主时返回 None，由调用方重新等待。
+/// 只受理来自宿主 CID 的连接：Linux 的 vsock 回环让客户机里的进程也能连上监听 CID 任意的端口，而 vsock 连接不认证。
 fn accept_raw(fd: RawFd) -> io::Result<Option<File>> {
-    // SAFETY: 不需要对端地址，传空指针合法。
-    let conn = unsafe { libc::accept(fd, std::ptr::null_mut(), std::ptr::null_mut()) };
-    if conn >= 0 {
-        set_cloexec(conn);
-        // SAFETY: accept 返回的 fd 归调用方独占。
-        return Ok(Some(unsafe { File::from_raw_fd(conn) }));
+    // SAFETY: SockaddrVm 只含整数字段，全零是合法值。
+    let mut peer: SockaddrVm = unsafe { std::mem::zeroed() };
+    let mut len = std::mem::size_of::<SockaddrVm>() as libc::socklen_t;
+    let peer_ptr = &raw mut peer as *mut libc::sockaddr;
+    // SAFETY: peer 与 len 指向本地变量，len 是 peer 的大小。
+    #[cfg(target_os = "linux")]
+    let conn = unsafe { libc::accept4(fd, peer_ptr, &mut len, libc::SOCK_CLOEXEC) };
+    // SAFETY: peer 与 len 指向本地变量，len 是 peer 的大小。
+    #[cfg(target_os = "macos")]
+    let conn = unsafe { libc::accept(fd, peer_ptr, &mut len) };
+    if conn < 0 {
+        let err = io::Error::last_os_error();
+        return if err.kind() == io::ErrorKind::Interrupted { Ok(None) } else { Err(err) };
     }
-    let err = io::Error::last_os_error();
-    if err.kind() == io::ErrorKind::Interrupted { Ok(None) } else { Err(err) }
+    #[cfg(target_os = "macos")]
+    set_cloexec(conn);
+    // SAFETY: accept 返回的 fd 归调用方独占。
+    let conn = unsafe { File::from_raw_fd(conn) };
+    Ok((peer.cid == VMADDR_CID_HOST).then_some(conn))
 }
 
 impl Drop for Listener {
@@ -179,6 +194,7 @@ fn cloexec() -> libc::c_int {
     0
 }
 
+#[cfg(target_os = "macos")]
 fn set_cloexec(fd: RawFd) {
     // SAFETY: 对有效 fd 设置标志位。
     unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };

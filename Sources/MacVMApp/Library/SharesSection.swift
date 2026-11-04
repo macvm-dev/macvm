@@ -106,7 +106,7 @@ private struct ShareDropTarget: ViewModifier {
             }
     }
 
-    /// 只收文件夹；App 之类的包虽是目录也不收，与「添加」的文件选择面板一致。
+    /// 只收文件夹；App 之类的包虽是目录也不收。
     private static func isFolder(_ url: URL) -> Bool {
         guard url.isFileURL, let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]) else { return false }
         return values.isDirectory == true && values.isPackage != true

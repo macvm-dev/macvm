@@ -1,7 +1,7 @@
 import Foundation
 import MacVMModel
 
-/// 与客户机代理通信的消息类型，字段与编码由协议文档 agent-protocol.md 定义。
+/// 与客户机代理通信的消息类型，字段与编码由宿主与代理之间的协议文档定义。
 public enum AgentProtocol {
     public static let port: UInt32 = 6100
     static let maxFrame = 1 << 20
@@ -38,7 +38,7 @@ public enum AgentProtocol {
         case display(width: Int, height: Int)
         case cursorWatch
         case displayScale(percent: Int)
-        /// 随后发送 `size` 字节的驱动包，见 `WindowsGPUDriver.push`。
+        /// 请求之后紧跟 `size` 字节的驱动包，`sha256` 是它的 SHA-256（十六进制）。
         case gpuDriver(sha256: String, size: Int)
         /// 把 Linux 客户机的文件页缓存回收到约 `keep` 字节。
         case trimCache(keep: UInt64)

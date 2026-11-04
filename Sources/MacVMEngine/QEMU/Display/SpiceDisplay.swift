@@ -115,7 +115,7 @@ final class SpiceDisplay: DisplayBackend {
         Unmanaged<NSView>.fromOpaque(handle).release()
     }
 
-    /// `MacVMDisplay.h` 的函数表，进程内只加载一次。
+    /// 显示库导出的 `MacVMDisplay*` C 函数表，进程内只加载一次。
     struct Library {
         typealias Handler = @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double) -> Void
         typealias CursorHandler = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int32, Int32, Int32, Int32) -> Void

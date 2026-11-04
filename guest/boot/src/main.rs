@@ -35,10 +35,10 @@ fn main() -> Status {
     Status::NOT_FOUND
 }
 
-/// 找到并启动成功时返回 `Some`（启动的程序返回后的状态）；没找到返回 `None`。
+/// 找到并启动成功时返回 `Some`（启动的程序返回后的状态）；没找到或各卷上的都加载不了时返回 `None`。
 fn try_boot(path: &CStr16) -> Option<Status> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID)).ok()?;
-    for &handle in handles.iter() {
+    'volumes: for &handle in handles.iter() {
         if handle == boot::image_handle() || !file_exists(handle, path) {
             continue;
         }
@@ -49,14 +49,16 @@ fn try_boot(path: &CStr16) -> Option<Status> {
             if node.device_type() == DeviceType::END && node.sub_type() == DeviceSubType::END_ENTIRE {
                 break;
             }
-            builder = builder.push(&node).ok()?;
+            let Ok(next) = builder.push(&node) else { continue 'volumes };
+            builder = next;
         }
-        let full = builder.push(&build::media::FilePath { path_name: path }).ok()?.finalize().ok()?;
-        let image = boot::load_image(
+        let Ok(full) = builder.push(&build::media::FilePath { path_name: path }).and_then(|b| b.finalize()) else { continue };
+        let Ok(image) = boot::load_image(
             boot::image_handle(),
             LoadImageSource::FromDevicePath { device_path: full, boot_policy: uefi::proto::BootPolicy::ExactMatch },
-        )
-        .ok()?;
+        ) else {
+            continue;
+        };
         return Some(match boot::start_image(image) {
             Ok(()) => Status::SUCCESS,
             Err(e) => e.status(),

@@ -6,7 +6,7 @@ import MacVMModel
 /// 客户机代理在 QEMU 下开机时装到在场的 virtio-gpu 上；放进去之后这台虚拟机就只能用带 3D 的 QEMU 运行
 /// （`VMConfig.graphicsAcceleration`）。
 enum WindowsGPUDriver {
-    /// 客户机代理找驱动包的目录，与代理的 `GPU_DRIVER_DIR` 相同。
+    /// 客户机代理从这个目录读驱动包；路径是与代理的约定，宿主这边不能单方面改。
     static let guestDirectory = AgentInstaller.windowsDirectory + #"\viogpu3d"#
 
     /// 自带的 QEMU 编进了 Direct3D 转译时才有。

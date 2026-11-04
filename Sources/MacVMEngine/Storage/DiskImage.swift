@@ -4,10 +4,12 @@ import MacVMModel
 public enum DiskImage {
     /// 创建稀疏 raw 镜像：APFS 上只占已写入的块，且可被 `clonefile` 零拷贝复制。
     public static func createSparse(at url: URL, size: UInt64) throws {
-        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
+        let length = try fileLength(size)
+        // 磁盘里有客户机密码与代理令牌，只给自己读写。
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw MacVMError.posix("创建磁盘 \(url.path)") }
         defer { close(fd) }
-        guard ftruncate(fd, off_t(size)) == 0 else {
+        guard ftruncate(fd, length) == 0 else {
             let error = MacVMError.posix("设置磁盘大小")
             unlink(url.path)
             throw error
@@ -20,9 +22,15 @@ public enum DiskImage {
         guard size > current else {
             throw MacVMError.invalidConfig("新大小 \(ByteSize.format(size)) 不大于当前 \(ByteSize.format(current))")
         }
-        guard truncate(url.path, off_t(size)) == 0 else {
+        let length = try fileLength(size)
+        guard truncate(url.path, length) == 0 else {
             throw MacVMError.posix("扩容 \(url.path)")
         }
+    }
+
+    private static func fileLength(_ size: UInt64) throws -> off_t {
+        guard let length = off_t(exactly: size) else { throw MacVMError.invalidConfig("磁盘大小 \(ByteSize.format(size)) 超出上限") }
+        return length
     }
 
     /// 把 `staging` 目录做成无分区表的 FAT raw 镜像写到 `output`；`fat32` 为 false 时由 hdiutil 按大小选 FAT 位数。

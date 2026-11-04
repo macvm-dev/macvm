@@ -7,12 +7,23 @@ public final class ControlServer: @unchecked Sendable {
     private let path: String
     private let runner: any MachineRunner
     private let inode: ino_t
+    /// 管道两端：`close` 往写端写，接收线程据此退出，线程放开对本对象的引用后监听 fd 随之关闭。
+    private let wake: (read: Int32, write: Int32)
 
     @MainActor
     public init(runner: any MachineRunner) throws {
         try RuntimeDirectory.ensure()
         path = runner.bundle.controlSocketURL.path
-        socket = try UnixSocket.listen(at: path)
+        var ends: [Int32] = [-1, -1]
+        guard pipe(&ends) == 0 else { throw MacVMError.posix("pipe") }
+        for end in ends { _ = fcntl(end, F_SETFD, FD_CLOEXEC) }
+        do {
+            socket = try UnixSocket.listen(at: path)
+        } catch {
+            for end in ends { Darwin.close(end) }
+            throw error
+        }
+        wake = (ends[0], ends[1])
         var st = stat()
         inode = stat(path, &st) == 0 ? st.st_ino : 0
         self.runner = runner
@@ -21,14 +32,21 @@ public final class ControlServer: @unchecked Sendable {
         thread.start()
     }
 
-    /// 只删除仍是本进程创建的 socket 文件，不误删新进程刚建的同名 socket。
+    deinit {
+        Darwin.close(wake.read)
+        Darwin.close(wake.write)
+    }
+
+    /// 停止接收新请求，已建立的连接不受影响。只删除仍是本进程创建的 socket 文件，不误删新进程刚建的同名 socket。
     public func close() {
         var st = stat()
         if stat(path, &st) == 0, st.st_ino == inode { unlink(path) }
+        var byte: UInt8 = 0
+        _ = Darwin.write(wake.write, &byte, 1)
     }
 
     private func acceptLoop() {
-        while let client = socket.accept() {
+        while let client = socket.accept(cancel: wake.read) {
             Task.detached { [runner] in await Self.serve(client, runner: runner) }
         }
     }
@@ -112,14 +130,7 @@ public enum ControlClient {
 
     /// 发出请求，失败的响应转成对应的 `MacVMError` 抛出。
     public static func perform(_ request: ControlRequest, on bundle: VMBundle, timeout: Int = 60) throws {
-        let response = try send(request, to: bundle, timeout: timeout)
-        guard !response.ok else { return }
-        let message = response.message ?? "未知错误"
-        switch response.errorCode {
-        case "not_running": throw MacVMError.notRunning(bundle.name)
-        case "unsupported": throw MacVMError.unsupported(message)
-        default: throw MacVMError.engine(message)
-        }
+        if let error = try send(request, to: bundle, timeout: timeout).failure { throw error }
     }
 
     /// 经运行虚拟机的进程连到客户机端口，返回已切换为字节管道的连接。
@@ -127,7 +138,7 @@ public enum ControlClient {
         let socket = try connect(bundle, timeout: 30)
         // 逐字节读：客户机服务可能紧跟着先说话，这些字节要留在 fd 里给调用方。
         let response = try exchange(.connect(port: port), over: socket, exact: true)
-        guard response.ok else { throw MacVMError.notRunning(response.message ?? "客户机端口 \(port) 不可达") }
+        if let error = response.failure { throw error }
         socket.setTimeout(seconds: 0)
         return socket
     }

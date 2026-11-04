@@ -14,12 +14,12 @@ struct QEMUCommand {
     var display = false
     var incoming: URL?
 
-    static func qmpSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).qmp") }
-    static func portSocket(_ bundle: VMBundle, port: UInt32) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).p\(port).sock") }
+    static func qmpSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.runtimeName).qmp") }
+    static func portSocket(_ bundle: VMBundle, port: UInt32) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.runtimeName).p\(port).sock") }
     /// 画面经这两个 Unix socket 之一提供，`QEMUDisplayView` 连上它显示并转发键鼠：
     /// 自带的 QEMU 用 SPICE（GL 画面经 IOSurface 共享，不拷像素），Homebrew 的用 VNC。
-    static func vncSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).vnc") }
-    static func spiceSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.name).spice") }
+    static func vncSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.runtimeName).vnc") }
+    static func spiceSocket(_ bundle: VMBundle) -> URL { RuntimeDirectory.url.appending(path: "\(bundle.runtimeName).spice") }
 
     var usesSpice: Bool { qemu.displayLibrary != nil }
 
@@ -34,12 +34,22 @@ struct QEMUCommand {
             // 取本机最大屏幕的像素尺寸，窗口放在哪块屏幕上都够用。
             let initial = Self.fittingEDID(Self.largestHostDisplay().map { (max($0.width, config.display.width), max($0.height, config.display.height)) }
                 ?? (config.display.width, config.display.height))
-            var device = "virtio-ramfb-gl,id=gpu,blob=true,hostmem=\(config.memorySize / 2),xres=\(initial.0),yres=\(initial.1)"
+            var device = "virtio-ramfb-gl,id=gpu,blob=true,hostmem=\(Self.hostMemoryWindow(config.memorySize)),xres=\(initial.0),yres=\(initial.1)"
             if config.os == .windows, qemu.direct3D { device += ",neptune=true" }
             return device
         }
         return config.os == .windows && config.installMedia.isEmpty ? "virtio-gpu-pci" : "ramfb"
     }
+
+    /// 不超过内存一半的最大 2 的幂：hostmem 是 PCI BAR 的大小，QEMU 要求 BAR 大小是 2 的幂，否则启动即断言失败。
+    static func hostMemoryWindow(_ memorySize: UInt64) -> UInt64 {
+        let half = memorySize / 2
+        guard half > 0 else { return 0 }
+        return UInt64(1) << (63 - half.leadingZeroBitCount)
+    }
+
+    /// QEMU 的 `key=value,...` 选项里逗号是分隔符，值中的逗号要写成两个。
+    static func optionValue(_ value: String) -> String { value.replacingOccurrences(of: ",", with: ",,") }
 
     /// Windows 只采用 EDID 详细时序描述得了的首选模式：像素时钟只有 16 位（单位 10 kHz），按 QEMU 生成时序的消隐比例
     /// 与自带 QEMU 的 EDID 刷新率（60 Hz）算，宽×高最多这么多像素；超过时 QEMU 改用 DisplayID 描述，Windows 不认。
@@ -68,7 +78,7 @@ struct QEMUCommand {
     static func systemUUID(_ bundle: VMBundle) -> String? {
         guard let identity = try? Data(contentsOf: bundle.machineIdentifierURL) else { return nil }
         var bytes = Array(SHA256.hash(data: identity).prefix(16))
-        // 按 RFC 9562 标成基于名字的第 5 版 UUID。
+        // 只借用 RFC 9562 第 5 版的版本位与变体位，让它是格式合法的 UUID；散列是 SHA-256，并非真正的第 5 版 UUID。
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80
         let uuid = (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
@@ -78,7 +88,7 @@ struct QEMUCommand {
 
     func arguments() throws -> [String] {
         var a: [String] = qemu.dataDirectory.map { ["-L", $0.path] } ?? []
-        a += ["-name", config.name]
+        a += ["-name", Self.optionValue(config.name)]
         if let uuid = Self.systemUUID(bundle) { a += ["-uuid", uuid] }
         a += [
             "-nodefaults", "-no-user-config",
@@ -94,7 +104,7 @@ struct QEMUCommand {
             "-m", "\(config.memorySize >> 20)M",
             // 自带的固件去掉了补零，不能当 pflash0；-bios 两种都能加载。
             "-bios", qemu.firmwareCode.path,
-            "-drive", "if=pflash,unit=1,format=raw,file=\(QEMUInstallation.varsURL(bundle).path)",
+            "-drive", "if=pflash,unit=1,format=raw,file=\(Self.optionValue(QEMUInstallation.varsURL(bundle).path))",
             "-device", graphicsDevice,
             "-device", "qemu-xhci,id=usb",
             "-device", "usb-kbd,bus=usb.0",
@@ -107,7 +117,7 @@ struct QEMUCommand {
         for (i, disk) in config.disks.enumerated() {
             let url = bundle.resolve(disk.path)
             let cache = disk.caching == .uncached ? "none" : "writeback"
-            a += ["-drive", "if=none,id=disk\(i),format=raw,file=\(url.path),readonly=\(disk.readOnly ? "on" : "off"),cache=\(cache),discard=unmap,detect-zeroes=unmap"]
+            a += ["-drive", "if=none,id=disk\(i),format=raw,file=\(Self.optionValue(url.path)),readonly=\(disk.readOnly ? "on" : "off"),cache=\(cache),discard=unmap,detect-zeroes=unmap"]
             let boot = i == 0 ? ",bootindex=1" : ""
             switch disk.bus {
             case .nvme: a += ["-device", "nvme,drive=disk\(i),serial=macvm\(i)\(boot)"]
@@ -120,14 +130,14 @@ struct QEMUCommand {
         for (i, media) in config.installMedia.enumerated() {
             let url = bundle.resolve(media)
             let isISO = url.pathExtension.lowercased() == "iso"
-            a += ["-drive", "if=none,id=media\(i),format=raw,readonly=on,file=\(url.path)\(isISO ? ",media=cdrom" : "")"]
+            a += ["-drive", "if=none,id=media\(i),format=raw,readonly=on,file=\(Self.optionValue(url.path))\(isISO ? ",media=cdrom" : "")"]
             a += ["-device", "usb-storage,bus=usb.0,drive=media\(i),removable=on,bootindex=\(i == 0 ? 0 : i + 1)"]
         }
 
         if let net = config.networks.first {
             switch net.mode {
             case .nat:
-                let forwards = Self.forwardedPorts.map { "hostfwd=unix:\(Self.portSocket(bundle, port: $0).path)-:\($0)" }.joined(separator: ",")
+                let forwards = Self.forwardedPorts.map { "hostfwd=unix:\(Self.optionValue(Self.portSocket(bundle, port: $0).path))-:\($0)" }.joined(separator: ",")
                 a += ["-netdev", "user,id=net0,\(forwards)"]
             case .bridged:
                 // `BridgeSession` 的 socket 作为 QEMU 的标准输入交给它：`Process` 只把标准输入输出传给子进程。
@@ -136,7 +146,7 @@ struct QEMUCommand {
                 throw MacVMError.unsupported("QEMU 引擎不支持 vmnet 网络")
             }
             // 固件自带 virtio-net 驱动，不加载网卡的选项 ROM（自带的 QEMU 也没带）。
-            a += ["-device", "virtio-net-pci,netdev=net0,romfile=\(net.macAddress.map { ",mac=\($0)" } ?? "")"]
+            a += ["-device", "virtio-net-pci,netdev=net0,romfile=\(net.macAddress.map { ",mac=\(Self.optionValue($0))" } ?? "")"]
         }
 
         // HDA 可迁移，挂起不受影响；usb-audio 会让 QEMU 拒绝保存状态。
@@ -147,12 +157,12 @@ struct QEMUCommand {
             throw MacVMError.unsupported("QEMU 引擎在 macOS 上不支持 virtio-fs 共享目录")
         }
 
-        a += ["-qmp", "unix:\(Self.qmpSocket(bundle).path),server=on,wait=off"]
+        a += ["-qmp", "unix:\(Self.optionValue(Self.qmpSocket(bundle).path)),server=on,wait=off"]
         if usesSpice {
             // GL 画面不能同时给 VNC；自带的 QEMU 也不带 Cocoa 窗口，`display` 不起作用。
-            a += ["-display", "none", "-spice", "unix=on,addr=\(Self.spiceSocket(bundle).path),disable-ticketing=on,gl=on"]
+            a += ["-display", "none", "-spice", "unix=on,addr=\(Self.optionValue(Self.spiceSocket(bundle).path)),disable-ticketing=on,gl=on"]
         } else {
-            a += ["-display", display ? "cocoa" : "none", "-vnc", "unix:\(Self.vncSocket(bundle).path)"]
+            a += ["-display", display ? "cocoa" : "none", "-vnc", "unix:\(Self.optionValue(Self.vncSocket(bundle).path))"]
         }
         a += ["-monitor", "none", "-serial", "none"]
         if let incoming { a += ["-incoming", "file:\(incoming.path)"] }

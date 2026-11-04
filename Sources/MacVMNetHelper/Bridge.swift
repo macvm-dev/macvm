@@ -97,14 +97,17 @@ final class Bridge: @unchecked Sendable {
 
     /// 拆掉桥接并关闭本端 socket。可重复调用。
     func stop() {
-        queue.async { [self] in
-            guard !stopped else { return }
-            stopped = true
-            readSource?.cancel()
-            vmnet_interface_set_event_callback(interface, .VMNET_INTERFACE_PACKETS_AVAILABLE, nil, nil)
-            // 回调持有 self，接口停下之前缓冲区不能释放。
-            vmnet_stop_interface(interface, queue) { _ in _ = self }
-        }
+        queue.async { [self] in teardown() }
+    }
+
+    /// `stop` 的实际工作，只在 `queue` 上调用。
+    private func teardown() {
+        guard !stopped else { return }
+        stopped = true
+        readSource?.cancel()
+        vmnet_interface_set_event_callback(interface, .VMNET_INTERFACE_PACKETS_AVAILABLE, nil, nil)
+        // 回调持有 self，接口停下之前缓冲区不能释放。
+        vmnet_stop_interface(interface, queue) { _ in _ = self }
     }
 
     /// 网卡 → 客户机。对端收缓冲满时丢帧，和网线上一样交给上层重传。
@@ -129,8 +132,9 @@ final class Bridge: @unchecked Sendable {
             while count < Self.batch {
                 let n = recv(socket, packets.base(count), packetSize, 0)
                 if n < 0, errno == EAGAIN || errno == EINTR { break }
-                // 两端都不发空数据报，读到 0 字节或出错是对端已关闭；不停掉读源会一直被唤醒。
-                if n <= 0 { readSource?.cancel(); break }
+                // 两端都不发空数据报，读到 0 字节或出错是对端已关闭：整个桥接拆掉，
+                // 读源取消后 socket 随即关闭，网卡方向不能再往这个 fd 号发帧。
+                if n <= 0 { teardown(); return }
                 packets.setLength(count, n)
                 if let ip = ARPSnoop.senderAddress(in: UnsafeRawBufferPointer(start: packets.base(count), count: n), from: mac), ip != lastAddress {
                     lastAddress = ip

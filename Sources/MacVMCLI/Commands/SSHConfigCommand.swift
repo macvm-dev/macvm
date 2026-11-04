@@ -45,7 +45,7 @@ struct SSHConfigCommand: AsyncParsableCommand {
         (Bundle.main.executableURL ?? URL(filePath: CommandLine.arguments[0])).resolvingSymlinksInPath().path
     }
 
-    /// create / rm 之后调用，保持已启用的 ssh 配置与虚拟机列表一致。
+    /// 按当前虚拟机列表重写已启用的 ssh 配置。
     static func refresh() {
         SSHConfig.refreshIfInstalled(macvmPath: executablePath)
     }

@@ -6,8 +6,8 @@
 # App 进程里的 SPICE 客户端直接显示它。Windows 的 Direct3D 由 DXMT 转成 Metal，DXMT 的着色器翻译要
 # LLVM 15，首次编译很久；MACVM_QEMU_DIRECT3D=0 时不编它（Windows 就没有 3D）。
 #
-# 所有源码按校验和固定在 qemu/sources.tsv。编译工具与 glib、pixman、openssl 用 Homebrew 的：
-#   brew install cmake ninja meson pkgconf glib pixman openssl python
+# 所有源码按校验和固定在 qemu/sources.tsv。编译工具与 glib、pixman、openssl、libslirp 用 Homebrew 的：
+#   brew install cmake ninja meson pkgconf glib pixman openssl python libslirp
 # 另需 Xcode 的 Metal 工具链：xcodebuild -downloadComponent MetalToolchain
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -30,7 +30,7 @@ fail() { echo "build-qemu: $*" >&2; exit 1; }
 
 brew_prefix=${HOMEBREW_PREFIX:-/opt/homebrew}
 for tool in cmake ninja meson pkg-config clang xcrun git; do
-  command -v "$tool" >/dev/null || fail "缺少 ${tool}：brew install cmake ninja meson pkgconf glib pixman openssl python"
+  command -v "$tool" >/dev/null || fail "缺少 ${tool}：brew install cmake ninja meson pkgconf glib pixman openssl python libslirp"
 done
 for library in glib-2.0 pixman-1 openssl slirp; do
   pkg-config --exists "$library" || fail "缺少 ${library}：brew install glib pixman openssl libslirp"

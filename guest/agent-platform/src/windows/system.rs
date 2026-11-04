@@ -101,7 +101,6 @@ pub fn shutdown(reboot: bool) -> io::Result<()> {
     run("shutdown", &[if reboot { "/r" } else { "/s" }, "/t", "0"])
 }
 
-/// 恢复挂起后对时；修改系统时间需要管理员权限，代理以最高权限运行。
 /// 让 Windows 把主板时钟当 UTC 读：QEMU 与 VZ 的 RTC 都是 UTC，Windows 默认当本地时间读，
 /// 时钟会差一个时区。开机时读取，改动在下次开机生效。
 pub fn configure_rtc_utc() {
@@ -119,6 +118,7 @@ pub fn configure_rtc_utc() {
     }
 }
 
+/// 恢复挂起后对时；修改系统时间需要管理员权限，代理以最高权限运行。
 pub fn set_time(unix_ms: i64) -> io::Result<()> {
     let script = format!("Set-Date -Date ([DateTimeOffset]::FromUnixTimeMilliseconds({unix_ms}).LocalDateTime) | Out-Null");
     run("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script])

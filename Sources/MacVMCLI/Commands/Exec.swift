@@ -38,9 +38,12 @@ struct Exec: AsyncParsableCommand {
                 let argv = command.isEmpty ? ["/bin/sh", "-c", "exec \"$SHELL\" -l"] : command
                 let request = AgentProtocol.ExecRequest(argv: argv, user: user, cwd: cwd, tty: interactive, cols: size?.cols, rows: size?.rows)
                 let terminal = interactive ? RawTerminal(passSignals: false) : nil
+                defer { terminal?.restore() }
                 let code = try AgentClient.exec(bundle, request: request)
-                terminal?.restore()
                 throw ExitCode(code)
+            }
+            if user != nil {
+                throw MacVMError.unsupported("--user 需要客户机代理，\(name) 未安装代理")
             }
             try await Wait.untilReady(bundle, config: config, timeout: 300)
             let remote = config.os == .windows ? Self.powerShellCommand(command, cwd: cwd) : Self.posixCommand(command, cwd: cwd)
@@ -86,8 +89,8 @@ struct SSH: AsyncParsableCommand {
         guard let user = config.guestUser else {
             throw MacVMError.unsupported("不知道 \(config.name) 的登录用户（从安装介质安装的虚拟机需自行配置 SSH）")
         }
+        try SSHConfig.validateLogin(user: user, host: config.name)
         let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: config.name)
-        // 未装代理时经网络连 sshd；先确保虚拟机在运行，免得 ssh 的连接超时先于开机完成。
         var args = ["ssh", "-q", tty ? "-tt" : "-T"] + SSHConfig.keyArguments(proxyCommand: proxy)
             + ["\(user)@\(config.name)"]
         if let remoteCommand { args += ["--", remoteCommand] }

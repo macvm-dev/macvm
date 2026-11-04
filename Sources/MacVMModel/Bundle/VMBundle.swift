@@ -30,11 +30,20 @@ public struct VMBundle: Sendable, Equatable {
     /// `creationMarkerURL` 里的令牌；没有标记时为 nil。
     public var creationToken: String? { try? String(contentsOf: creationMarkerURL, encoding: .utf8) }
 
+    /// 运行时目录里本包文件的名字前缀：虚拟机名加包路径的摘要。运行时目录只按用户区分，
+    /// 不同虚拟机目录（如 `MACVM_HOME`）里的同名虚拟机靠摘要分开；摘要要在各进程间一致，不能用 `Hasher`。
+    public var runtimeName: String {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        var hash: UInt32 = 0x811C_9DC5
+        for byte in path.utf8 { hash = (hash ^ UInt32(byte)) &* 0x0100_0193 }
+        return "\(name)-" + String(format: "%08x", hash)
+    }
+
     /// 控制 socket 放在短路径的运行时目录：`sun_path` 只有 104 字节，放进包内会被长路径撑爆。
-    public var controlSocketURL: URL { RuntimeDirectory.url.appending(path: "\(name).sock") }
+    public var controlSocketURL: URL { RuntimeDirectory.url.appending(path: "\(runtimeName).sock") }
 
     /// 桥接网络下客户机当前的 IPv4 地址（纯文本），由运行它的进程写入，关机时删除。
-    public var bridgedAddressURL: URL { RuntimeDirectory.url.appending(path: "\(name).ip") }
+    public var bridgedAddressURL: URL { RuntimeDirectory.url.appending(path: "\(runtimeName).ip") }
 
     public var hasSavedState: Bool { FileManager.default.fileExists(atPath: savedStateURL.path) }
 

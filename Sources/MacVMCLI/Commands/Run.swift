@@ -21,7 +21,7 @@ struct Run: AsyncParsableCommand {
     @Flag(help: "QEMU 引擎：打开 QEMU 自己的窗口显示画面。")
     var display = false
 
-    /// `macvm start` 派生的后台进程；标准输出已重定向到 run.log。
+    /// 作为后台进程运行：标准输出与标准错误是 `VMBundle.logURL`，启停记录与开了 `VMConfig.serialConsole` 时的控制台输出都写进去。
     @Flag(help: .hidden)
     var detached = false
 

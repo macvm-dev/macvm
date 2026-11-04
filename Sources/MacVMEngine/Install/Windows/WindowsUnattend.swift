@@ -169,7 +169,7 @@ enum WindowsUnattend {
         return script.replacingOccurrences(of: "\n", with: "\r\n") + "\r\n"
     }
 
-    /// 首次登录时运行：关休眠、装并启动 OpenSSH Server、写入 macvm 公钥、装客户机代理，最后留下完成标记。
+    /// 首次登录时运行：关休眠、装并启动 OpenSSH Server（只认密钥）、写入 macvm 公钥、装客户机代理，最后留下完成标记。
     /// OpenSSH Server 是按需功能，需联网下载，所以先等网络可用。用户态网络会被识别为公用网络，
     /// 而系统自带的 sshd 入站规则只对专用网络生效，因此改为对所有网络生效。
     /// PowerShell 的全局配置把控制台输出设为 UTF-8，经 SSH 取回的中文才不乱码。
@@ -198,6 +198,9 @@ enum WindowsUnattend {
         }
         Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
         Set-Content -Path $PSHOME\profile.ps1 -Encoding utf8 -Value '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding'
+        # sshd 取选项第一次出现的值，文件末尾又是 Match 段，所以加在最前。
+        $sshdConfig = 'C:\ProgramData\ssh\sshd_config'
+        if (Test-Path $sshdConfig) { Set-Content -Path $sshdConfig -Encoding ascii -Value (@('PasswordAuthentication no') + @(Get-Content $sshdConfig)) }
         Restart-Service sshd
         \#(o.productKey.map { "cscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ipk \($0)\ncscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ato" } ?? "")
         \#(o.installAgent ? AgentInstaller.windowsPrepareDirectory : "")

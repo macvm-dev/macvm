@@ -56,7 +56,7 @@ struct Set: AsyncParsableCommand {
             if let cpuCount { config.cpuCount = cpuCount }
             if let memory { config.memorySize = try ByteSize.parse(memory) }
             if let display, let (width, height) = Display.parse(display) {
-                if config.os == .windows { throw WindowsSupport.fixedDisplayError }
+                if config.os == .windows, config.engine == .vz { throw WindowsSupport.fixedDisplayError }
                 config.display.width = width
                 config.display.height = height
             }

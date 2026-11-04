@@ -6,6 +6,10 @@ public final class ProcessLock: @unchecked Sendable {
     private var fd: Int32
     private let mutex = NSLock()
 
+    private static let busyRetries = 5
+    /// 微秒。
+    private static let busyRetryInterval: useconds_t = 2_000
+
     private init(fd: Int32) { self.fd = fd }
 
     deinit { release() }
@@ -23,9 +27,15 @@ public final class ProcessLock: @unchecked Sendable {
     public static func acquire(at url: URL) throws -> ProcessLock? {
         let fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
         guard fd >= 0 else { throw MacVMError.posix("打开 \(url.path)") }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
-            close(fd)
-            return nil
+        // 拿不到时稍等重试：别的进程探测持有者时也会短暂占着锁，那不算被持有。
+        var attempts = 1
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            guard attempts < busyRetries else {
+                close(fd)
+                return nil
+            }
+            attempts += 1
+            usleep(busyRetryInterval)
         }
         ftruncate(fd, 0)
         let pid = "\(getpid())\n"

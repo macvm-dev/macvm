@@ -9,7 +9,11 @@ public enum ByteSize {
                                          ("T", 1 << 40), ("G", 1 << 30), ("M", 1 << 20), ("K", 1 << 10), ("B", 1)]
         for (suffix, factor) in units where s.hasSuffix(suffix) {
             let number = s.dropLast(suffix.count).trimmingCharacters(in: .whitespaces)
-            if let v = Double(number), v > 0 { return UInt64(v * Double(factor)) }
+            // `Double` 接受 inf 与指数写法，转成 UInt64 前须落在其范围内；截断为 0 的值按无法解析处理。
+            if let v = Double(number), v.isFinite, v > 0 {
+                let bytes = v * Double(factor)
+                if bytes >= 1, bytes < Double(UInt64.max) { return UInt64(bytes) }
+            }
             break
         }
         if let v = UInt64(s), v > 0 { return v }

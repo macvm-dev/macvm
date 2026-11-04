@@ -94,8 +94,9 @@ public enum LinuxDesktop: String, CaseIterable, Sendable {
         return Release(fileName: url.lastPathComponent, url: url, sha256: sha256.lowercased())
     }
 
+    /// 网络不通或服务器连上后不再回数据时，也要在限定时间内报错，不能一直挂着。
     private static func fetch(_ url: String) async throws -> String {
-        try await Subprocess.run("/usr/bin/curl", ["-fsSL", "--retry", "3", url])
+        try await Subprocess.run("/usr/bin/curl", ["-fsSL", "--retry", "3", "--connect-timeout", "10", "--max-time", "30", url])
     }
 }
 

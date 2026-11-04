@@ -29,7 +29,7 @@ use super::{CREATE_NO_WINDOW, VIRTIO_GPU, until_nul, wide};
 pub const GPU_DRIVER_DIR: &str = r"C:\ProgramData\macvm\viogpu3d";
 /// 驱动目录里记着宿主推来的驱动包（zip）SHA-256 的文件。
 const PACKAGE_STAMP: &str = ".macvm-package";
-/// 开机时的安装与宿主推送可能同时发生，装驱动一次只做一个。
+/// 开机时的安装与宿主推送可能同时发生：替换驱动目录、装驱动一次只做一个，暂存目录也因此可以按进程号命名。
 static INSTALLING: Mutex<()> = Mutex::new(());
 /// VZ 的 SMBIOS 制造商。
 const VZ_MANUFACTURER: &str = "Apple Inc.";
@@ -96,6 +96,11 @@ pub(super) fn is_3d_driver(key: HKEY) -> bool {
 /// 换上后画面立即由它驱动，桌面合成改用 GPU 要等下次开机。
 pub fn install_gpu_driver() -> io::Result<bool> {
     let _installing = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
+    install_holding_lock()
+}
+
+/// 调用方持有 `INSTALLING`。
+fn install_holding_lock() -> io::Result<bool> {
     let inf = Path::new(GPU_DRIVER_DIR).join("viogpu3d.inf");
     if on_vz() {
         return Ok(false);
@@ -141,6 +146,7 @@ pub fn replace_gpu_driver(zip: &[u8], sha256: &str) -> io::Result<bool> {
     if on_vz() {
         return Err(io::Error::new(io::ErrorKind::Unsupported, "VZ 下不装 3D 显卡驱动"));
     }
+    let _installing = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
     let staging = std::env::temp_dir().join(format!("macvm-viogpu3d-{}", std::process::id()));
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)?;
@@ -150,7 +156,7 @@ pub fn replace_gpu_driver(zip: &[u8], sha256: &str) -> io::Result<bool> {
     }
     let _ = fs::remove_dir_all(&staging);
     result?;
-    install_gpu_driver()
+    install_holding_lock()
 }
 
 fn unpack_driver_package(zip: &[u8], staging: &Path) -> io::Result<()> {

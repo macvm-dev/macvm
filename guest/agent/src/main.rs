@@ -51,10 +51,17 @@ fn main() {
                     }
                 });
             }
-            Err(e) => eprintln!("macvm-agent: accept 失败：{e}"),
+            Err(e) => {
+                eprintln!("macvm-agent: accept 失败：{e}");
+                // fd 耗尽一类错误下连接仍留在队列里，监听立刻又就绪，不等一下就会空转刷屏。
+                thread::sleep(ACCEPT_RETRY_DELAY);
+            }
         }
     }
 }
+
+/// accept 出错后等这么久再重试。
+const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 fn parse_args() -> Config {
     let mut config = Config { port: proto::PORT, default_user: None };
@@ -132,18 +139,37 @@ fn read_answer_line(conn: &mut Conn, deadline: Instant) -> io::Result<Vec<u8>> {
     }
 }
 
+/// 连接在读请求之前的处置。
+#[derive(Debug, PartialEq, Eq)]
+enum Admission {
+    Accept,
+    /// 以这个令牌发质询，答对才读请求。
+    Challenge(String),
+    /// 直接断开、不回应。
+    Drop,
+}
+
+/// vsock 连接直接受理。TCP 连接在客户机里有令牌 `token` 时都要过质询：单凭来源认不出宿主；
+/// 没有令牌时只受理来自默认网关的连接。
+fn admission(origin: Origin, token: Option<String>) -> Admission {
+    match (origin, token) {
+        (Origin::Vsock, _) => Admission::Accept,
+        (_, Some(token)) => Admission::Challenge(token),
+        (Origin::Gateway, None) => Admission::Accept,
+        (Origin::Network, None) => Admission::Drop,
+    }
+}
+
 fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
-    if origin != Origin::Vsock {
-        match platform::agent_token() {
-            Some(token) => {
-                if !authenticate(&mut conn, &token)? {
-                    return Ok(());
-                }
+    let token = if origin == Origin::Vsock { None } else { platform::agent_token() };
+    match admission(origin, token) {
+        Admission::Accept => {}
+        Admission::Challenge(token) => {
+            if !authenticate(&mut conn, &token)? {
+                return Ok(());
             }
-            // 客户机里没有令牌时只受理来自默认网关的连接，其余直接断开、不回应。
-            None if origin == Origin::Gateway => {}
-            None => return Ok(()),
         }
+        Admission::Drop => return Ok(()),
     }
     let line = proto::read_line(&mut conn)?;
     let request: Request = match serde_json::from_slice(&line) {
@@ -303,7 +329,9 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
         }
     }
 
-    // 宿主输入：在独立线程读帧，子进程退出后连接关闭使它结束。
+    let hangup = spawned.child.hangup().ok();
+    // 宿主输入：在独立线程读帧，连接关闭使它结束。宿主收到 exit 帧之前不关连接，所以那之前读到结束就是宿主已断开：
+    // 挂断子进程，否则不读不写的子进程会连同输出泵一直留着。
     let mut reader = conn;
     let input_thread = thread::spawn(move || {
         while let Ok(Some((kind, payload))) = proto::read_frame(&mut reader) {
@@ -332,6 +360,9 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
                 }
                 _ => {}
             }
+        }
+        if let Some(hangup) = hangup {
+            hangup();
         }
     });
 
@@ -368,4 +399,56 @@ fn pump_output(mut source: File, kind: FrameKind, writer: Arc<Mutex<Conn>>) -> t
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admission_policy() {
+        let token = || Some("t".to_string());
+        assert_eq!(admission(Origin::Vsock, None), Admission::Accept);
+        assert_eq!(admission(Origin::Vsock, token()), Admission::Accept);
+        assert_eq!(admission(Origin::Gateway, token()), Admission::Challenge("t".to_string()));
+        assert_eq!(admission(Origin::Network, token()), Admission::Challenge("t".to_string()));
+        assert_eq!(admission(Origin::Gateway, None), Admission::Accept);
+        assert_eq!(admission(Origin::Network, None), Admission::Drop);
+    }
+
+    #[cfg(unix)]
+    fn socket_pair() -> (Conn, std::os::unix::net::UnixStream) {
+        let (conn, peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        (File::from(std::os::fd::OwnedFd::from(conn)), peer)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn answer_line_stops_at_newline() {
+        let (mut conn, mut peer) = socket_pair();
+        peer.write_all(b"{\"auth\":\"ab\"}\n{\"op\":\"info\"}\n").unwrap();
+        let line = read_answer_line(&mut conn, Instant::now() + Duration::from_secs(5)).unwrap();
+        assert_eq!(line, b"{\"auth\":\"ab\"}");
+        assert_eq!(proto::read_line(&mut conn).unwrap(), b"{\"op\":\"info\"}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn answer_line_rejects_long_line() {
+        let (mut conn, mut peer) = socket_pair();
+        peer.write_all(&[b'a'; MAX_ANSWER + 1]).unwrap();
+        let err = read_answer_line(&mut conn, Instant::now() + Duration::from_secs(5)).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn answer_line_gives_up_at_deadline() {
+        let (mut conn, _peer) = socket_pair();
+        let started = Instant::now();
+        assert!(read_answer_line(&mut conn, started + Duration::from_millis(50)).is_err());
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let err = read_answer_line(&mut conn, started).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+    }
 }

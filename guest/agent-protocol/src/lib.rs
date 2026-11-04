@@ -200,7 +200,7 @@ pub fn read_frame(r: &mut impl Read) -> io::Result<Option<(FrameKind, Vec<u8>)>>
     Ok(Some((kind, payload)))
 }
 
-/// 读一行请求（不含换行），上限 1 MiB。
+/// 读一行请求（不含换行），长度上限 `MAX_FRAME`。
 pub fn read_line(r: &mut impl Read) -> io::Result<Vec<u8>> {
     let mut line = Vec::new();
     let mut byte = [0u8; 1];

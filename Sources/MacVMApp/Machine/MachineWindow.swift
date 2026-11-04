@@ -11,6 +11,8 @@ struct MachineWindow: View {
     let name: String
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
+    /// 启动失败的原因，就地显示：只开着本窗口时也看得到。
+    @State private var failure: String?
     @State private var showingShares = false
     @State private var showingImages = false
     @State private var choosingImage = false
@@ -54,7 +56,11 @@ struct MachineWindow: View {
                     Button("关机") { Task { await model.stop(name) } }
                 }
             } else if failed {
-                ContentUnavailableView("无法启动", systemImage: "exclamationmark.triangle")
+                ContentUnavailableView {
+                    Label("无法启动", systemImage: "exclamationmark.triangle")
+                } description: {
+                    if let failure { Text(failure).textSelection(.enabled) }
+                }
             } else {
                 startingView
             }
@@ -86,6 +92,7 @@ struct MachineWindow: View {
             awaitingFirstFrame = !model.isRunningHere(name)
             runner = await model.start(name)
             failed = runner == nil
+            failure = failed ? model.lastError : nil
             if !(runner is VZRunner) { awaitingFirstFrame = false }
         }
         .onChange(of: isRunning) { wasRunning, running in

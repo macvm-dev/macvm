@@ -10,6 +10,7 @@ final class UnixSocket: @unchecked Sendable {
 
     deinit { close(fd) }
 
+    /// 监听 fd 是非阻塞的：`accept(cancel:)` 先 poll 再取连接，连接在两步之间被撤回时不会卡在 accept 上。
     static func listen(at path: String) throws -> UnixSocket {
         unlink(path)
         let socket = try make()
@@ -18,6 +19,7 @@ final class UnixSocket: @unchecked Sendable {
         }
         chmod(path, 0o600)
         guard Darwin.listen(socket.fd, 16) == 0 else { throw MacVMError.posix("listen \(path)") }
+        _ = fcntl(socket.fd, F_SETFL, fcntl(socket.fd, F_GETFL) | O_NONBLOCK)
         return socket
     }
 
@@ -29,12 +31,37 @@ final class UnixSocket: @unchecked Sendable {
         return socket
     }
 
-    func accept() -> UnixSocket? {
-        let client = Darwin.accept(fd, nil, nil)
-        guard client >= 0 else { return nil }
-        Self.disableSigpipe(client)
-        return UnixSocket(fd: client)
+    /// 等下一个连接，返回阻塞式的连接；`cancel` 可读时返回 nil。
+    /// 连接被对端撤回、fd 暂时用尽这类可恢复的错误不结束等待，只有监听 fd 本身失效才返回 nil。
+    func accept(cancel: Int32) -> UnixSocket? {
+        var fds = [pollfd(fd: fd, events: Int16(POLLIN), revents: 0), pollfd(fd: cancel, events: Int16(POLLIN), revents: 0)]
+        while true {
+            if poll(&fds, nfds_t(fds.count), -1) < 0 {
+                if errno == EINTR { continue }
+                return nil
+            }
+            if fds[1].revents != 0 { return nil }
+            guard fds[0].revents & Int16(POLLIN) != 0 else { return nil }
+            let client = Darwin.accept(fd, nil, nil)
+            if client < 0 {
+                switch errno {
+                case EINTR, EAGAIN, ECONNABORTED: continue
+                case EMFILE, ENFILE, ENOBUFS, ENOMEM:
+                    usleep(Self.acceptRetryDelay)
+                    continue
+                default: return nil
+                }
+            }
+            // 连接继承监听 fd 的 O_NONBLOCK，调用方按阻塞式读写。
+            _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
+            _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+            Self.disableSigpipe(client)
+            return UnixSocket(fd: client)
+        }
     }
+
+    /// fd 用尽时隔多久再试（微秒）。
+    private static let acceptRetryDelay: useconds_t = 100_000
 
     func writeAll(_ data: Data) throws {
         try data.withUnsafeBytes { raw in

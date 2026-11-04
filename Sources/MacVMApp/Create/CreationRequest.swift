@@ -1,7 +1,7 @@
 import Foundation
 import MacVMModel
 
-/// 一次新建虚拟机的请求。开始时存进 `CreationStore`，结束（成功或失败）时删掉；
+/// 一次新建虚拟机的请求。未结束的存在 `CreationStore` 里；
 /// App 中途退出留下的就是被中断的，下次启动时可以继续或放弃。
 struct CreationRequest: Codable, Sendable, Equatable {
     enum Source: Codable, Hashable, Sendable {
@@ -43,7 +43,7 @@ struct CreationRequest: Codable, Sendable, Equatable {
     var id = UUID()
 }
 
-/// 未结束的新建请求，存在设置文件旁的 `creations.json`。含客户机密码与 Windows 产品密钥，文件只给本用户读写。
+/// 未结束的新建请求，存在设置文件旁。含客户机密码与 Windows 产品密钥，文件只给本用户读写。
 enum CreationStore {
     static var fileURL: URL {
         MacVMSettings.fileURL.deletingLastPathComponent().appending(path: "creations.json")
@@ -61,7 +61,22 @@ enum CreationStore {
             return
         }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(requests).write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        try writePrivately(JSONEncoder().encode(requests), to: url)
+    }
+
+    /// 原子替换 `url`；临时文件一创建就是 0600，权限没有放宽过的时刻。
+    private static func writePrivately(_ data: Data, to url: URL) throws {
+        let temp = url.deletingLastPathComponent().appending(path: ".\(url.lastPathComponent).\(UUID().uuidString)")
+        let fd = open(temp.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw MacVMError.posix("创建 \(temp.path)") }
+        do {
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            try handle.write(contentsOf: data)
+            try handle.close()
+            guard rename(temp.path, url.path) == 0 else { throw MacVMError.posix("写入 \(url.path)") }
+        } catch {
+            unlink(temp.path)
+            throw error
+        }
     }
 }

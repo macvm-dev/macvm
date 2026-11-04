@@ -47,13 +47,18 @@ enum Download {
     }
 
     /// 绑定了 `DownloadProgress.handler` 时每半秒回报一次进度。调用方须持有 `destination` 的 `DownloadLock`。
-    /// 探测时连不上服务器就报错，已下的内容原样留着。
+    /// 探测时连不上服务器、或范围探测回了错误状态就报错，已下的内容原样留着。
     private static func file(_ url: URL, to destination: URL, showProgress: Bool) async throws {
         let probe = try await probe(url)
-        let ranged = if let probe { try await honorsRanges(probe.url) } else { false }
-        guard let probe, ranged, let length = probe.length, length >= segmentThreshold else {
+        // 只有要分块、或目标里已有内容要续传时才需要知道服务器认不认范围请求；没探测时为 nil。
+        let ranged: Bool? = if let probe, (probe.length ?? 0) >= segmentThreshold || size(of: destination) > 0 {
+            try await honorsRanges(probe.url)
+        } else {
+            nil
+        }
+        guard let probe, ranged == true, let length = probe.length, length >= segmentThreshold else {
             // 服务器明确不支持范围请求：已有内容续不上，curl 的 `-C -` 会直接报错。
-            if probe != nil, !ranged {
+            if ranged == false {
                 for leftover in segmentLeftovers(of: destination) { try? FileManager.default.removeItem(at: leftover) }
                 try? FileManager.default.removeItem(at: destination)
             }
@@ -167,31 +172,44 @@ enum Download {
     private static let curlFileTooLarge: Int32 = 63
 
     /// 用只要首字节的 GET 判断范围请求是否生效：HEAD 里的 `Accept-Ranges` 不可靠，有的服务器 GET 时忽略 Range、返回整个文件。
-    /// 那时 `--max-filesize` 让 curl 不下正文就以 `curlFileTooLarge` 退出，`-w` 照样打出状态码。连不上服务器时报错。
+    /// 那时 `--max-filesize` 让 curl 不下正文就以 `curlFileTooLarge` 退出，`-w` 照样打出状态码。
+    /// 206 为 true，其他 2xx 为 false；连不上服务器或回了非 2xx（限流、暂时不可用）时报错，不当作不支持范围请求。
     private static func honorsRanges(_ url: URL) async throws -> Bool {
-        let status = try await Subprocess.run("/usr/bin/curl", ["-sL", "--retry", "2", "-r", "0-0", "--max-filesize", "1024",
+        let output = try await Subprocess.run("/usr/bin/curl", ["-sL", "--retry", "2", "-r", "0-0", "--max-filesize", "1024",
                                                                 "-o", "/dev/null", "-w", "%{http_code}", url.absoluteString],
                                               acceptedExitCodes: [0, curlFileTooLarge])
-        return status.trimmingCharacters(in: .whitespacesAndNewlines) == "206"
+        let status = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let code = Int(status), (200..<300).contains(code) else {
+            throw MacVMError.io("探测范围请求时服务器回了 HTTP \(status)，已下的内容保留，请稍后重试：\(url.absoluteString)")
+        }
+        return code == 206
     }
 
-    /// 下载一段；段文件已有的部分不再下。服务器中途不再按范围响应时下到的字节数会对不上，报错并删掉段文件。
+    /// 一段下载中途断开后，`fetch` 从段文件已有的字节接着重下的次数上限（含第一次）。
+    static let fetchAttempts = 5
+
+    /// 下载一段；段文件已有的部分不再下。curl 中途失败时（如连接被切断）按段文件的新大小重下剩余部分，至多 `fetchAttempts` 次。
+    /// 服务器中途不再按范围响应时下到的字节数会对不上，报错并删掉段文件。
     private static func fetch(_ url: URL, range: ClosedRange<Int64>, to segment: URL) async throws {
         let expected = range.upperBound - range.lowerBound + 1
-        var have = size(of: segment)
-        if have > expected {
-            try? FileManager.default.removeItem(at: segment)
-            have = 0
+        if size(of: segment) > expected { try? FileManager.default.removeItem(at: segment) }
+        for attempt in 1... {
+            let have = size(of: segment)
+            if have >= expected { break }
+            if !FileManager.default.fileExists(atPath: segment.path) {
+                FileManager.default.createFile(atPath: segment.path, contents: nil)
+            }
+            let output = try FileHandle(forWritingTo: segment)
+            defer { try? output.close() }
+            try output.seekToEnd()
+            do {
+                _ = try await Subprocess.run("/usr/bin/curl", ["-fsSL", "--retry", "5", "-r", "\(range.lowerBound + have)-\(range.upperBound)",
+                                                               url.absoluteString], stdout: output)
+                break
+            } catch MacVMError.io where attempt < fetchAttempts {
+                try await Task.sleep(for: .seconds(2))
+            }
         }
-        if have == expected { return }
-        if !FileManager.default.fileExists(atPath: segment.path) {
-            FileManager.default.createFile(atPath: segment.path, contents: nil)
-        }
-        let output = try FileHandle(forWritingTo: segment)
-        defer { try? output.close() }
-        try output.seekToEnd()
-        _ = try await Subprocess.run("/usr/bin/curl", ["-fsSL", "--retry", "5", "-r", "\(range.lowerBound + have)-\(range.upperBound)",
-                                                       url.absoluteString], stdout: output)
         guard size(of: segment) == expected else {
             try? FileManager.default.removeItem(at: segment)
             throw MacVMError.io("分段下载的字节数不对，服务器可能不支持范围请求：\(url.absoluteString)")

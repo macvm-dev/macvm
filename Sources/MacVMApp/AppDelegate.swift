@@ -5,7 +5,7 @@ import MacVMEngine
 /// 菜单栏图标显示时，Dock 图标随窗口出现和消失；图标隐藏时 Dock 图标一直保留，否则没有入口能再打开窗口。
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// 放在这里而不是 `App` 的状态里：退出前要用它判断是否有新建在进行。
+    /// 放在这里而不是 `App` 的状态里：退出前要用它判断是否有虚拟机在运行或任务在进行。
     let model = AppModel()
     private var observers: [any NSObjectProtocol] = []
 
@@ -36,12 +36,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ChildProcesses.terminateAll()
     }
 
+    /// 本进程运行的虚拟机随进程退出而断电，新建以外的任务（存模板、首次开机配置 SSH）中断后不会续做，退出前都要确认。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let busy = model.creatingNames
-        guard !busy.isEmpty else { return .terminateNow }
+        let running = model.runners.keys.sorted()
+        let creating = model.resumableCreations
+        let other = model.creatingNames.filter { !creating.contains($0) }
+        var notes: [String] = []
+        if !running.isEmpty {
+            notes.append("\(running.joined(separator: "、")) 在本 App 里运行，退出会直接断电，客户机里没保存的内容会丢失。")
+        }
+        if !creating.isEmpty {
+            notes.append("\(creating.joined(separator: "、")) 还在创建，退出会中断创建，下次打开 MacVM 时自动继续，已下载的部分不用重下。")
+        }
+        if !other.isEmpty {
+            notes.append("\(other.joined(separator: "、")) 有进行中的任务，退出会中断，不会自动继续。")
+        }
+        guard !notes.isEmpty else { return .terminateNow }
         let alert = NSAlert()
-        alert.messageText = "\(busy.joined(separator: "、")) 还在创建，要退出吗？"
-        alert.informativeText = "退出会中断创建，下次打开 MacVM 时自动继续，已下载的部分不用重下。"
+        alert.messageText = "要退出 MacVM 吗？"
+        alert.informativeText = notes.joined(separator: "\n\n")
         alert.addButton(withTitle: "取消")
         alert.addButton(withTitle: "退出")
         NSApp.activate()

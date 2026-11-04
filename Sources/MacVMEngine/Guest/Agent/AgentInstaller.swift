@@ -91,7 +91,7 @@ public enum AgentInstaller {
 
     /// Windows 上把 `source` 处的代理装好并启动的 PowerShell 片段，要在 `windowsPrepareDirectory` 之后运行：
     /// 登录时以最高权限在 `user` 的交互会话里运行的计划任务（剪贴板只在交互会话可用），
-    /// 外加对所有网络生效的入站规则。代理对经 TCP 连入的连接要求答对 `AgentToken` 的质询。
+    /// 外加对所有网络生效的入站规则。
     static func windowsRegistration(source: String, user: String) -> String {
         let quoted = PowerShell.quote
         return """
@@ -113,8 +113,12 @@ public enum AgentInstaller {
     public static func installOverSSH(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> Bool {
         guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 安装代理") }
         guard let binary = binary(for: config.os) else { throw MacVMError.io("找不到 \(config.os.rawValue) 版客户机代理，先运行 make agent") }
+        try SSHConfig.validateLogin(user: user, host: bundle.name)
         let ssh = sshArguments(bundle: bundle, user: user, macvmPath: macvmPath)
+        // 宿主包里一有令牌就对代理要求质询：新生成的令牌在送进客户机之前就失败时删掉，现有代理才连得上。
+        var tokenDelivered = config.os == .macOS || AgentToken.read(bundle) != nil
         let token = config.os == .macOS ? nil : try AgentToken.ensure(bundle)
+        defer { if !tokenDelivered { try? FileManager.default.removeItem(at: AgentToken.url(bundle)) } }
 
         let script: String
         switch config.os {
@@ -172,12 +176,15 @@ public enum AgentInstaller {
             }
             install += AgentToken.windowsInstall(token!) + "\n"
             install += windowsRegistration(source: "(Join-Path $HOME '\(staged)')", user: user) + "\nRemove-Item (Join-Path $HOME '\(staged)')"
+            // 脚本中途失败时不知道令牌是否已写进客户机，保留宿主这份。
+            tokenDelivered = true
             try await Subprocess.run("/usr/bin/ssh", ssh + [encodedPowerShell(install)])
             return gpuDriver != nil
         }
         if config.os == .linux {
             // 令牌经标准输入传，不进客户机的命令行。
             try await Subprocess.run("/usr/bin/ssh", ssh + ["sudo sh -c '\(AgentToken.linuxInstallCommand())'"], stdin: AgentToken.url(bundle))
+            tokenDelivered = true
         }
         try await Subprocess.run("/usr/bin/ssh", ssh + [script], stdin: binary)
         return false

@@ -15,20 +15,21 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public static func list(_ bundle: VMBundle) throws -> [Snapshot] {
         guard let dirs = try? FileManager.default.contentsOfDirectory(at: bundle.snapshotsURL, includingPropertiesForKeys: nil) else { return [] }
         return dirs.compactMap { dir in
+            // 调用方拿 `name` 去还原、删除，它须就是目录名，不能由包内文件指向别的快照。
             guard let data = try? Data(contentsOf: dir.appending(path: metadataFile)),
-                  var snap = try? decoder.decode(Snapshot.self, from: data) else { return nil }
+                  var snap = try? decoder.decode(Snapshot.self, from: data),
+                  snap.name == dir.lastPathComponent else { return nil }
             snap.allocatedSize = allocatedSize(of: dir)
             return snap
         }.sorted { $0.createdAt < $1.createdAt }
     }
 
     public static func save(_ bundle: VMBundle, name: String) throws -> Snapshot {
-        try VMLibrary.validate(name: name)
+        let dir = try directory(bundle, name)
         if BundleLock.holder(of: bundle) != nil {
             throw MacVMError.alreadyRunning("\(bundle.name)（先 stop 或 suspend 再做快照）")
         }
         let config = try bundle.loadConfig()
-        let dir = directory(bundle, name)
         guard !FileManager.default.fileExists(atPath: dir.path) else { throw MacVMError.alreadyExists("快照 \(name)") }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         do {
@@ -50,30 +51,43 @@ public struct Snapshot: Codable, Sendable, Equatable {
     }
 
     /// 用快照覆盖当前状态；当前未快照的改动会丢失。
+    /// 先把快照文件全部克隆成包内的临时文件，都成功了才逐个改名替换，复制中途失败时当前状态原样不动。
     public static func restore(_ bundle: VMBundle, name: String) throws {
+        let dir = try directory(bundle, name)
         if BundleLock.holder(of: bundle) != nil { throw MacVMError.alreadyRunning(bundle.name) }
-        let dir = directory(bundle, name)
         guard FileManager.default.fileExists(atPath: dir.appending(path: metadataFile).path) else {
             throw MacVMError.snapshotNotFound("\(bundle.name) 的快照 \(name)")
         }
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0 != metadataFile }
+        var staged: [(temp: URL, target: URL)] = []
+        do {
+            for file in files {
+                let temp = bundle.url.appending(path: ".restoring-\(file)")
+                try? FileManager.default.removeItem(at: temp)
+                try Clone.file(from: dir.appending(path: file), to: temp)
+                staged.append((temp, bundle.url.appending(path: file)))
+            }
+        } catch {
+            for item in staged { try? FileManager.default.removeItem(at: item.temp) }
+            throw error
+        }
         try? FileManager.default.removeItem(at: bundle.savedStateURL)
         try? FileManager.default.removeItem(at: bundle.savedStateShareDeviceURL)
-        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0 != metadataFile }
-        for file in files {
-            let target = bundle.url.appending(path: file)
-            try? FileManager.default.removeItem(at: target)
-            try Clone.file(from: dir.appending(path: file), to: target)
+        for item in staged {
+            guard rename(item.temp.path, item.target.path) == 0 else { throw MacVMError.posix("还原 \(item.target.lastPathComponent)") }
         }
     }
 
     public static func delete(_ bundle: VMBundle, name: String) throws {
-        let dir = directory(bundle, name)
+        let dir = try directory(bundle, name)
         guard FileManager.default.fileExists(atPath: dir.path) else { throw MacVMError.snapshotNotFound("\(bundle.name) 的快照 \(name)") }
         try FileManager.default.removeItem(at: dir)
     }
 
-    private static func directory(_ bundle: VMBundle, _ name: String) -> URL {
-        bundle.snapshotsURL.appending(path: name, directoryHint: .isDirectory)
+    /// 名字不合 `VMLibrary.validate(name:)` 时报错：拼出的路径只能是 `snapshots` 下的一级目录。
+    private static func directory(_ bundle: VMBundle, _ name: String) throws -> URL {
+        try VMLibrary.validate(name: name)
+        return bundle.snapshotsURL.appending(path: name, directoryHint: .isDirectory)
     }
 
     private static func allocatedSize(of dir: URL) -> UInt64? {

@@ -72,6 +72,8 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate, Sendable {
     let idle = IdleExit()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+        // 每条连接现取要求：开发时 App 重新构建后 cdhash 就变了，守护进程却可能还没退出。
+        connection.setCodeSigningRequirement(clientRequirement())
         let session = Session(connection: connection)
         connection.exportedInterface = NetworkHelper.serviceInterface()
         connection.exportedObject = session
@@ -87,18 +89,34 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate, Sendable {
     }
 }
 
-/// 正式签名时只接受与本程序同一 Team ID 签名的进程。
-/// shortcut: ad-hoc 签名没有 Team ID 可比，开发构建里任何本机进程都能连上并建桥接；只发布正式签名的版本。
-func clientRequirement() -> String? {
+/// 只接受与本程序同在一个 App 包里的 App 主程序与 `macvm` CLI：取它们各自的指定要求（designated requirement），
+/// 正式签名时固定 identifier 与 Team ID，ad-hoc 签名时固定 cdhash。一个也取不到时拒绝所有连接。
+func clientRequirement() -> String {
     var code: SecCode?
     var staticCode: SecStaticCode?
-    var info: CFDictionary?
+    var path: CFURL?
     guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
           SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-          SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-          let team = (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+          SecCodeCopyPath(staticCode, [], &path) == errSecSuccess, let path
+    else { return "never" }
+    var app = (path as URL).standardizedFileURL
+    while app.pathExtension != "app" {
+        guard app.pathComponents.count > 1 else { return "never" }
+        app.deleteLastPathComponent()
+    }
+    let requirements = [app, app.appending(path: "Contents/Resources/bin/macvm")].compactMap(designatedRequirement(of:))
+    return requirements.isEmpty ? "never" : requirements.map { "(\($0))" }.joined(separator: " or ")
+}
+
+func designatedRequirement(of url: URL) -> String? {
+    var code: SecStaticCode?
+    var requirement: SecRequirement?
+    var text: CFString?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+          SecCodeCopyDesignatedRequirement(code, [], &requirement) == errSecSuccess, let requirement,
+          SecRequirementCopyString(requirement, [], &text) == errSecSuccess, let text
     else { return nil }
-    return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
+    return text as String
 }
 
 // 引擎那端关闭后往 socket 发帧会收到 SIGPIPE，默认处理会让整个守护进程退出、拆掉所有桥接。
@@ -106,7 +124,6 @@ signal(SIGPIPE, SIG_IGN)
 let listener = NSXPCListener(machServiceName: NetworkHelper.machServiceName)
 let delegate = ListenerDelegate()
 listener.delegate = delegate
-if let requirement = clientRequirement() { listener.setConnectionCodeSigningRequirement(requirement) }
 listener.resume()
 delegate.idle.start()
 dispatchMain()

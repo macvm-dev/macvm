@@ -24,7 +24,7 @@ struct DiskGrowSheet: View {
 
     /// 可选的新容量：比当前大的整 GB 数；当前已到 `maxGB` 时为空。
     private static func range(above currentSize: UInt64) -> ClosedRange<Int>? {
-        let current = Int((currentSize + (1 << 30) - 1) >> 30)
+        let current = ResourceRange.wholeGB(currentSize)
         return current < maxGB ? (current + 1)...maxGB : nil
     }
 

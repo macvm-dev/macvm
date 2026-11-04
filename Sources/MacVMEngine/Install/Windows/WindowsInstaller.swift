@@ -96,7 +96,7 @@ public enum WindowsInstaller {
         if virtioWin == nil { virtioWin = try await cachedVirtioWin(showProgress: options.showProgress) }
         let password = options.password ?? GuestCredentials.randomPassword()
         var unattend = WindowsUnattend.Options(
-            computerName: String(options.name.filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(15)),
+            computerName: computerName(for: options.name),
             user: options.user, password: password, locale: locale,
             sshPublicKey: try await SSHKeys.ensurePublicKey(),
             installAgent: AgentInstaller.binary(for: .windows) != nil,
@@ -131,6 +131,14 @@ public enum WindowsInstaller {
         }
     }
 
+    /// 应答文件里的计算机名：取虚拟机名里的 ASCII 字母、数字与 `-`，截到 15 个字符并去掉首尾的 `-`。
+    /// 剩下为空或全是数字时 Windows 不认，改用 `*` 让 Windows 自己生成。
+    static func computerName(for name: String) -> String {
+        let kept = name.filter { ($0.isASCII && ($0.isLetter || $0.isNumber)) || $0 == "-" }
+        let trimmed = String(kept.prefix(15)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return trimmed.isEmpty || trimmed.allSatisfy(\.isNumber) ? "*" : trimmed
+    }
+
     /// 在已开机安装的 `bundle` 上等首次登录脚本写下完成标记，然后经 `requestStop` 请客户机关机，
     /// 停下后 `finishSetup`。返回 false 表示客户机在 `stopTimeout` 秒内没有关机，安装介质仍挂着。
     public static func completeSetup(_ bundle: VMBundle, macvmPath: String, stopTimeout: TimeInterval = 180,
@@ -147,6 +155,7 @@ public enum WindowsInstaller {
     private static func waitUntilSetupComplete(_ bundle: VMBundle, macvmPath: String, timeout: TimeInterval = 3 * 3600) async throws {
         let config = try bundle.loadConfig()
         guard let user = config.guestUser else { throw MacVMError.invalidConfig("缺少客户机用户") }
+        try SSHConfig.validateLogin(user: user, host: bundle.name)
         let proxy = SSHConfig.proxyCommand(macvmPath: macvmPath, name: bundle.name, flags: ["--timeout", "10"])
         let deadline = Date().addingTimeInterval(timeout)
         while true {
@@ -191,6 +200,8 @@ public enum WindowsInstaller {
         }
 
         try await DiskImage.createFAT(from: staging, to: output, size: "64m", volumeName: WindowsUnattend.volumeLabel, fat32: true)
+        // 盘里有明文密码与代理令牌，只给本用户读。
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
     }
 
     /// GPT + exFAT 的稀疏 raw 镜像，放 ISO 里的 install.wim 与 virtio-win 的 ARM64 驱动。
@@ -229,17 +240,25 @@ public enum WindowsInstaller {
         try await DiskMount.withMounted(iso) { root in
             let text = (try? String(contentsOf: root.appending(path: "sources/lang.ini"), encoding: .utf8))
                 ?? (try? String(contentsOf: root.appending(path: "sources/lang.ini"), encoding: .utf16)) ?? ""
-            var inSection = false
-            for raw in text.split(whereSeparator: \.isNewline) {
-                let line = raw.trimmingCharacters(in: .whitespaces)
-                if line.hasPrefix("[") { inSection = line.lowercased() == "[available ui languages]"; continue }
-                if inSection, let tag = line.split(separator: "=").first {
-                    let parts = tag.trimmingCharacters(in: .whitespaces).split(separator: "-")
-                    if parts.count == 2 { return "\(parts[0].lowercased())-\(parts[1].uppercased())" }
-                }
-            }
-            return "en-US"
+            return locale(inLangINI: text)
         }
+    }
+
+    /// lang.ini 的 `[Available UI Languages]` 段里第一个语言标签，规范成 `zh-CN`、`sr-Latn-RS` 的大小写；没有时用 en-US。
+    static func locale(inLangINI text: String) -> String {
+        var inSection = false
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") { inSection = line.lowercased() == "[available ui languages]"; continue }
+            guard inSection, let tag = line.split(separator: "=").first else { continue }
+            let parts = tag.trimmingCharacters(in: .whitespaces).split(separator: "-")
+            switch parts.count {
+            case 2: return "\(parts[0].lowercased())-\(parts[1].uppercased())"
+            case 3: return "\(parts[0].lowercased())-\(parts[1].capitalized)-\(parts[2].uppercased())"
+            default: continue
+            }
+        }
+        return "en-US"
     }
 
     /// 缓存在 `DownloadCache.root` 下 virtio-win 目录里、以版本命名的驱动盘，不在时下载并校验；该目录里其他版本的随后删掉。
@@ -271,14 +290,20 @@ enum DiskMount {
         guard let device = output.split(separator: "\n").first?.split(separator: " ").first.map(String.init), device.hasPrefix("/dev/disk") else {
             throw MacVMError.io("无法接上 \(image.lastPathComponent)：\(output)")
         }
-        do {
-            let result = try await body(device)
-            _ = try? await Subprocess.run("/usr/sbin/diskutil", ["eject", device])
-            return result
-        } catch {
-            _ = try? await Subprocess.run("/usr/sbin/diskutil", ["eject", device])
-            throw error
-        }
+        defer { cleanUp("/usr/sbin/diskutil", ["eject", device]) }
+        return try await body(device)
+    }
+
+    /// 同步运行卸载、弹出之类的清理命令，输出丢弃；任务取消后也照常执行。
+    private static func cleanUp(_ executable: String, _ arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(filePath: executable)
+        process.arguments = arguments
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return }
+        process.waitUntilExit()
     }
 
     static func mountPoint(ofPartitionNamed name: String, on device: String) async throws -> URL {
@@ -298,11 +323,19 @@ enum DiskMount {
     static func withMounted<T>(_ image: URL, _ body: (URL) async throws -> T) async throws -> T {
         let mountPoint = FileManager.default.temporaryDirectory.appending(path: "macvm-mnt-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
-        try await Subprocess.run("/usr/bin/hdiutil", ["attach", "-quiet", "-readonly", "-nobrowse", "-mountpoint", mountPoint.path, image.path])
+        // attach 报错或任务被取消时，镜像可能已挂上，也可能没有：只在挂着时卸载，目录总要删。
         defer {
-            _ = try? Process.run(URL(filePath: "/usr/bin/hdiutil"), arguments: ["detach", "-quiet", "-force", mountPoint.path]).waitUntilExit()
+            if isMountPoint(mountPoint) { cleanUp("/usr/bin/hdiutil", ["detach", "-quiet", "-force", mountPoint.path]) }
             try? FileManager.default.removeItem(at: mountPoint)
         }
+        try await Subprocess.run("/usr/bin/hdiutil", ["attach", "-quiet", "-readonly", "-nobrowse", "-mountpoint", mountPoint.path, image.path])
         return try await body(mountPoint)
+    }
+
+    /// 目录与上级目录不在同一设备上，即有文件系统挂在它上面。
+    private static func isMountPoint(_ directory: URL) -> Bool {
+        var own = stat(), parent = stat()
+        guard stat(directory.path, &own) == 0, stat(directory.deletingLastPathComponent().path, &parent) == 0 else { return false }
+        return own.st_dev != parent.st_dev
     }
 }

@@ -106,7 +106,7 @@ struct MachineDetailView: View {
             if let config, config.supportsShares || !config.shares.isEmpty {
                 SharesSection(vmName: vm.name, config: config, editable: editable || model.canEditSharesLive(vm.name))
             }
-            SnapshotsSection(vmName: vm.name, state: vm.state)
+            SnapshotsSection(vmName: vm.name, state: vm.state, busy: busy)
         }
         .formStyle(.grouped)
         .acceptsShareDrops(vmName: vm.name, editable: config?.supportsShares == true && (editable || model.canEditSharesLive(vm.name)))
@@ -136,7 +136,10 @@ struct MachineDetailView: View {
     }
 
     /// 硬件与共享目录只在关机时可改，挂起或有进行中的任务（创建、安装）时也不行。
-    private var editable: Bool { vm.state == .stopped && model.activity[vm.name] == nil }
+    private var editable: Bool { vm.state == .stopped && !busy }
+
+    /// 有进行中的任务（创建、安装、存模板）。
+    private var busy: Bool { model.activity[vm.name] != nil }
 
     private var lockedReason: String? {
         switch vm.state {
@@ -222,13 +225,13 @@ struct MachineDetailView: View {
             }
             Menu {
                 Button("克隆…") { cloneName = vm.name + "-copy"; showingClone = true }
-                    .disabled(vm.state == .running)
+                    .disabled(vm.state == .running || busy)
                 Button("存为模板…") { templateName = vm.name; showingSaveTemplate = true }
                     .disabled(!editable)
                 Button("在 Finder 中显示") { revealInFinder() }
                 Divider()
                 Button("删除…", role: .destructive) { confirmingDelete = true }
-                    .disabled(vm.state == .running)
+                    .disabled(vm.state == .running || busy)
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
             }

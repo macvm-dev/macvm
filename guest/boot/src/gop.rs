@@ -2,7 +2,7 @@
 //! Windows 启动管理器显示 logo 时找不到帧缓冲就会停止启动。
 //!
 //! 在原 GOP 所在句柄上换装一个自己的 GOP：帧缓冲是一块保留内存（操作系统不会回收），
-//! 启动服务期间每 40ms 把它整屏 Blt 回原 GOP。退出启动服务后画面停在最后一帧，直到 Windows 加载 virtio-gpu 驱动。
+//! 启动服务期间每隔 `FLUSH_PERIOD` 把它整屏 Blt 回原 GOP。退出启动服务后画面停在最后一帧，直到 Windows 加载 virtio-gpu 驱动。
 
 extern crate alloc;
 
@@ -18,7 +18,7 @@ use uefi_raw::protocol::console::{
     GraphicsOutputProtocol as RawGop, GraphicsOutputProtocolMode as Mode, GraphicsPixelFormat, PixelBitmask,
 };
 
-/// 40ms，单位 100ns。
+/// 刷新帧缓冲的周期，单位 100ns。
 const FLUSH_PERIOD: u64 = 400_000;
 
 #[repr(C)]

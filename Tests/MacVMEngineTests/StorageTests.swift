@@ -83,6 +83,61 @@ struct VMTemplateTests {
     }
 }
 
+struct SnapshotTests {
+    let root = FileManager.default.temporaryDirectory.appending(path: "macvm-snapshot-tests-\(UUID().uuidString)")
+    var library: VMLibrary { VMLibrary(root: root) }
+
+    private func makeBundle() async throws -> VMBundle {
+        try await VMFactory.withNewBundle(named: "vm", in: library) { bundle in
+            try Data("before".utf8).write(to: bundle.diskURL)
+            try bundle.saveConfig(VMConfig(name: "vm", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [DiskConfig(path: "disk.img")]))
+            return bundle
+        }
+    }
+
+    @Test func restoreReplacesStateFiles() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundle = try await makeBundle()
+        _ = try Snapshot.save(bundle, name: "s1")
+        try Data("after".utf8).write(to: bundle.diskURL)
+        try Snapshot.restore(bundle, name: "s1")
+        #expect(try Data(contentsOf: bundle.diskURL) == Data("before".utf8))
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: bundle.url.path).filter { $0.hasPrefix(".") }
+        #expect(leftovers.isEmpty)
+        #expect(try Snapshot.list(bundle).map(\.name) == ["s1"])
+    }
+
+    @Test func namesOutsideSnapshotsDirectoryAreRejected() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundle = try await makeBundle()
+        _ = try Snapshot.save(bundle, name: "s1")
+        for name in ["..", "../..", "../disk.img", "s1/.."] {
+            #expect(throws: MacVMError.self) { try Snapshot.delete(bundle, name: name) }
+            #expect(throws: MacVMError.self) { try Snapshot.restore(bundle, name: name) }
+        }
+        #expect(FileManager.default.fileExists(atPath: bundle.diskURL.path))
+    }
+
+    @Test func listSkipsSnapshotWhoseNameIsNotItsDirectory() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundle = try await makeBundle()
+        _ = try Snapshot.save(bundle, name: "s1")
+        let metadata = bundle.snapshotsURL.appending(path: "s1/snapshot.json")
+        let forged = try String(contentsOf: metadata, encoding: .utf8).replacingOccurrences(of: "\"s1\"", with: "\"../..\"")
+        try forged.write(to: metadata, atomically: true, encoding: .utf8)
+        #expect(try Snapshot.list(bundle).isEmpty)
+    }
+}
+
+struct DiskImageTests {
+    @Test func sizeBeyondFileOffsetRangeThrows() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "macvm-disk-\(UUID().uuidString).img")
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(throws: MacVMError.self) { try DiskImage.createSparse(at: url, size: UInt64(Int64.max) + 1) }
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
 struct TemplateSettingsTests {
     @Test func templatePathIsOptional() throws {
         let old = try JSONDecoder().decode(MacVMSettings.self, from: Data(#"{"libraryPath":"/tmp/vms"}"#.utf8))

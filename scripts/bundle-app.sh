@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 组装并签名 App。环境变量：APP（输出路径，默认 dist/MacVM.app）、CONFIG、SIGN_IDENTITY、ENTITLEMENTS、SWIFT_FLAGS（swift build 的额外参数）、PROVISIONING_PROFILE（可选）。
+# 组装并签名 App。环境变量：APP（输出路径，默认 dist/MacVM.app）、CONFIG、SIGN_IDENTITY、ENTITLEMENTS、SWIFT_FLAGS（swift build 的额外参数）、PROVISIONING_PROFILE（可选；ENTITLEMENTS 里有受限 entitlement，如 USB 配件访问时必须提供，否则系统拒绝启动 App）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG=${CONFIG:-release}

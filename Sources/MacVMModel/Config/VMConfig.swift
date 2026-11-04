@@ -31,7 +31,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public var guestUser: String?
     /// 客户机里装有 macvm-agent，exec、端口转发、关机等走 vsock 而不依赖网络与 SSH。
     public var guestAgent: Bool
-    /// 后台运行（`macvm start`）时把客户机的 virtio 控制台输出写进 `run.log`。
+    /// 后台运行（`macvm start`）时把客户机的 virtio 控制台输出写进 `VMBundle.logURL`。
     public var serialConsole: Bool
     /// 客户机已拿到 3D 显卡驱动（Windows 的 viogpu3d），只能用带图形加速的 QEMU 运行：
     /// VZ 与不带 virglrenderer 的 QEMU 下它没有 3D 可用，Windows 开机即崩溃。

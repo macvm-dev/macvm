@@ -39,10 +39,7 @@ struct TemplateCommand: AsyncParsableCommand {
             let body = rows.map {
                 [$0.name, $0.os.rawValue, $0.engine.rawValue, "\($0.cpuCount)", ByteSize.format($0.memorySize), $0.diskSize.map(ByteSize.format) ?? "-"]
             }
-            let widths = header.indices.map { i in ([header] + body).map { $0[i].count }.max() ?? 0 }
-            return ([header] + body).map { row in
-                row.enumerated().map { $1.padding(toLength: widths[$0] + 2, withPad: " ", startingAt: 0) }.joined()
-            }.joined(separator: "\n")
+            return textTable(header: header, rows: body)
         }
     }
 

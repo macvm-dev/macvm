@@ -31,6 +31,7 @@ struct NetworkHelperSection: View {
                     case .requiresApproval:
                         Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
                     case .enabled:
+                        if !running { Button("重新启用", action: reenable) }
                         Button("停用", action: disable)
                     default:
                         EmptyView()
@@ -77,6 +78,15 @@ struct NetworkHelperSection: View {
         }
         Task { await refresh() }
         if Self.service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+    }
+
+    /// launchd 按注册时的签名拉起守护进程；包里的 macvm-netd 换了签名（如重新构建 ad-hoc 签名的 App）后拉不起来，要重新注册。
+    private func reenable() {
+        error = nil
+        Task {
+            try? await Self.service.unregister()
+            enable()
+        }
     }
 
     private func disable() {

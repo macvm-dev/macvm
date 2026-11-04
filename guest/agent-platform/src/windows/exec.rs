@@ -12,10 +12,11 @@ use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::Threading::{
     CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
     INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-    PROCESS_INFORMATION, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
+    PROCESS_INFORMATION, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 use super::{CREATE_NO_WINDOW, wide};
+use crate::cmdline::quote;
 use crate::{ChildProcess, Exit, ExecOptions, Spawned, SpawnedIo};
 
 /// 代理以登录用户身份运行，只能以该身份执行。
@@ -53,6 +54,19 @@ impl ChildProcess for PipeChild {
         let status = self.0.wait()?;
         Ok(Exit { code: status.code().unwrap_or(1), signal: None })
     }
+
+    fn hangup(&self) -> io::Result<Box<dyn Fn() + Send + Sync>> {
+        use std::os::windows::io::AsHandle;
+        Ok(terminator(self.0.as_handle().try_clone_to_owned()?))
+    }
+}
+
+/// 结束 `process` 本身，不含它启动的进程。句柄在闭包里一直有效，进程退出后再调用只会失败、不误伤别的进程。
+fn terminator(process: OwnedHandle) -> Box<dyn Fn() + Send + Sync> {
+    Box::new(move || {
+        // SAFETY: 进程句柄由闭包持有。
+        unsafe { TerminateProcess(raw(&process), 1) };
+    })
 }
 
 /// 伪控制台句柄，在调整尺寸的闭包与等待进程的一方之间共享；进程退出后关闭。
@@ -121,6 +135,10 @@ impl ChildProcess for PtyChild {
         }
         Ok(Exit { code: code as i32, signal: None })
     }
+
+    fn hangup(&self) -> io::Result<Box<dyn Fn() + Send + Sync>> {
+        Ok(terminator(self.process.try_clone()?))
+    }
 }
 
 fn create_process_with_console(o: &ExecOptions, hpc: HPCON) -> io::Result<OwnedHandle> {
@@ -180,33 +198,6 @@ fn environment_block(extra: &[(String, String)]) -> Vec<u16> {
     block
 }
 
-/// 按 MSVC 运行库解析命令行的规则给参数加引号。
-fn quote(arg: &str) -> String {
-    if !arg.is_empty() && !arg.contains([' ', '\t', '"']) {
-        return arg.to_string();
-    }
-    let mut out = String::from("\"");
-    let mut backslashes = 0;
-    for c in arg.chars() {
-        match c {
-            '\\' => backslashes += 1,
-            '"' => {
-                out.push_str(&"\\".repeat(backslashes * 2 + 1));
-                out.push('"');
-                backslashes = 0;
-            }
-            _ => {
-                out.push_str(&"\\".repeat(backslashes));
-                backslashes = 0;
-                out.push(c);
-            }
-        }
-    }
-    out.push_str(&"\\".repeat(backslashes * 2));
-    out.push('"');
-    out
-}
-
 fn pipe() -> io::Result<(OwnedHandle, OwnedHandle)> {
     let mut read: HANDLE = ptr::null_mut();
     let mut write: HANDLE = ptr::null_mut();
@@ -221,18 +212,4 @@ fn pipe() -> io::Result<(OwnedHandle, OwnedHandle)> {
 fn raw(h: &OwnedHandle) -> HANDLE {
     use std::os::windows::io::AsRawHandle;
     h.as_raw_handle() as HANDLE
-}
-
-#[cfg(test)]
-mod tests {
-    use super::quote;
-
-    #[test]
-    fn quoting() {
-        assert_eq!(quote("plain"), "plain");
-        assert_eq!(quote("a b"), "\"a b\"");
-        assert_eq!(quote(r#"say "hi""#), r#""say \"hi\"""#);
-        assert_eq!(quote(r"C:\dir\ "), r#""C:\dir\ ""#);
-        assert_eq!(quote(r"C:\path with\"), r#""C:\path with\\""#);
-    }
 }

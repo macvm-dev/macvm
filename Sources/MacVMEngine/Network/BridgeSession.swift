@@ -45,7 +45,7 @@ final class BridgeSession: @unchecked Sendable {
         }
         guard done.wait(timeout: .now() + openTimeout) == .success else {
             connection.invalidate()
-            throw MacVMError.timeout("网络辅助程序没有回应")
+            throw MacVMError.timeout("网络辅助程序没有回应：到 MacVM 的设置里重新启用网络辅助程序")
         }
         guard let handle = reply.handle else {
             connection.invalidate()

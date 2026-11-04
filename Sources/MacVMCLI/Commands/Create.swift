@@ -99,6 +99,12 @@ struct Create: AsyncParsableCommand {
             if os == .windows {
                 if image != nil || desktop != nil { throw MacVMError.invalidConfig("--image 与 --desktop 只用于 Linux 客户机") }
                 if let network, network != "nat" { throw MacVMError.invalidConfig("Windows 用 NAT 网络安装，装好后再用 macvm set --network 改") }
+                let ignored: [(String, Bool)] = [
+                    ("--share", !share.isEmpty), ("--rosetta", rosetta), ("--headless", headless != nil),
+                    ("--console", console), ("--manual-install", manualInstall),
+                ]
+                if let option = ignored.first(where: \.1)?.0 { throw MacVMError.invalidConfig("\(option) 不用于 Windows 客户机") }
+                try Self.validateDefaultUser(user)
                 return try await createWindows()
             }
             if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
@@ -106,19 +112,19 @@ struct Create: AsyncParsableCommand {
             if manualInstall, desktop?.supportsUnattended != true {
                 throw MacVMError.invalidConfig("--manual-install 只用于能自动安装的桌面版（--desktop ubuntu-desktop）")
             }
+            if engine == .qemu { _ = try QEMUInstallation.require() }
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
                 installMedia: installMedia, network: try Self.parseNetwork(network ?? "nat"),
-                shares: try share.map(Self.parseShare).map {
-                    ShareConfig(hostPath: $0.hostPath, tag: $0.tag ?? URL(filePath: $0.hostPath).lastPathComponent, readOnly: $0.readOnly)
-                }, rosetta: rosetta, serialConsole: console,
+                shares: try Self.shareConfigs(share, name: name, os: os, engine: engine ?? .vz), rosetta: rosetta, serialConsole: console,
                 image: try image.map(LinuxImage.named), desktop: desktop, unattended: !manualInstall, user: user ?? NSUserName(), password: password,
-                showProgress: !global.json && isatty(STDERR_FILENO) == 1, headless: headless
+                showProgress: interactive, headless: headless
             )
             if password != nil, image == nil, !options.autoinstalls {
                 throw MacVMError.invalidConfig("--password 只用于 Linux 云镜像（--image）、自动安装的 Ubuntu 桌面版与 Windows")
             }
+            if image != nil || options.autoinstalls { try Self.validateDefaultUser(user) }
             let bundle = try await VMFactory.createEFIGuest(options)
             if let engine, engine != .vz {
                 var config = try bundle.loadConfig()
@@ -156,9 +162,14 @@ struct Create: AsyncParsableCommand {
         return try VMStatus.summary(of: bundle)
     }
 
+    /// 进度只在人看的终端上写到标准错误。
+    private var interactive: Bool { !global.json && isatty(STDERR_FILENO) == 1 }
+
+    private func say(_ text: String) {
+        if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) }
+    }
+
     private func installUbuntu(_ bundle: VMBundle) async throws {
-        let interactive = !global.json && isatty(STDERR_FILENO) == 1
-        func say(_ text: String) { if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) } }
         say("开始离线自动安装 Ubuntu…")
         _ = try await Start.launch(bundle, timeout: 120)
         try await UbuntuAutoinstall.completeSetup(bundle) {
@@ -169,8 +180,6 @@ struct Create: AsyncParsableCommand {
 
     private func createWindows() async throws -> VMSummary {
         guard installMedia.count <= 1 else { throw MacVMError.invalidConfig("Windows 只能用 --iso 指定一张安装 ISO") }
-        let interactive = !global.json && isatty(STDERR_FILENO) == 1
-        func say(_ text: String) { if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) } }
 
         let iso: URL
         if let path = installMedia.first {
@@ -207,6 +216,25 @@ struct Create: AsyncParsableCommand {
         case "bridged": return NetworkConfig(mode: .bridged, interface: parts.count > 1 ? parts[1] : nil)
         default: throw MacVMError.invalidConfig("未知网络模式：\(text)（可选 nat、bridged[:网卡名]）")
         }
+    }
+
+    /// 没给 `--user` 时登录用户取主机用户名，它不一定满足 `GuestAccount.validate(user:)`，要在安装开始前报错。
+    static func validateDefaultUser(_ user: String?) throws {
+        guard user == nil else { return }
+        do {
+            try GuestAccount.validate(user: NSUserName())
+        } catch {
+            throw MacVMError.invalidConfig("主机用户名 \(NSUserName()) 不能用作客户机登录用户，请用 --user 指定")
+        }
+    }
+
+    /// 把 `--share` 逐个交给 `VMConfig.addShare`：校验目录、名称长度与重名，缺省名称按客户机系统生成。
+    static func shareConfigs(_ specs: [String], name: String, os: GuestOS, engine: Engine) throws -> [ShareConfig] {
+        var config = VMConfig(name: name, os: os, engine: engine, cpuCount: 1, memorySize: 0, disks: [])
+        for spec in try specs.map(parseShare) {
+            try config.addShare(hostPath: spec.hostPath, tag: spec.tag, readOnly: spec.readOnly)
+        }
+        return config.shares
     }
 
     /// `主机路径[:tag][:ro]`；路径展开 `~` 并标准化，没写 tag 时为 nil。

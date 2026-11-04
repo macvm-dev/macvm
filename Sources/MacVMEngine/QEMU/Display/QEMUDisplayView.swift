@@ -124,9 +124,11 @@ public final class QEMUDisplayView: NSView {
                 guard let self, !agentCursorActive else { return }
                 setGuestCursor(image.map { .image($0, hotspot: hotspot) } ?? .hidden)
             }
-            client.onClose = { [weak self] in
-                self?.backend = nil
-                self?.scheduleReconnect()
+            // 断开后读线程才结束、回调随后才到，那时视图可能已换上新连接：只处理仍是当前连接的。
+            client.onClose = { [weak self, weak client] in
+                guard let self, let client, backend === client else { return }
+                backend = nil
+                scheduleReconnect()
             }
             backend = client
             client.start()

@@ -239,12 +239,9 @@ public enum UbuntuAutoinstall {
 
     // MARK: - 取值
 
-    /// 虚拟机名里的 `.` `_` 不能出现在主机名里，换成 `-`。
+    /// autoinstall 的 identity 只认小写主机名。
     static func hostname(for name: String) -> String {
-        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-")
-        let mapped = String(name.lowercased().map { allowed.contains($0) ? $0 : "-" }.prefix(63))
-        let trimmed = mapped.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return trimmed.isEmpty ? "ubuntu" : trimmed
+        CloudInit.hostname(for: name.lowercased(), fallback: "ubuntu")
     }
 
     /// 单引号包起来的 shell 字面量。

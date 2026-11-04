@@ -13,7 +13,8 @@ public enum SSHConfig {
         (["\"\(macvmPath)\"", "proxy", name] + flags).joined(separator: " ")
     }
 
-    /// 客户机主机密钥随重建而变，而连接只到达本机的虚拟机，所以不做主机密钥校验。
+    /// 客户机主机密钥随重建而变，不做主机密钥校验。经代理、QEMU 转发的连接只到达本机的虚拟机；
+    /// shortcut: 桥接网络下经 TCP 直连客户机 IP 时，局域网里冒充客户机的机器能收到密码与命令；要防局域网中间人时改为按虚拟机固定主机密钥。
     private static let hostKeyOptions = [("StrictHostKeyChecking", "no"), ("UserKnownHostsFile", "/dev/null"), ("LogLevel", "ERROR")]
 
     /// 不含 IdentityFile：命令行上用 `-i` 传，路径里有空格也不会被 ssh 的选项解析拆开。
@@ -31,9 +32,24 @@ public enum SSHConfig {
         ["-i", SSHKeys.privateKeyURL.path] + arguments(keyOptions(proxyCommand: proxyCommand))
     }
 
+    /// 能原样写进 ssh 配置、拼成 ssh 命令行里 `user@host` 的名字：只含 ASCII 字母、数字与 `._-`，不以 `-` 开头。
+    /// 虚拟机名与登录用户名读自包里的 `VMConfig`，包可能来自别处，要挡掉换行、空白与会被 ssh 当成选项的写法。
+    static func isPlainName(_ name: String) -> Bool {
+        let allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+        return !name.isEmpty && !name.hasPrefix("-") && name.allSatisfy(allowed.contains)
+    }
+
+    /// 以 `user@host` 交给 ssh 之前调用，两者不合 `isPlainName` 时报错。
+    public static func validateLogin(user: String, host: String) throws {
+        guard isPlainName(user), isPlainName(host) else {
+            throw MacVMError.invalidConfig("登录用户名或虚拟机名含有不能交给 ssh 的字符：\(user)@\(host)")
+        }
+    }
+
+    /// 名称或用户名不合 `isPlainName` 的虚拟机不写进去。
     public static func render(_ configs: [VMConfig], macvmPath: String) -> String {
         var out = "# 由 macvm 生成，会被覆盖。\n"
-        for config in configs {
+        for config in configs where isPlainName(config.name) && config.guestUser.map(isPlainName) != false {
             out += "\nHost \(config.name)\n"
             if let user = config.guestUser { out += "  User \(user)\n" }
             out += "  IdentityFile \(SSHKeys.privateKeyURL.path)\n"
@@ -46,7 +62,12 @@ public enum SSHConfig {
     }
 
     public static func write(library: VMLibrary = .default, macvmPath: String) throws -> URL {
-        let configs = try library.all().compactMap { try? $0.loadConfig() }
+        // 主机名用包目录名：`macvm proxy` 按它找虚拟机，配置里的名称可能被改成别的。
+        let configs = try library.all().compactMap { bundle -> VMConfig? in
+            guard var config = try? bundle.loadConfig() else { return nil }
+            config.name = bundle.name
+            return config
+        }
         try FileManager.default.createDirectory(at: SSHKeys.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try render(configs, macvmPath: macvmPath).write(to: fileURL, atomically: true, encoding: .utf8)
         return fileURL

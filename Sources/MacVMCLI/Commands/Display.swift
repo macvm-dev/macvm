@@ -5,7 +5,7 @@ import MacVMModel
 
 struct Display: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "调整运行中虚拟机的显示尺寸（VZ 引擎）。",
+        abstract: "调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU）。",
         discussion: "只改本次运行；默认尺寸用 set --display 修改。VZ 下 Windows 的分辨率固定，不支持调整。"
     )
 

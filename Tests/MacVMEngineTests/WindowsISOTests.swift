@@ -1,5 +1,6 @@
 import Foundation
 @testable import MacVMEngine
+import MacVMModel
 import Testing
 
 struct WindowsISOTests {
@@ -21,13 +22,13 @@ struct WindowsISOTests {
             "Uri": "https://software.download.prss.microsoft.com/dbazure/Windows11_Client_arm64_zh-cn_26300_9457.iso?t=c3&amp;P1=17&amp;P4=fu%2f%3d%3d",
             "ProductDisplayName": "Windows 11 ARM 64 26H2 26300.9457",
         ]]]
-        let release = try #require(WindowsISO.release(inLinks: links, language: "Chinese (Simplified)"))
+        let release = try #require(WindowsISO.release(inLinks: links))
         #expect(release.fileName == "Windows11_Client_arm64_zh-cn_26300_9457.iso")
         #expect(release.url.query == "t=c3&P1=17&P4=fu%2f%3d%3d")
         #expect(release.name == "Windows 11 ARM 64 26H2 26300.9457")
-        #expect(WindowsISO.release(inLinks: ["ProductDownloadOptions": []], language: "English") == nil)
+        #expect(WindowsISO.release(inLinks: ["ProductDownloadOptions": []]) == nil)
         let escaping: [String: Any] = ["ProductDownloadOptions": [["Uri": "https://example.com/dl/..%2F..%2Fevil.iso"]]]
-        #expect(WindowsISO.release(inLinks: escaping, language: "English") == nil)
+        #expect(WindowsISO.release(inLinks: escaping) == nil)
     }
 
     @Test func skuLanguageFollowsPreferredLanguages() {
@@ -56,5 +57,22 @@ struct WindowsISOTests {
         let left = try Set(FileManager.default.contentsOfDirectory(atPath: root.path))
         #expect(left == [current, current + ".part.seg-0", current + ".part.segments", current + ".part.lock",
                          "Windows11_Client_arm64_en-us_26300_9457.iso.part.lock"])
+    }
+
+    @Test func removeStaleISOsKeepsInstallMediaInUse() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "macvm-winiso-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let current = "Windows11_Client_arm64_zh-cn_26300_9457.iso", used = "Windows11_Client_arm64_zh-cn_26200_1000.iso"
+        for name in [current, used, "Windows11_Client_arm64_en-us_26200_1000.iso"] {
+            FileManager.default.createFile(atPath: root.appending(path: name).path, contents: nil)
+        }
+        let bundle = VMBundle(url: root.appending(path: "win.macvm", directoryHint: .isDirectory))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        try bundle.saveConfig(VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30, disks: [],
+                                       installMedia: [root.appending(path: used).path, "windows-setup.img"]))
+        WindowsISO.removeStaleISOs(keeping: current, in: root, inUse: WindowsISO.installMediaInUse(of: [bundle]))
+        let left = try Set(FileManager.default.contentsOfDirectory(atPath: root.path)).filter { $0.hasSuffix(".iso") }
+        #expect(left == [current, used])
     }
 }

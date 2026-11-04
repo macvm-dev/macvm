@@ -1,5 +1,6 @@
 import Foundation
 @testable import MacVMEngine
+import MacVMModel
 import Testing
 
 struct CursorShapeTests {
@@ -21,6 +22,49 @@ struct SSHConfigIncludeTests {
         let installed = SSHConfig.includeLine + "\n\n" + existing
         #expect(SSHConfig.removingInclude(from: installed) == existing)
         #expect(SSHConfig.removingInclude(from: existing) == existing)
+    }
+
+    @Test func renderSkipsNamesThatCouldInjectDirectives() {
+        func config(_ name: String, user: String?) -> VMConfig {
+            VMConfig(name: name, os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [], guestUser: user)
+        }
+        let text = SSHConfig.render([
+            config("good", user: "dev"),
+            config("bad\nHost *\n  ProxyCommand evil", user: "dev"),
+            config("bad-user", user: "x\nHost *\n  ProxyCommand evil"),
+            config("dash-user", user: "-oProxyCommand=evil"),
+        ], macvmPath: "/usr/local/bin/macvm")
+        #expect(text.contains("Host good\n  User dev\n"))
+        #expect(!text.contains("evil") && !text.contains("Host bad") && !text.contains("Host dash-user"))
+        #expect(throws: (any Error).self) { try SSHConfig.validateLogin(user: "-oProxyCommand=evil", host: "good") }
+        #expect(throws: Never.self) { try SSHConfig.validateLogin(user: "dev", host: "good") }
+    }
+}
+
+struct GuestConnectionPumpTests {
+    private func pair() -> (Int32, Int32) {
+        var fds: [Int32] = [-1, -1]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        return (fds[0], fds[1])
+    }
+
+    @Test func forwardsBothWaysAndReturnsWhenGuestCloses() throws {
+        let (client, clientPeer) = pair()
+        let (guest, guestPeer) = pair()
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            GuestConnection.pump((client, client), guest)
+            done.signal()
+        }
+        let host = UnixSocket(fd: clientPeer), vm = UnixSocket(fd: guestPeer)
+        try host.writeLine(Data("hi".utf8))
+        #expect(try vm.readLine() == Data("hi".utf8))
+        try vm.writeLine(Data("yo".utf8))
+        #expect(try host.readLine() == Data("yo".utf8))
+        shutdown(guestPeer, SHUT_RDWR)
+        #expect(done.wait(timeout: .now() + 5) == .success)
+        close(client)
+        close(guest)
     }
 }
 

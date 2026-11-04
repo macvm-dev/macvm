@@ -43,14 +43,10 @@ pub fn set_display(width: u32, height: u32) -> io::Result<()> {
 
 /// 提交只含 (`luid`, `source`) 这一路输出的拓扑，其余输出随之关闭；该输出放在原点即为主显示器。
 fn apply_only(luid: LUID, source: u32, width: u32, height: u32) -> io::Result<()> {
-    // SAFETY: 缓冲区按 GetDisplayConfigBufferSizes 的结果分配；联合体按 infoType 与 QueryDisplayConfig 的约定访问。
+    let (paths, mut modes) = active_config()?;
+    // SAFETY: 联合体按 infoType 与 QueryDisplayConfig 的约定访问；模式数组的长度如实传入。
     unsafe {
-        let (mut path_count, mut mode_count) = (0u32, 0u32);
-        win32(GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count) as i32)?;
-        let mut paths = vec![zeroed::<DISPLAYCONFIG_PATH_INFO>(); path_count as usize];
-        let mut modes = vec![zeroed::<DISPLAYCONFIG_MODE_INFO>(); mode_count as usize];
-        win32(QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut path_count, paths.as_mut_ptr(), &mut mode_count, modes.as_mut_ptr(), ptr::null_mut()) as i32)?;
-        let path = paths[..path_count as usize]
+        let path = paths
             .iter()
             .find(|p| same_luid(p.sourceInfo.adapterId, luid) && p.sourceInfo.id == source)
             .copied()
@@ -62,11 +58,27 @@ fn apply_only(luid: LUID, source: u32, width: u32, height: u32) -> io::Result<()
         mode.Anonymous.sourceMode.height = height;
         mode.Anonymous.sourceMode.position.x = 0;
         mode.Anonymous.sourceMode.position.y = 0;
-        win32(SetDisplayConfig(1, &path, mode_count, modes.as_ptr(), SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE))
+        win32(SetDisplayConfig(1, &path, modes.len() as u32, modes.as_ptr(), SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE))
     }
 }
 
-fn win32(code: i32) -> io::Result<()> {
+/// 在用的显示路径与模式。
+pub(super) fn active_config() -> io::Result<(Vec<DISPLAYCONFIG_PATH_INFO>, Vec<DISPLAYCONFIG_MODE_INFO>)> {
+    // SAFETY: 缓冲区按 GetDisplayConfigBufferSizes 的结果分配，QueryDisplayConfig 写回实际条数。
+    unsafe {
+        let (mut path_count, mut mode_count) = (0u32, 0u32);
+        win32(GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count) as i32)?;
+        let mut paths = vec![zeroed::<DISPLAYCONFIG_PATH_INFO>(); path_count as usize];
+        let mut modes = vec![zeroed::<DISPLAYCONFIG_MODE_INFO>(); mode_count as usize];
+        win32(QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut path_count, paths.as_mut_ptr(), &mut mode_count, modes.as_mut_ptr(), ptr::null_mut()) as i32)?;
+        paths.truncate(path_count as usize);
+        modes.truncate(mode_count as usize);
+        Ok((paths, modes))
+    }
+}
+
+/// Win32 错误码转成 `io::Result`。
+pub(super) fn win32(code: i32) -> io::Result<()> {
     if code == 0 { Ok(()) } else { Err(io::Error::from_raw_os_error(code)) }
 }
 

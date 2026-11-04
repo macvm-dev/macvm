@@ -9,7 +9,7 @@ public struct QEMUInstallation: Sendable {
     public let firmwareVarsTemplate: URL
     /// 传给 `-L` 的数据目录（键盘布局等）；Homebrew 版用它自己的默认位置。
     public var dataDirectory: URL?
-    /// App 显示 SPICE 画面用的库（`MacVMDisplay.h` 的 C 接口）；有它才用 SPICE + GL 显示，否则用 VNC。
+    /// App 显示 SPICE 画面用的库（`SpiceDisplay.Library` 加载的 C 接口）；有它才用 SPICE + GL 显示，否则用 VNC。
     public var displayLibrary: URL?
     /// 编进了 Direct3D 转译（DXMT），virtio-gpu 可开 Windows 的 3D 上下文。
     public var direct3D = false
@@ -43,7 +43,7 @@ public struct QEMUInstallation: Sendable {
     }
 
     /// 设了环境变量 `MACVM_QEMU`（自带布局的根目录，或 Homebrew 式安装的可执行文件）时只用它；
-    /// 否则依次找 App 自带的、开发时 `scripts/build-qemu.sh` 的产物、Homebrew 的 Apple Silicon 与 Intel 前缀。
+    /// 否则依次找 App 自带的、开发时 `make qemu` 的产物、Homebrew 的 Apple Silicon 与 Intel 前缀。
     public static func locate() -> QEMUInstallation? {
         if let env = ProcessInfo.processInfo.environment["MACVM_QEMU"] {
             return bundled(at: URL(filePath: env)) ?? installed(at: [env])
@@ -75,7 +75,7 @@ public struct QEMUInstallation: Sendable {
         return found
     }
 
-    /// `scripts/build-qemu.sh` 的产物布局：bin/、lib/、share/。自带的库按 macOS 27 编译，更早的系统上不用。
+    /// 自带 QEMU 的编译产物布局：bin/、lib/、share/。自带的库按 macOS 27 编译，更早的系统上不用。
     static func bundled(at root: URL) -> QEMUInstallation? {
         guard ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)) else {
             return nil

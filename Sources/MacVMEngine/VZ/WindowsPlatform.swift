@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 public import MacVMModel
 import MacVMPrivate
@@ -32,21 +33,30 @@ public enum WindowsSupport {
 
     static func bootImageURL(_ bundle: VMBundle) -> URL { bundle.url.appending(path: bootImageName) }
 
+    /// 启动盘里 macvm-boot 的 SHA-256（十六进制），与随程序分发的不同时重做启动盘。
+    static func bootImageDigestURL(_ bundle: VMBundle) -> URL { bundle.url.appending(path: "vz-boot.sha256") }
+
     /// VZ 启动 Windows 前的准备：
     /// - 包内放一块 FAT 启动盘，`\EFI\BOOT\BOOTAA64.EFI` 是 macvm-boot（帧缓冲垫片 + 转交 Windows 启动管理器）；
+    ///   随程序分发的 macvm-boot 变了就重做，找不到它时沿用已有的启动盘；
     /// - 重建 EFI 变量存储。Windows 会把自己的启动项写在最前，留着它固件就会绕过垫片直接启动 Windows，
     ///   而没有启动项时固件按设备顺序找可移动介质的默认路径，先找到排在第一位的启动盘。
     public static func prepareForVZ(_ bundle: VMBundle) async throws {
-        let image = bootImageURL(bundle)
-        if !FileManager.default.fileExists(atPath: image.path) {
-            guard let loader = GuestFiles.locate("macvm-boot.efi") else {
+        let image = bootImageURL(bundle), digestURL = bootImageDigestURL(bundle)
+        let loader = GuestFiles.locate("macvm-boot.efi")
+        let digest = loader.flatMap { try? Data(contentsOf: $0) }.map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+        let exists = FileManager.default.fileExists(atPath: image.path)
+        if !exists || (digest != nil && digest != (try? String(contentsOf: digestURL, encoding: .utf8))) {
+            guard let loader, let digest else {
                 throw MacVMError.io("找不到 macvm-boot.efi，先运行 make boot")
             }
             let staging = FileManager.default.temporaryDirectory.appending(path: "macvm-vzboot-\(UUID().uuidString)", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: staging.appending(path: "EFI/BOOT"), withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: staging) }
             try FileManager.default.copyItem(at: loader, to: staging.appending(path: "EFI/BOOT/BOOTAA64.EFI"))
+            if exists { try FileManager.default.removeItem(at: image) }
             try await DiskImage.createFAT(from: staging, to: image, size: "16m", volumeName: "MACVMBOOT")
+            try digest.write(to: digestURL, atomically: true, encoding: .utf8)
         }
         try? FileManager.default.removeItem(at: bundle.efiVariableStoreURL)
         _ = try VZEFIVariableStore(creatingVariableStoreAt: bundle.efiVariableStoreURL)

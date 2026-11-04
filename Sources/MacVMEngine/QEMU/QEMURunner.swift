@@ -20,6 +20,9 @@ public final class QEMURunner: MachineRunner {
     private var bridge: BridgeSession?
     private var gpuDriverSync: Task<Void, Never>?
     private var pageCacheTrim: Task<Void, Never>?
+    /// 从挂起状态恢复期间为真：这时 QEMU 退出由 `start` 当作恢复失败处理，不触发停止回调，只记在 `restoreExited`。
+    private var restoring = false
+    private var restoreExited = false
 
     /// `display` 为 true 时由 QEMU 自己开一个 Cocoa 窗口显示画面。
     public init(bundle: VMBundle, display: Bool = false) throws {
@@ -32,7 +35,7 @@ public final class QEMURunner: MachineRunner {
             throw MacVMError.unsupported("\(config.name) 装了 3D 显卡驱动，需要 App 自带的 QEMU（macOS 27 起）；当前的 QEMU 没有 3D，Windows 开机即崩溃")
         }
         try qemu.ensureVars(for: bundle)
-        // 主板 UUID 由它算出；较早建的包可能没有。
+        // 主板 UUID 由它算出，包里没有时补建。
         if !FileManager.default.fileExists(atPath: bundle.machineIdentifierURL.path) { try MachineIdentity.createGeneric(in: bundle) }
         _ = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments()
     }
@@ -111,20 +114,36 @@ public final class QEMURunner: MachineRunner {
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         try RuntimeDirectory.ensure()
         var outcome = MachineStartOutcome.coldBoot
-        if bundle.hasSavedState, !recovery {
+        if bundle.hasSavedState, recovery {
+            // 冷启动会写磁盘，留着的状态与磁盘从此不一致。
+            try? FileManager.default.removeItem(at: bundle.savedStateURL)
+            outcome = .restoreFailed("以恢复模式启动，不使用挂起状态")
+        } else if bundle.hasSavedState {
+            restoring = true
+            restoreExited = false
+            defer { restoring = false }
+            var connected = false
             do {
                 try await launch(incoming: bundle.savedStateURL)
+                connected = true
                 try await waitForMigration()
                 try await qmp?.execute("cont")
                 outcome = .restored
             } catch {
+                let exited = restoreExited || process?.isRunning == false
                 await terminate()
+                // QEMU 还活着却连不上控制接口：它还没读挂起状态，状态文件仍可用，留着它；
+                // QEMU 已退出或迁移失败时状态不可信，丢弃后冷启动。
+                guard connected || exited else { throw error }
                 outcome = .restoreFailed(describeEngineError(error))
             }
             try? FileManager.default.removeItem(at: bundle.savedStateURL)
         }
         if case .restored = outcome {} else {
-            try await launch(incoming: nil)
+            do { try await launch(incoming: nil) } catch {
+                await terminate()
+                throw error
+            }
             pressKeysForInstallMedia()
         }
         stateLabel = "running"
@@ -205,7 +224,11 @@ public final class QEMURunner: MachineRunner {
 
     public func waitUntilStopped() async -> MachineStopReason { await stopLatch.wait() }
 
+    /// SPICE + GL 的画面在 GPU 上，`screendump` 拿不到。
     public func screenshot(to url: URL) async throws {
+        guard qemu.displayLibrary == nil else {
+            throw MacVMError.unsupported("App 自带的 QEMU 以 SPICE + GL 显示，截不到画面；Homebrew 的 QEMU 可以截图")
+        }
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }
         try await qmp.execute("screendump", ["filename": url.path, "format": "png"])
     }
@@ -305,29 +328,44 @@ public final class QEMURunner: MachineRunner {
     }
 
     /// 结束当前 QEMU 进程并等它退出。先摘下 `process`，它的退出不再触发停止回调，由调用方决定停止原因。
+    /// 主循环卡住时 QMP 不应答、SIGTERM 也没人处理，所以 `quit` 只等有限时间，之后依次 SIGTERM、SIGKILL。
     private func terminate() async {
+        defer { closeBridge() }
+        let current = process, client = qmp
+        detachProcess()
+        guard let process = current, process.isRunning else { return }
+        if let client { Task.detached { _ = try? await client.execute("quit") } }
+        if await Self.waitForExit(process, within: .seconds(5)) { return }
+        process.terminate()
+        if await Self.waitForExit(process, within: .seconds(3)) { return }
+        kill(process.processIdentifier, SIGKILL)
+        _ = await Self.waitForExit(process, within: .seconds(3))
+    }
+
+    private static func waitForExit(_ process: Process, within limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while process.isRunning, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(100)) }
+        return !process.isRunning
+    }
+
+    /// 摘下当前 QEMU 进程与它的控制连接，停掉依附于这次运行的后台任务。
+    private func detachProcess() {
         gpuDriverSync?.cancel()
         pageCacheTrim?.cancel()
-        defer { closeBridge() }
-        guard let process else { return }
-        let client = qmp
-        self.process = nil
+        process = nil
         qmp = nil
         stateLabel = "stopped"
-        guard process.isRunning else { return }
-        _ = try? await client?.execute("quit")
-        for _ in 0..<50 where process.isRunning { try? await Task.sleep(for: .milliseconds(100)) }
-        if process.isRunning { process.terminate() }
     }
 
     /// 客户机关机时 QEMU 自行退出，退出码 0。
     private func processExited(_ token: ObjectIdentifier, status: Int32) {
         guard let process, ObjectIdentifier(process) == token else { return }
-        pageCacheTrim?.cancel()
-        self.process = nil
-        qmp = nil
+        detachProcess()
         closeBridge()
-        stateLabel = "stopped"
+        if restoring {
+            restoreExited = true
+            return
+        }
         finish(status == 0 ? .guestShutdown : .error("QEMU 退出码 \(status)"))
     }
 
@@ -372,7 +410,7 @@ public final class QEMURunner: MachineRunner {
     }
 
     /// 客户机上报的空闲页由自带的 QEMU 还给宿主，页缓存却不算空闲、一直占着宿主内存：定期请代理把它修剪到
-    /// `pageCacheKeep`，腾出的页随之上报。代理回错误（旧版本不认识这个请求）就不再请求；连不上时下次再试。
+    /// `pageCacheKeep`，腾出的页随之上报。代理回错误（不支持这个请求）就不再请求；连不上时下次再试。
     private func trimGuestPageCache() {
         guard config.os == .linux, config.guestAgent, qemu.returnsFreedGuestMemory else { return }
         let bundle = bundle, config = config

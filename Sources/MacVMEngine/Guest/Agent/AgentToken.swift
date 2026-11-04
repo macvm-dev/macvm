@@ -42,8 +42,8 @@ public enum AgentToken {
         return mac.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// 经 TCP 连上代理端口后调用：包里有令牌就过质询。没有令牌时代理只受理来自默认网关的连接，
-    /// 宿主在桥接网络下不是默认网关（`bridged`），这时直接报错。
+    /// 经 TCP 连上代理端口后调用：包里有令牌就过质询。没有令牌时不认证，只在宿主是客户机默认网关时连得上，
+    /// 所以桥接网络下（`bridged`）直接报错。
     static func authenticate(_ socket: UnixSocket, bundle: VMBundle, bridged: Bool) throws {
         guard let token = read(bundle) else {
             guard !bridged else {

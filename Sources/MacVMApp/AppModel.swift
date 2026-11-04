@@ -174,7 +174,7 @@ final class AppModel {
 
     // MARK: - 运行
 
-    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。失败时报告并返回 nil。
+    /// 在本进程启动并返回运行器；已在本进程运行时直接返回。失败时把原因写进 `lastError` 并返回 nil。
     @discardableResult
     func start(_ name: String) async -> (any MachineRunner)? {
         do {
@@ -186,8 +186,20 @@ final class AppModel {
     }
 
     /// 在本进程启动并返回运行器；已在本进程运行时直接返回。失败时不报告、不打断本虚拟机的其他任务。
+    /// 同名的启动还没结束时等它的结果，不另起一次：同一台同时只能有一次启动在登记、撤销运行器与控制 socket。
     private func launch(_ name: String) async throws -> any MachineRunner {
+        if let pending = launches[name] { return try await pending.value }
         if let runner = runners[name] { return runner }
+        let task = Task { try await self.startRunner(name) }
+        launches[name] = task
+        defer { launches[name] = nil }
+        return try await task.value
+    }
+
+    /// 进行中的 `launch`，键为虚拟机名。
+    @ObservationIgnored private var launches: [String: Task<any MachineRunner, any Error>] = [:]
+
+    private func startRunner(_ name: String) async throws -> any MachineRunner {
         do {
             let bundle = try library.bundle(named: name)
             let runner = try await RunnerFactory.make(bundle)
@@ -216,11 +228,16 @@ final class AppModel {
                 if force { try await runner.forceStop() } else { try runner.requestStop() }
             } else {
                 let bundle = try library.bundle(named: name)
-                try ControlClient.perform(.stop(force: force), on: bundle)
+                try await Self.sendControl(.stop(force: force), to: bundle)
             }
             if !force { showStopping(name) }
         } catch { report(error) }
         refresh()
+    }
+
+    /// 控制 socket 的往返会阻塞到对方回复（挂起要等内存存完），放到主线程之外。
+    private nonisolated static func sendControl(_ request: ControlRequest, to bundle: VMBundle, timeout: Int = 60) async throws {
+        try await Task.detached { try ControlClient.perform(request, on: bundle, timeout: timeout) }.value
     }
 
     /// 正常关机要等客户机自己关，期间状态显示「正在关机」；停下或等满 `stoppingTimeout` 后撤掉。
@@ -228,15 +245,21 @@ final class AppModel {
     private func showStopping(_ name: String) {
         guard activity[name] == nil else { return }
         setActivity(name, Self.stoppingTitle)
-        Task { [weak self] in
-            try? await Task.sleep(for: Self.stoppingTimeout)
+        stoppingTimers[name]?.cancel()
+        stoppingTimers[name] = Task { [weak self] in
+            do { try await Task.sleep(for: Self.stoppingTimeout) } catch { return }
             self?.clearStopping(name)
         }
     }
 
     private func clearStopping(_ name: String) {
-        if isStopping(name) { setActivity(name, nil) }
+        guard isStopping(name) else { return }
+        stoppingTimers.removeValue(forKey: name)?.cancel()
+        setActivity(name, nil)
     }
+
+    /// 每台虚拟机这一轮「正在关机」的超时任务；状态撤掉时取消，免得到点时撤掉之后新一轮的。
+    @ObservationIgnored private var stoppingTimers: [String: Task<Void, Never>] = [:]
 
     private static let stoppingTitle = "正在关机…"
     private static let stoppingTimeout: Duration = .seconds(90)
@@ -247,7 +270,7 @@ final class AppModel {
                 try await runner.suspend()
             } else {
                 let bundle = try library.bundle(named: name)
-                try ControlClient.perform(.suspend, on: bundle, timeout: 300)
+                try await Self.sendControl(.suspend, to: bundle, timeout: 300)
             }
         } catch { report(error) }
         refresh()
@@ -275,6 +298,7 @@ final class AppModel {
 
     func delete(_ name: String) {
         do {
+            try requireIdle(name)
             try VMFactory.delete(library.bundle(named: name))
             if selection == name { selection = nil }
         } catch { report(error) }
@@ -561,6 +585,9 @@ final class AppModel {
 
     func isCreating(_ name: String) -> Bool { creationTasks[name] != nil }
 
+    /// 本进程里正在新建的虚拟机名；App 中途退出后下次启动会接着做。
+    var resumableCreations: [String] { creationTasks.keys.sorted() }
+
     /// 本进程里正在新建的虚拟机的客户机系统。
     func creatingOS(_ name: String) -> GuestOS? { runningCreations[name]?.os }
 
@@ -678,12 +705,19 @@ final class AppModel {
         case (_, .template(let templateName)):
             setActivity(name, "正在从模板创建…")
             let template = try templateLibrary.template(named: templateName)
-            // 表单里模板的磁盘按 GB 向上取整显示，没调大时不扩。
-            let currentGB = (try DiskImage.allocatedSize(at: template.diskURL).logical + (1 << 30) - 1) >> 30
+            // 没调大到超过模板容量的整 GB 数时不扩。
+            let currentGB = try ResourceRange.wholeGB(DiskImage.allocatedSize(at: template.diskURL).logical)
             _ = try await VMTemplate.instantiate(template, as: name, in: library, cpuCount: r.cpus, memorySize: memory,
-                                                 diskSize: UInt64(r.diskGB) > currentGB ? disk : nil, creationToken: token)
+                                                 diskSize: r.diskGB > currentGB ? disk : nil, creationToken: token)
         case (.macOS, _):
-            let options = MacOSInstaller.Options(name: name, source: r.file.map { .file($0) } ?? .latest,
+            let source: MacOSInstaller.Source
+            if r.source == .ipswFile {
+                guard let file = r.file else { throw MacVMError.invalidConfig("没有选择 IPSW 文件") }
+                source = .file(file)
+            } else {
+                source = .latest
+            }
+            let options = MacOSInstaller.Options(name: name, source: source,
                                                  cpuCount: r.cpus, memorySize: memory, diskSize: disk, user: r.user ?? NSUserName(), password: r.password,
                                                  creationToken: token)
             _ = try await MacOSInstaller.install(options, in: library) { [weak self] phase in
@@ -747,8 +781,16 @@ final class AppModel {
     }
 
     func clone(_ name: String, as newName: String) async {
-        do { _ = try await VMClone.clone(library.bundle(named: name), as: newName) } catch { report(error) }
+        do {
+            try requireIdle(name)
+            _ = try await VMClone.clone(library.bundle(named: name), as: newName)
+        } catch { report(error) }
         refresh()
+    }
+
+    /// 创建、安装、存模板等任务进行中时包还没建完或正被复制，删除、克隆、改快照要等它结束。
+    func requireIdle(_ name: String) throws {
+        if let current = activity[name] { throw MacVMError.unsupported("\(name) 有进行中的任务：\(current.title)") }
     }
 
     func report(_ error: any Error) {

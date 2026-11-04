@@ -20,7 +20,7 @@ public enum MachineStopReason: Sendable, Equatable {
 public enum MachineStartOutcome: Sendable {
     case coldBoot
     case restored
-    /// 挂起状态无法恢复（与当前配置或主机版本不符），已丢弃并冷启动。
+    /// 挂起状态没有用上（与当前配置或主机版本不符，或以恢复模式启动），已丢弃并冷启动。
     case restoreFailed(String)
 }
 
@@ -112,8 +112,11 @@ public enum RunnerFactory {
         }
     }
 
+    /// 已在运行时先报 `alreadyRunning`：`prepare` 会重建包内文件、`BridgeSession.openAll` 要等辅助进程，
+    /// 都不能在运行中的虚拟机上做；包锁要到运行器建好时才取得。
     @MainActor
     public static func make(_ bundle: VMBundle, console: ConfigBuilder.Console = .none, display: Bool = false) async throws -> any MachineRunner {
+        if BundleLock.holder(of: bundle) != nil { throw MacVMError.alreadyRunning(bundle.name) }
         try await prepare(bundle)
         let config = try bundle.loadConfig()
         return switch config.engine {

@@ -43,15 +43,16 @@ struct InstallMacOS: AsyncParsableCommand {
             if let user { try GuestAccount.validate(user: user) }
             if let password { try GuestAccount.validate(password: password) }
             let user = user ?? NSUserName()
-            let parts = resolution.lowercased().split(separator: "x").compactMap { Int($0) }
-            guard parts.count == 2 else { throw MacVMError.invalidConfig("分辨率格式应为 宽x高：\(resolution)") }
+            guard let (width, height) = Display.parse(resolution) else {
+                throw MacVMError.invalidConfig("分辨率格式应为 宽x高：\(resolution)")
+            }
             let interactive = !global.json && isatty(STDERR_FILENO) == 1
             let options = MacOSInstaller.Options(
                 name: name,
                 source: ipsw.map { .file(URL(filePath: ($0 as NSString).expandingTildeInPath)) } ?? .latest,
                 cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
                 user: user, password: password,
-                display: DisplayConfig(width: parts[0], height: parts[1], pixelsPerInch: 144),
+                display: DisplayConfig(width: width, height: height, pixelsPerInch: 144),
                 showProgress: interactive
             )
             var lastPercent = -1

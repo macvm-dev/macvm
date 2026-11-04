@@ -101,6 +101,8 @@ public enum MacOSInstaller {
                 return bundle
             } catch {
                 if Task.isCancelled { throw CancellationError() }
+                // 只把 Virtualization 的错误归为 engine；准备包内文件时已分好类的错误原样抛出。
+                if error is MacVMError { throw error }
                 throw MacVMError.engine("安装 macOS 失败：\(describeEngineError(error))")
             }
         }

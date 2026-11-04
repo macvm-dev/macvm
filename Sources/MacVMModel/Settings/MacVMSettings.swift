@@ -1,6 +1,6 @@
 public import Foundation
 
-/// 本机用户级设置，App 与 CLI 共用，存在 `~/Library/Application Support/MacVM/settings.json`。
+/// 本机用户级设置，App 与 CLI 共用，存在 `fileURL`。
 /// 字段为 nil 表示用默认值；文件缺失或损坏时全部按默认处理。
 public struct MacVMSettings: Codable, Sendable, Equatable {
     /// 虚拟机目录；环境变量 `MACVM_HOME` 优先于它。
@@ -46,7 +46,7 @@ public struct MacVMSettings: Codable, Sendable, Equatable {
     }
 }
 
-/// 下载缓存目录，未设置时为 `~/Library/Caches/MacVM`。
+/// 下载缓存目录，未设置时为 `defaultRoot`。
 public enum DownloadCache {
     public static var defaultRoot: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

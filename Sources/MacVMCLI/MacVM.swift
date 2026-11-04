@@ -8,7 +8,7 @@ struct MacVM: AsyncParsableCommand {
         commandName: "macvm",
         abstract: "在 Apple Silicon 上运行 macOS、Linux、Windows 虚拟机。",
         discussion: discussion,
-        version: "0.1.0",
+        version: appVersion,
         subcommands: [
             Create.self, InstallMacOS.self, Set.self, List.self, Run.self, Start.self, Stop.self, Suspend.self,
             Status.self, IP.self, Wait.self, Screenshot.self, Display.self, CloneCommand.self, SnapshotCommand.self, TemplateCommand.self,
@@ -17,6 +17,13 @@ struct MacVM: AsyncParsableCommand {
         ]
     )
 }
+
+/// 版本号只写在 App 包的属性列表里；CLI 放在包内的固定层级，从包的属性列表读取。不在 App 包里运行时为 `dev`。
+private let appVersion: String = {
+    guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return "dev" }
+    let plist = exe.deletingLastPathComponent().appending(path: "../../Info.plist").standardizedFileURL
+    return NSDictionary(contentsOf: plist)?["CFBundleShortVersionString"] as? String ?? "dev"
+}()
 
 private let discussion: String = {
     let rows = MacVMError.catalog.map { e in

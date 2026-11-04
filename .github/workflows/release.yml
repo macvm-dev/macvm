@@ -34,6 +34,8 @@ jobs:
           fi
           plutil -replace CFBundleShortVersionString -string "$version" packaging/Info.plist
           plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" packaging/Info.plist
+          sed -i '' -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$version\"/" guest/Cargo.toml
+          grep -q "^version = \"$version\"" guest/Cargo.toml || { echo "没能改写客户机程序的版本号" >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: 安装构建依赖
@@ -41,8 +43,40 @@ jobs:
           brew install cmake ninja meson pkgconf glib pixman openssl python libslirp
           xcodebuild -downloadComponent MetalToolchain
           rustup toolchain install stable --profile minimal
-          cargo install --locked cargo-xwin
+          cargo install --locked cargo-xwin@0.23.1
 
+      - name: 检查与测试
+        env:
+          MACVM_HOME: ${{ runner.temp }}/macvm-home
+        run: |
+          make lint lint-guest test-guest
+          # 配置构建测试要找 UEFI 引导程序。
+          make boot
+          make test-swift
+
+      - name: 恢复 QEMU 缓存
+        uses: actions/cache/restore@v6
+        with:
+          path: .build/qemu
+          key: qemu-xcode27-${{ hashFiles('scripts/build-qemu.sh', 'qemu/**') }}
+          restore-keys: qemu-xcode27-
+      - name: 编译 QEMU
+        id: qemu
+        run: make qemu
+      # QEMU 编得久，后续步骤失败也先存下来。
+      - name: 保存 QEMU 缓存
+        if: always() && steps.qemu.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: .build/qemu
+          key: qemu-xcode27-${{ hashFiles('scripts/build-qemu.sh', 'qemu/**') }}-${{ github.run_id }}
+
+      - name: 编译客户机代理、引导程序与 App
+        run: |
+          make agent boot
+          make build CONFIG=release
+
+      # 证书与公证凭据只给签名与公证用：放到所有拉取、编译第三方代码的步骤之后再导入，那些代码就拿不到解锁的签名身份。
       - name: 导入签名证书与公证凭据
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -102,26 +136,6 @@ jobs:
           EOF
           xcrun notarytool store-credentials macvm --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$KEYCHAIN"
           rm "$key"
-
-      - name: 恢复 QEMU 缓存
-        uses: actions/cache/restore@v6
-        with:
-          path: .build/qemu
-          key: qemu-xcode27-${{ hashFiles('scripts/build-qemu.sh', 'qemu/**') }}
-          restore-keys: qemu-xcode27-
-      - name: 编译 QEMU
-        id: qemu
-        run: make qemu
-      # QEMU 编得久，后续步骤失败也先存下来。
-      - name: 保存 QEMU 缓存
-        if: always() && steps.qemu.outcome == 'success'
-        uses: actions/cache/save@v6
-        with:
-          path: .build/qemu
-          key: qemu-xcode27-${{ hashFiles('scripts/build-qemu.sh', 'qemu/**') }}-${{ github.run_id }}
-
-      - name: 编译客户机代理与引导程序
-        run: make agent boot
 
       - name: 构建、签名并公证
         env:

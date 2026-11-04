@@ -140,8 +140,9 @@ public final class VZRunner: NSObject, MachineRunner {
         return (try? vzConfiguration.validateSaveRestoreSupport()) != nil
     }
 
-    /// 存在挂起状态时从它恢复，否则冷启动。恢复失败会丢弃状态文件后冷启动，
-    /// 因为状态与磁盘已不一致，留着只会每次都失败。启动失败时按停止处理：释放包锁并回调 `onStop`，再抛出原错误。
+    /// 存在挂起状态时从它恢复，否则冷启动。恢复失败或以恢复模式启动时丢弃状态文件后冷启动：
+    /// 冷启动会写磁盘，状态与磁盘从此不一致，留着下次只会恢复出错或损坏文件系统。
+    /// 启动失败时按停止处理：释放包锁并回调 `onStop`，再抛出原错误。
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         do {
@@ -154,7 +155,10 @@ public final class VZRunner: NSObject, MachineRunner {
 
     private func boot(recovery: Bool) async throws -> MachineStartOutcome {
         var outcome = MachineStartOutcome.coldBoot
-        if bundle.hasSavedState, !recovery {
+        if bundle.hasSavedState, recovery {
+            try? FileManager.default.removeItem(at: bundle.savedStateURL)
+            outcome = .restoreFailed("以恢复模式启动，不使用挂起状态")
+        } else if bundle.hasSavedState {
             do {
                 try await restore()
                 try? FileManager.default.removeItem(at: bundle.savedStateURL)
@@ -207,8 +211,10 @@ public final class VZRunner: NSObject, MachineRunner {
 
     /// 先经 SSH 用包内保存的客户机密码 sudo 立即关机；不行再经 vsock 请代理关机。返回客户机是否接受。
     /// 代理以登录用户身份运行，只能像用户点「关机」那样请求，其他 App 可以拦下，所以排在后面。
+    /// 桥接时不走 SSH：客户机 IP 在真实局域网上，SSH 又不校验主机密钥，冒充该 IP 的主机就能收到密码。
     private func shutdownMacOSGuest() async -> Bool {
-        if let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle),
+        if config.networks.first?.mode != .bridged,
+           let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle),
            await Task.detached(operation: { Self.sshSudoShutdown(user: user, ip: ip, password: password) }).value {
             return true
         }
@@ -300,6 +306,7 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 暂停、把内存与设备状态写进包内后断电；下次 `start` 从该状态继续。
+    /// 保存或断电失败时删掉状态文件，原先在运行的恢复运行：虚拟机还会继续写磁盘，留下的状态已不可用。
     public func suspend() async throws {
         guard canSuspend else {
             throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
@@ -307,10 +314,17 @@ public final class VZRunner: NSObject, MachineRunner {
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
         try requireNoAttachedImages()
         try markShareDevice()
-        if virtualMachine.state == .running { try await pause() }
+        let wasRunning = virtualMachine.state == .running
+        if wasRunning { try await pause() }
         let url = bundle.savedStateURL
-        try await virtualMachine.saveMachineStateTo(url: url)
-        try await virtualMachine.stop()
+        do {
+            try await virtualMachine.saveMachineStateTo(url: url)
+            try await virtualMachine.stop()
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            if wasRunning, virtualMachine.canResume { try? await virtualMachine.resume() }
+            throw error
+        }
         finish(.suspended)
     }
 

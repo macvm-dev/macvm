@@ -9,8 +9,6 @@ public enum WindowsISO {
     struct Release: Equatable {
         /// 如 `Windows 11 ARM 64 26H2 26300.9457`。
         let name: String
-        /// 微软对语言的称呼，如 `Chinese (Simplified)`。
-        let language: String
         let url: URL
         var fileName: String { url.lastPathComponent }
     }
@@ -19,7 +17,7 @@ public enum WindowsISO {
         DownloadCache.root.appending(path: "windows", directoryHint: .isDirectory)
     }
 
-    /// 返回微软当前提供的、语言按 `languages` 挑选的 ISO，不在缓存里时先下载；下完后删掉缓存里其他的 ISO。
+    /// 返回微软当前提供的、语言按 `languages` 挑选的 ISO，不在缓存里时先下载；下完后按 `removeStaleISOs` 清理缓存。
     /// 问不到微软时（离线、被拒）退而用缓存里最新的一份，缓存里也没有才报错。
     public static func iso(preferring languages: [String] = Locale.preferredLanguages, showProgress: Bool) async throws -> URL {
         // 只取一次：下载期间设置里的目录可能被改，中间文件得留在同一处。
@@ -32,8 +30,20 @@ public enum WindowsISO {
         let iso = root.appending(path: release.fileName)
         return try await Download.cached(iso, from: release.url, via: iso.appendingPathExtension("part"), showProgress: showProgress) { partial in
             try FileManager.default.moveItem(at: partial, to: iso)
-            removeStaleISOs(keeping: release.fileName, in: root)
+            let bundles = ((try? VMLibrary.default.all()) ?? []) + ((try? TemplateLibrary.default.all()) ?? [])
+            removeStaleISOs(keeping: release.fileName, in: root, inUse: installMediaInUse(of: bundles))
         }
+    }
+
+    /// `bundles` 配置里的安装介质，解析符号链接后的绝对路径。读不出配置的跳过。
+    static func installMediaInUse(of bundles: [VMBundle]) -> Set<String> {
+        var paths: Set<String> = []
+        for bundle in bundles {
+            for media in (try? bundle.loadConfig())?.installMedia ?? [] {
+                paths.insert(bundle.resolve(media).resolvingSymlinksInPath().path)
+            }
+        }
+        return paths
     }
 
     /// 缓存里下完的 ISO，新的在前。
@@ -44,9 +54,11 @@ public enum WindowsISO {
     }
 
     /// 删掉 `root` 里除 `current` 外下完的 ISO 与没下完的残留，`current` 的 `.part` 与锁文件不动。
-    static func removeStaleISOs(keeping current: String, in root: URL) {
+    /// 路径在 `inUse` 里的 ISO 也不动：还没装完的虚拟机挂着它当安装介质，删了就开不了机。
+    static func removeStaleISOs(keeping current: String, in root: URL, inUse: Set<String> = []) {
         let items = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         for item in items where !item.lastPathComponent.hasPrefix(current) && !item.lastPathComponent.hasSuffix(".lock") {
+            guard !inUse.contains(item.resolvingSymlinksInPath().path) else { continue }
             try? FileManager.default.removeItem(at: item)
         }
     }
@@ -87,7 +99,7 @@ public enum WindowsISO {
                                                     ["productEditionId": "undefined", "SKU": sku.id], session: session),
                                           referer: WindowsInstaller.downloadPage)
         try throwIfRefused(links)
-        guard let release = release(inLinks: links, language: language) else { throw unexpectedAnswer }
+        guard let release = release(inLinks: links) else { throw unexpectedAnswer }
         return release
     }
 
@@ -115,13 +127,13 @@ public enum WindowsISO {
 
     /// 链接接口返回的第一个下载项。`Uri` 里的 `&` 被转义成了 `&amp;`。
     /// 文件名直接用作缓存路径：`lastPathComponent` 会解出 `%2F`，含 `/` 或以 `.` 开头的不认。
-    static func release(inLinks links: [String: Any], language: String) -> Release? {
+    static func release(inLinks links: [String: Any]) -> Release? {
         guard let option = (links["ProductDownloadOptions"] as? [[String: Any]])?.first,
               let uri = option["Uri"] as? String,
               let url = URL(string: uri.replacingOccurrences(of: "&amp;", with: "&")), url.pathExtension.lowercased() == "iso",
               !url.lastPathComponent.contains("/"), !url.lastPathComponent.hasPrefix(".")
         else { return nil }
-        return Release(name: option["ProductDisplayName"] as? String ?? "Windows 11", language: language, url: url)
+        return Release(name: option["ProductDisplayName"] as? String ?? "Windows 11", url: url)
     }
 
     private static func throwIfRefused(_ answer: [String: Any]) throws {

@@ -4,6 +4,7 @@ public import MacVMModel
 /// 用密码登录一次客户机，把 macvm 专用公钥追加进 `authorized_keys`，之后的连接都走密钥。
 public enum GuestSSH {
     public static func installPublicKey(bundle: VMBundle, user: String, password: String, proxyCommand: String, timeout: TimeInterval) async throws {
+        try SSHConfig.validateLogin(user: user, host: bundle.name)
         let key = try await SSHKeys.ensurePublicKey()
         let askpass = try makeAskpass()
         defer { try? FileManager.default.removeItem(at: askpass) }
@@ -27,13 +28,34 @@ public enum GuestSSH {
             let err = Pipe()
             process.standardError = err
             process.standardOutput = FileHandle.nullDevice
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 { return }
+            if try await run(process) == 0 { return }
             lastError = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             try await Task.sleep(for: .seconds(5))
         }
         throw MacVMError.timeout("未能登录 \(bundle.name) 装入 SSH 公钥：\(lastError)")
+    }
+
+    /// 运行 `process` 并等它退出，返回退出码；任务取消时终止它并抛出 `CancellationError`。
+    private static func run(_ process: Process) async throws -> Int32 {
+        let running = RunningProcess(process)
+        ChildProcesses.register(running)
+        defer { ChildProcesses.unregister(running) }
+        let status = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Int32, any Error>) in
+                process.terminationHandler = { c.resume(returning: $0.terminationStatus) }
+                do { try process.run() } catch {
+                    process.terminationHandler = nil
+                    c.resume(throwing: error)
+                    return
+                }
+                // 取消发生在 run 之前时 onCancel 看不到在运行的进程，这里补上。
+                if Task.isCancelled { running.terminate() }
+            }
+        } onCancel: {
+            running.terminate()
+        }
+        try Task.checkCancellation()
+        return status
     }
 
     /// 新建一个 SSH_ASKPASS 脚本，它输出 `askpassEnvironment` 放进环境的密码；调用方用完删除。

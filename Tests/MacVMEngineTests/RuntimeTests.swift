@@ -1,5 +1,6 @@
 import Foundation
 @testable import MacVMEngine
+import MacVMModel
 import Testing
 
 struct ControlProtocolTests {
@@ -13,6 +14,48 @@ struct ControlProtocolTests {
 
     @Test func stopDefaultsToGraceful() throws {
         #expect(try JSONDecoder().decode(ControlRequest.self, from: Data(#"{"op":"stop"}"#.utf8)) == .stop(force: false))
+    }
+
+    @Test(arguments: [
+        MacVMError.notRunning("vm"), .alreadyRunning("vm"), .io("写入失败"), .timeout("超时"), .invalidConfig("坏配置"), .engine("出错"),
+    ])
+    func failureKeepsErrorCode(error: MacVMError) {
+        #expect(ControlResponse(failure: error).failure == error)
+    }
+
+    @Test func unknownFailureCodeIsEngine() {
+        #expect(ControlResponse(ok: false, errorCode: "bad_request", message: "坏请求").failure == .engine("坏请求"))
+        #expect(ControlResponse(ok: true).failure == nil)
+    }
+}
+
+struct UnixSocketTests {
+    @Test func exactReadLineLeavesFollowingBytesInDescriptor() throws {
+        var ends: [Int32] = [-1, -1]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0)
+        let reader = UnixSocket(fd: ends[0]), writer = UnixSocket(fd: ends[1])
+        try writer.writeAll(Data("{\"ok\":true}\nrest".utf8))
+        #expect(try reader.readLine(exact: true) == Data("{\"ok\":true}".utf8))
+        #expect(reader.takeBuffered().isEmpty)
+        var rest = [UInt8](repeating: 0, count: 4)
+        #expect(read(reader.fd, &rest, rest.count) == 4)
+        #expect(rest == Array("rest".utf8))
+    }
+
+    @Test func acceptReturnsBlockingConnectionAndStopsWhenCancelled() throws {
+        let path = "/tmp/macvm-test-\(UUID().uuidString.prefix(8)).sock"
+        let listener = try UnixSocket.listen(at: path)
+        defer { unlink(path) }
+        var wake: [Int32] = [-1, -1]
+        #expect(pipe(&wake) == 0)
+        defer { for end in wake { close(end) } }
+        let client = try UnixSocket.connect(to: path)
+        let accepted = try #require(listener.accept(cancel: wake[0]))
+        #expect(fcntl(accepted.fd, F_GETFL) & O_NONBLOCK == 0)
+        var byte: UInt8 = 0
+        #expect(write(wake[1], &byte, 1) == 1)
+        #expect(listener.accept(cancel: wake[0]) == nil)
+        withExtendedLifetime(client) {}
     }
 }
 

@@ -68,7 +68,7 @@ pub fn memory() -> (u64, u64) {
 }
 
 /// `/proc/meminfo` 里一项的字节数，没有这一项时为 0。
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 fn meminfo_bytes(text: &str, name: &str) -> u64 {
     text.lines()
         .find(|l| l.starts_with(name))
@@ -140,10 +140,16 @@ fn sysctl_u64(name: &str) -> u64 {
     if rc == 0 { value } else { 0 }
 }
 
-/// 默认路由的网关：`/proc/net/route` 里目的地址为 0 的行，网关按网络字节序存成十六进制。
+/// 默认路由的网关。
 #[cfg(target_os = "linux")]
 pub(crate) fn default_gateways() -> Vec<std::net::IpAddr> {
-    let text = std::fs::read_to_string("/proc/net/route").unwrap_or_default();
+    route_default_gateways(&std::fs::read_to_string("/proc/net/route").unwrap_or_default())
+}
+
+/// `/proc/net/route` 里目的地址为 0 的行的网关。内核把网络字节序的地址当作本机整数打印成十六进制，
+/// ARM64 客户机是小端，按小端取回字节即为地址。
+#[cfg(any(target_os = "linux", test))]
+fn route_default_gateways(text: &str) -> Vec<std::net::IpAddr> {
     text.lines()
         .skip(1)
         .filter_map(|line| {
@@ -417,4 +423,29 @@ pub fn gpu_driver_package_is(_sha256: &str) -> bool {
 
 pub fn replace_gpu_driver(_zip: &[u8], _sha256: &str) -> io::Result<bool> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机由宿主推送显卡驱动"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn default_gateways_from_route_table() {
+        let text = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n\
+                    eth0\t00000000\t0140A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n\
+                    eth0\t0040A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n\
+                    eth1\t00000000\t0102000A\t0003\t0\t0\t200\t00000000\t0\t0\t0\n";
+        assert_eq!(route_default_gateways(text), [IpAddr::V4(Ipv4Addr::new(192, 168, 64, 1)), IpAddr::V4(Ipv4Addr::new(10, 0, 2, 1))]);
+        assert!(route_default_gateways("Iface\tDestination\tGateway\n").is_empty());
+        assert!(route_default_gateways("").is_empty());
+    }
+
+    #[test]
+    fn meminfo_fields() {
+        let text = "MemTotal:        4014320 kB\nMemAvailable:    3000000 kB\nActive(file):     102400 kB\n";
+        assert_eq!(meminfo_bytes(text, "MemTotal:"), 4014320 * 1024);
+        assert_eq!(meminfo_bytes(text, "Active(file):"), 102400 * 1024);
+        assert_eq!(meminfo_bytes(text, "Inactive(file):"), 0);
+    }
 }

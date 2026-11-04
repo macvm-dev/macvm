@@ -42,6 +42,9 @@ struct CreateSheet: View {
                 .disabled(os == .windows && !WindowsSupport.isAvailable)
 
                 TextField("名称", text: $name, prompt: Text(defaultName))
+                if nameTaken {
+                    Text("已有名为「\(finalName)」的虚拟机，换个名称。").font(.caption).foregroundStyle(.red)
+                }
 
                 Section("来源") { sourcePicker }
 
@@ -176,12 +179,13 @@ struct CreateSheet: View {
     /// 选中的模板。
     private var template: TemplateSummary? { source.template.flatMap(model.template) }
 
-    /// 模板的磁盘容量向上取整到 GB。
-    private var templateDiskGB: Int? {
-        template?.diskSize.map { Int(($0 + (1 << 30) - 1) >> 30) }
-    }
+    private var templateDiskGB: Int? { template?.diskSize.map(ResourceRange.wholeGB) }
 
-    private var diskRange: ClosedRange<Int> { (templateDiskGB.map { max(16, $0) } ?? 16)...2048 }
+    /// 模板磁盘可能已扩容到超过默认上限，这时上限跟着模板走。
+    private var diskRange: ClosedRange<Int> {
+        let lower = templateDiskGB.map { max(16, $0) } ?? 16
+        return lower...max(lower, 2048)
+    }
 
     /// 选了模板就把资源换成模板的配置。
     private func applyTemplateResources() {
@@ -230,13 +234,18 @@ struct CreateSheet: View {
     private var allowedTypes: [UTType] { [UTType(filenameExtension: os == .macOS ? "ipsw" : "iso") ?? .data] }
     private var defaultName: String { os == .macOS ? "macos" : os == .windows ? "windows" : "linux" }
     private var finalName: String { name.isEmpty ? defaultName : name }
+    /// 被中断的同名新建留下的半成品包不算占用：新请求会顶替它。
+    private var nameTaken: Bool {
+        model.summary(finalName) != nil && !model.interruptedCreations.contains { $0.name == finalName }
+    }
     private func invalid(_ field: String) -> Binding<Bool> {
         Binding(get: { invalidFields.contains(field) },
                 set: { if $0 { invalidFields.insert(field) } else { invalidFields.remove(field) } })
     }
 
     private var isValid: Bool {
-        invalidFields.isEmpty && model.activity[finalName] == nil && (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
+        invalidFields.isEmpty && model.activity[finalName] == nil && !nameTaken
+            && (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
             && (os != .windows || hasQEMU || template != nil)
             && (source.template == nil || template != nil)
             && (!setsPassword || accountProblem == nil)
@@ -257,7 +266,7 @@ struct CreateSheet: View {
 
     private func create() {
         let request = CreationRequest(name: finalName, os: os, source: source, cpus: cpus, memoryGB: memoryGB, diskGB: diskGB,
-                                      rosetta: template == nil && rosetta, file: file,
+                                      rosetta: template == nil && rosetta, file: needsFile ? file : nil,
                                       productKey: os == .windows && template == nil && !productKey.isEmpty ? productKey : nil,
                                       user: setsPassword && !user.isEmpty ? user : nil,
                                       password: setsPassword && !password.isEmpty ? password : nil,

@@ -1,6 +1,6 @@
 # macvm-agent 协议
 
-宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`macvm-agent-protocol` 的 `fixtures/` 中的样例由 Swift（`AgentProtocol`）与 Rust（`macvm-agent-protocol`）两侧测试共同校验。
+宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`macvm-agent-protocol` 的 `fixtures/` 中的样例由 Rust（`macvm-agent-protocol`）测试全部校验；Swift（`AgentProtocol`）测试只校验其中的请求（`requests.jsonl`）、光标（`cursors.jsonl`）与认证（`auth.jsonl`）样例，响应样例（`responses.jsonl`）只有 Rust 侧读。
 
 ## 传输
 
@@ -16,7 +16,7 @@
 
 宿主与代理共享一个令牌（64 位十六进制小写）。宿主存在包内 `agent-token`（0600）；客户机里在 Linux 是 `/etc/macvm-agent/token`（root，0600），Windows 是 `C:\ProgramData\macvm\agent-token`（所在目录归 Administrators，只有 SYSTEM 与 Administrators 能访问；安装时目录或其中某项的所有者不可信就整个挪开重建）。创建虚拟机与 `macvm agent install` 时写入两边。
 
-1. 代理接受连接后先发一行 `{"challenge":"<64 位十六进制>"}`，内容每次随机。客户机里没有令牌时不发，直接关闭连接。
+1. 代理接受连接后先发一行 `{"challenge":"<64 位十六进制>"}`，内容每次随机。客户机里没有令牌时不发质询：来源是默认网关的连接直接按下文读请求，其他来源直接关闭。宿主包里有令牌而客户机里没有时，宿主等不到质询，要等到超时才失败。
 2. 宿主回一行 `{"auth":"<HMAC-SHA256>"}`：以令牌的 UTF-8 字节为密钥、对 `challenge` 字符串的 UTF-8 字节计算，十六进制小写。
 3. 应答不对时代理回 `{"ok":false,"error":"认证失败"}` 后关闭；对了不回，接着按下文读请求。代理等应答最多 10 秒。
 

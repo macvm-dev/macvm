@@ -9,6 +9,8 @@ mod unix;
 #[cfg(unix)]
 pub use unix::*;
 
+#[cfg(any(windows, test))]
+mod cmdline;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
@@ -20,13 +22,12 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<()> {
     if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
 }
 
-/// 连接的来处。TCP 连接在客户机里有共享令牌时都要先答对 `macvm_agent_protocol::auth` 的质询：
-/// 桥接网络下默认网关是局域网路由器，它的地址也能被局域网里的机器冒用，单凭来源认不出宿主。
+/// 连接的来处。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
-    /// vsock：只有宿主连得进来。
+    /// vsock，对端是宿主：其他 CID 连入的连接不交出。
     Vsock,
-    /// 源地址是默认网关的 TCP。用户态网络与 NAT 下宿主以这个地址出现。
+    /// 源地址是默认网关的 TCP。用户态网络与 NAT 下宿主以这个地址出现；桥接网络下它是局域网路由器，地址也能被冒用。
     Gateway,
     /// 其他来源的 TCP：桥接网络下的宿主、客户机里的进程或网上别的机器。
     Network,
@@ -52,6 +53,8 @@ pub struct Exit {
 
 pub trait ChildProcess: Send {
     fn wait(&mut self) -> io::Result<Exit>;
+    /// 返回可在任意线程调用的挂断函数，宿主断开时用它结束子进程。`wait` 返回之后再调用不起作用。
+    fn hangup(&self) -> io::Result<Box<dyn Fn() + Send + Sync>>;
 }
 
 pub enum SpawnedIo {

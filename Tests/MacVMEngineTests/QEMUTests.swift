@@ -78,6 +78,23 @@ struct QEMUCommandTests {
         #expect(abs(Double(w) / Double(h) - 16.0 / 9.0) < 0.01)
     }
 
+    @Test func hostMemoryWindowIsPowerOfTwo() {
+        #expect(QEMUCommand.hostMemoryWindow(8 << 30) == 4 << 30)
+        #expect(QEMUCommand.hostMemoryWindow(6 << 30) == 2 << 30)
+        #expect(QEMUCommand.hostMemoryWindow(12 << 30) == 4 << 30)
+        #expect(QEMUCommand.hostMemoryWindow(1) == 0)
+    }
+
+    @Test func escapesCommasInOptionValues() throws {
+        let bundle = VMBundle(url: URL(filePath: "/vms/a,b.macvm"))
+        let config = VMConfig(name: "a,b", os: .linux, engine: .qemu, cpuCount: 2, memorySize: 2 << 30,
+                              disks: [DiskConfig(path: "disk.img", bus: .virtio)], installMedia: ["/isos/x,readonly=off.iso"])
+        let args = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments()
+        #expect(args.contains("a,,b"))
+        #expect(args.contains { $0.contains("file=/vms/a,,b.macvm/disk.img,readonly=off") })
+        #expect(args.contains { $0.hasSuffix("readonly=on,file=/isos/x,,readonly=off.iso,media=cdrom") })
+    }
+
     @Test func rejectsDirectorySharing() {
         let bundle = VMBundle(url: URL(filePath: "/vms/a.macvm"))
         let config = VMConfig(name: "a", os: .linux, engine: .qemu, cpuCount: 2, memorySize: 1 << 30, disks: [],

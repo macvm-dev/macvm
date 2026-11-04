@@ -50,7 +50,7 @@ struct ByteSizeTests {
         #expect(try ByteSize.parse(text) == bytes)
     }
 
-    @Test(arguments: ["", "abc", "-1G", "0"])
+    @Test(arguments: ["", "abc", "-1G", "0", "infG", "INF", "nanG", "1e30T", "99999999999T", "0.0001K", "0.5B"])
     func rejects(text: String) {
         #expect(throws: MacVMError.self) { try ByteSize.parse(text) }
     }
@@ -75,6 +75,14 @@ struct VMLibraryTests {
     @Test func socketPathFitsSunPath() {
         let bundle = VMBundle(url: URL(filePath: "/x/\(String(repeating: "x", count: 40)).macvm"))
         #expect(bundle.controlSocketURL.path.utf8.count < 104)
+    }
+
+    @Test func sameNameInDifferentLibrariesGetsDistinctSockets() {
+        let a = VMBundle(url: URL(filePath: "/x/a/dev.macvm"))
+        let b = VMBundle(url: URL(filePath: "/x/b/dev.macvm"))
+        #expect(a.controlSocketURL != b.controlSocketURL)
+        #expect(a.bridgedAddressURL != b.bridgedAddressURL)
+        #expect(a.controlSocketURL == VMBundle(url: URL(filePath: "/x/a/dev.macvm/")).controlSocketURL)
     }
 }
 

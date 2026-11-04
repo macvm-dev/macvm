@@ -68,6 +68,9 @@ struct SettingsView: View {
 
     private var locationFooter: String {
         if VMLibrary.environmentRoot != nil { return "虚拟机目录由环境变量 MACVM_HOME 指定。" }
+        if !model.canChangeLibrary, !model.interruptedCreations.isEmpty {
+            return "有被中断的创建时不能更改虚拟机目录，先在列表里继续或放弃它。"
+        }
         if !model.canChangeLibrary { return "有虚拟机运行或正在创建时不能更改虚拟机目录。" }
         if !model.canChangeDownloads { return "正在下载、安装或存模板时不能更改下载目录与模板目录。" }
         return "更改后不会搬动已有文件，命令行同样生效。"
@@ -167,14 +170,5 @@ private struct LocationRow: View {
         // 默认目录在第一次用到前还不存在。
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         NSWorkspace.shared.open(url)
-    }
-}
-
-/// App 内置 CLI 的位置；未打包运行（开发构建）时取同目录下的 macvm。
-enum CLILocation {
-    static var path: String {
-        let bundled = Bundle.main.bundleURL.appending(path: "Contents/Resources/bin/macvm")
-        if FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled.path }
-        return Bundle.main.executableURL!.deletingLastPathComponent().appending(path: "macvm").path
     }
 }

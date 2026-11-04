@@ -62,7 +62,11 @@ public enum ImageCache {
             try await Subprocess.run("/usr/bin/tar", ["-xf", archive.path, "-C", staging.path])
 
             let files = try FileManager.default.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil)
-            guard let extracted = files.first(where: { $0.pathExtension == image.diskExtension }) else {
+            // 只认普通文件：归档里的符号链接随后会被克隆跟随，把宿主上的文件当成系统盘。
+            guard let extracted = files.first(where: {
+                $0.pathExtension == image.diskExtension
+                    && (try? FileManager.default.attributesOfItem(atPath: $0.path)[.type] as? FileAttributeType) == .typeRegular
+            }) else {
                 throw MacVMError.io("镜像归档里没有 .\(image.diskExtension) 磁盘")
             }
             try FileManager.default.moveItem(at: extracted, to: disk)

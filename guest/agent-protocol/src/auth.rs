@@ -1,5 +1,4 @@
-//! 不是从宿主可信通道（vsock，或来自默认网关的 TCP）连入的连接，要先过质询应答才能发请求：
-//! 代理发 `Challenge`，对方回 `Answer`，`auth` 是以共享令牌为密钥、对 `challenge` 原文算的 HMAC-SHA256（十六进制小写）。
+//! 代理对要认证的连接先发质询、验过应答才读请求：代理发 `Challenge`，对方回 `Answer`，`auth` 是以共享令牌为密钥、对 `challenge` 原文算的 HMAC-SHA256（十六进制小写）。
 //! 令牌不上网线，旁听到的应答换了质询就作废。
 
 use hmac::{Hmac, Mac};

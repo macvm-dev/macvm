@@ -357,12 +357,42 @@ struct WindowsUnattendTests {
         #expect(config.engine == .vz)
     }
 
+    @Test func rosettaLinuxCannotSwitchToQEMU() throws {
+        var config = VMConfig(name: "l", os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        config.rosetta = true
+        #expect(throws: MacVMError.self) { try config.switchEngine(to: .qemu) }
+        #expect(config.engine == .vz)
+    }
+
     @Test func encodedPowerShellIsUTF16LEBase64() throws {
         let script = "Write-Output '你好'\nexit 3"
         let command = AgentInstaller.encodedPowerShell(script)
         let encoded = try #require(command.split(separator: " ").last)
         let data = try #require(Data(base64Encoded: String(encoded)))
         #expect(String(data: data, encoding: .utf16LittleEndian) == script)
+    }
+
+    @Test func computerNameIsValidForWindows() {
+        #expect(WindowsInstaller.computerName(for: "win_11") == "win11")
+        #expect(WindowsInstaller.computerName(for: "abcdefghijklmn-foo") == "abcdefghijklmn")
+        #expect(WindowsInstaller.computerName(for: "win-") == "win")
+        #expect(WindowsInstaller.computerName(for: "_") == "*")
+        #expect(WindowsInstaller.computerName(for: "2024") == "*")
+    }
+
+    @Test func localeComesFromLangINI() {
+        let ini = "[Available UI Languages]\r\nzh-cn = 3\r\n\r\n[Fallback Languages]\r\nen-us = en-us\r\n"
+        #expect(WindowsInstaller.locale(inLangINI: ini) == "zh-CN")
+        #expect(WindowsInstaller.locale(inLangINI: "[Available UI Languages]\nsr-latn-rs = 3\n") == "sr-Latn-RS")
+        #expect(WindowsInstaller.locale(inLangINI: "[Fallback Languages]\nde-de = de-de\n") == "en-US")
+        #expect(WindowsInstaller.locale(inLangINI: "") == "en-US")
+    }
+
+    @Test func setupScriptDisablesSSHPasswordLogin() throws {
+        let script = WindowsUnattend.setupScript(options)
+        let disable = try #require(script.range(of: "@('PasswordAuthentication no')"))
+        let restart = try #require(script.range(of: "Restart-Service sshd"))
+        #expect(disable.lowerBound < restart.lowerBound)
     }
 
     @Test func unattendEscapesXML() throws {
@@ -391,6 +421,13 @@ struct CloudInitTests {
         let data = CloudInit.userData(options(password: nil))
         #expect(data.contains("lock_passwd: true"))
         #expect(!data.contains("chpasswd:"))
+    }
+
+    @Test func hostnameDropsCharactersHostnamesReject() {
+        #expect(CloudInit.Options(hostname: "My_VM.2", user: "u", sshPublicKey: "k", macAddress: "02:00:00:00:00:01").hostname == "My-VM-2")
+        #expect(CloudInit.hostname(for: "dev-1", fallback: "linux") == "dev-1")
+        #expect(CloudInit.hostname(for: "_", fallback: "linux") == "linux")
+        #expect(CloudInit.metaData(instanceID: "i", hostname: "dev") == "instance-id: i\nlocal-hostname: \"dev\"\n")
     }
 
     @Test func passwordUnlocksConsoleLoginButNotSSH() {

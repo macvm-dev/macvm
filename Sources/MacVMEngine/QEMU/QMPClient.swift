@@ -13,13 +13,19 @@ final class QMPClient: @unchecked Sendable {
 
     private init(socket: UnixSocket) { self.socket = socket }
 
-    /// QEMU 启动后 socket 才出现，所以在超时内重试连接。
+    /// QEMU 启动后 socket 才出现，所以在超时内重试连接；等问候语也算在超时内。
     static func connect(to path: String, timeout: TimeInterval, isAlive: @Sendable () -> Bool) async throws -> QMPClient {
         let deadline = Date().addingTimeInterval(timeout)
         while true {
             if let socket = try? UnixSocket.connect(to: path) {
                 let client = QMPClient(socket: socket)
-                _ = try socket.readLine()
+                // QEMU 先监听，主循环起来后才接受连接、发问候语，初始化卡住时读会一直阻塞。
+                socket.setTimeout(seconds: max(1, Int(deadline.timeIntervalSinceNow.rounded(.up))))
+                guard (try? socket.readLine()) != nil else {
+                    guard isAlive() else { throw MacVMError.engine("QEMU 启动后立即退出") }
+                    throw MacVMError.timeout("连接 QEMU 控制接口超时")
+                }
+                socket.setTimeout(seconds: 0)
                 Thread.detachNewThread { client.readLoop() }
                 _ = try await client.execute("qmp_capabilities")
                 return client
