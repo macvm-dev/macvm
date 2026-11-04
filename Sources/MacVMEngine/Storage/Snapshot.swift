@@ -33,7 +33,10 @@ public struct Snapshot: Codable, Sendable, Equatable {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         do {
             var files = BundleFiles.stateFiles(of: bundle, config: config) + [bundle.configURL.lastPathComponent]
-            if bundle.hasSavedState { files.append(bundle.savedStateURL.lastPathComponent) }
+            if bundle.hasSavedState {
+                files.append(bundle.savedStateURL.lastPathComponent)
+                if bundle.savedStateHasShareDevice { files.append(bundle.savedStateShareDeviceURL.lastPathComponent) }
+            }
             for file in files {
                 try Clone.file(from: bundle.url.appending(path: file), to: dir.appending(path: file))
             }
@@ -54,6 +57,7 @@ public struct Snapshot: Codable, Sendable, Equatable {
             throw MacVMError.snapshotNotFound("\(bundle.name) 的快照 \(name)")
         }
         try? FileManager.default.removeItem(at: bundle.savedStateURL)
+        try? FileManager.default.removeItem(at: bundle.savedStateShareDeviceURL)
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0 != metadataFile }
         for file in files {
             let target = bundle.url.appending(path: file)

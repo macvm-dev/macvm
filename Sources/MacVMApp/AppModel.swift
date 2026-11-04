@@ -267,18 +267,33 @@ final class AppModel {
     }
 
     func addShares(_ name: String, _ urls: [URL]) {
-        updateConfig(name, requiresStopped: true) { config in
+        updateShares(name) { config in
             for url in urls { try config.addShare(hostPath: url.standardizedFileURL.path) }
         }
     }
 
     func removeShare(_ name: String, hostPath: String) {
-        updateConfig(name, requiresStopped: true) { $0.shares.removeAll { $0.hostPath == hostPath } }
+        updateShares(name) { $0.shares.removeAll { $0.hostPath == hostPath } }
     }
 
     func setShareReadOnly(_ name: String, hostPath: String, _ readOnly: Bool) {
-        updateConfig(name, requiresStopped: true) { config in
+        updateShares(name) { config in
             for i in config.shares.indices where config.shares[i].hostPath == hostPath { config.shares[i].readOnly = readOnly }
+        }
+    }
+
+    /// 运行中能实时改共享目录的虚拟机（本进程运行的 macOS 客户机）。
+    func canEditSharesLive(_ name: String) -> Bool { runners[name]?.supportsLiveShares == true }
+
+    /// 能实时改的先改运行中的虚拟机，成功了才保存；否则只在关机时可改。
+    private func updateShares(_ name: String, _ change: (inout VMConfig) throws -> Void) {
+        if let runner = runners[name], runner.supportsLiveShares {
+            updateConfig(name) { config in
+                try change(&config)
+                try runner.updateShares(config.shares)
+            }
+        } else {
+            updateConfig(name, requiresStopped: true, change)
         }
     }
 

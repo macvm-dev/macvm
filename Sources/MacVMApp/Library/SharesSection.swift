@@ -2,7 +2,7 @@ import AppKit
 import MacVMModel
 import SwiftUI
 
-/// 共享给客户机的主机目录，只在关机时可增删、改只读。
+/// 共享给客户机的主机目录；`editable` 为 false 时只读。
 struct SharesSection: View {
     @Environment(AppModel.self) private var model
     let vmName: String
@@ -29,7 +29,7 @@ struct SharesSection: View {
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .disabled(!editable)
-                    .help(editable ? "" : "关机后才能添加")
+                    .help(editable ? "" : "现在不能添加，关机后再改")
             }
         } footer: {
             if !config.shares.isEmpty {

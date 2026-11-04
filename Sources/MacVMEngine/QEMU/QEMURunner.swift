@@ -37,6 +37,12 @@ public final class QEMURunner: MachineRunner {
 
     public var canSuspend: Bool { config.supportsSuspend }
 
+    public var supportsLiveShares: Bool { false }
+
+    public func updateShares(_ shares: [ShareConfig]) throws {
+        throw MacVMError.unsupported("QEMU 引擎不支持共享目录")
+    }
+
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         try RuntimeDirectory.ensure()

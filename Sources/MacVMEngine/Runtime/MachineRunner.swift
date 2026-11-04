@@ -74,6 +74,8 @@ public protocol MachineRunner: AnyObject, Sendable {
     var stateLabel: String { get }
     var canSuspend: Bool { get }
     var onStop: ((MachineStopReason) -> Void)? { get set }
+    /// 运行中能否用 `updateShares` 改共享目录。
+    var supportsLiveShares: Bool { get }
 
     @discardableResult
     func start(recovery: Bool) async throws -> MachineStartOutcome
@@ -86,6 +88,7 @@ public protocol MachineRunner: AnyObject, Sendable {
     func openGuestChannel(port: UInt32) async throws -> GuestChannel
     func screenshot(to url: URL) async throws
     func resizeDisplay(width: Int, height: Int) throws
+    func updateShares(_ shares: [ShareConfig]) throws
 }
 
 extension MachineRunner {

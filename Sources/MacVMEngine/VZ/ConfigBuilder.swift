@@ -198,24 +198,17 @@ public struct ConfigBuilder {
 
     private func configureDirectorySharing(_ vz: VZVirtualMachineConfiguration) throws {
         var devices: [VZDirectorySharingDeviceConfiguration] = []
-        let shares = try config.shares.map { share -> (ShareConfig, VZSharedDirectory) in
-            var isDir: ObjCBool = false
-            let url = bundle.resolve(share.hostPath)
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
-                throw MacVMError.invalidConfig("共享目录不存在：\(url.path)")
-            }
-            return (share, VZSharedDirectory(url: url, readOnly: share.readOnly))
-        }
-
         if config.os == .macOS {
-            // macOS 客户机只自动挂载这一个 tag，多个目录合并成它下面的子目录。
-            if !shares.isEmpty {
+            // 没有共享目录也挂上：运行中改共享目录只能换已有设备的 share，不能加设备。
+            // 恢复挂起状态时设备要与挂起时一致，状态里没有它就不挂。
+            let restoringWithoutDevice = bundle.hasSavedState && !bundle.savedStateHasShareDevice
+            if !config.shares.isEmpty || !restoringWithoutDevice {
                 let device = VZVirtioFileSystemDeviceConfiguration(tag: VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag)
-                device.share = VZMultipleDirectoryShare(directories: Dictionary(shares.map { ($0.0.tag, $0.1) }, uniquingKeysWith: { a, _ in a }))
+                device.share = try Self.macOSShare(config.shares, in: bundle)
                 devices.append(device)
             }
         } else {
-            for (share, directory) in shares {
+            for (share, directory) in try Self.sharedDirectories(config.shares, in: bundle) {
                 try VZVirtioFileSystemDeviceConfiguration.validateTag(share.tag)
                 let device = VZVirtioFileSystemDeviceConfiguration(tag: share.tag)
                 device.share = VZSingleDirectoryShare(directory: directory)
@@ -227,6 +220,23 @@ public struct ConfigBuilder {
             devices.append(try RosettaShare.make())
         }
         vz.directorySharingDevices = devices
+    }
+
+    /// macOS 客户机只自动挂载 `macOSGuestAutomountTag` 这一个 tag，各共享目录以 tag 为名合并成它下面的子目录。
+    static func macOSShare(_ shares: [ShareConfig], in bundle: VMBundle) throws -> VZMultipleDirectoryShare {
+        let directories = try sharedDirectories(shares, in: bundle)
+        return VZMultipleDirectoryShare(directories: Dictionary(directories.map { ($0.0.tag, $0.1) }, uniquingKeysWith: { a, _ in a }))
+    }
+
+    private static func sharedDirectories(_ shares: [ShareConfig], in bundle: VMBundle) throws -> [(ShareConfig, VZSharedDirectory)] {
+        try shares.map { share in
+            var isDir: ObjCBool = false
+            let url = bundle.resolve(share.hostPath)
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+                throw MacVMError.invalidConfig("共享目录不存在：\(url.path)")
+            }
+            return (share, VZSharedDirectory(url: url, readOnly: share.readOnly))
+        }
     }
 
     // MARK: - 控制台

@@ -10,6 +10,7 @@ struct MachineWindow: View {
     let name: String
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
+    @State private var showingShares = false
     /// 改了声音或麦克风后在画面顶部短暂显示的说明。
     @State private var notice: String?
 
@@ -72,6 +73,10 @@ struct MachineWindow: View {
         }
         .toolbar {
             if runner != nil || runningElsewhere {
+                if let config, config.supportsShares {
+                    Button { showingShares = true } label: { Label("共享目录", systemImage: "folder") }
+                        .help("共享目录")
+                }
                 if let config, config.supportsMicrophone {
                     Button {
                         let on = !config.microphone
@@ -96,6 +101,8 @@ struct MachineWindow: View {
                 Button { Task { await model.stop(name) } } label: { Label("关机", systemImage: "power") }
             }
         }
+        // 用 sheet 而不是 popover：添加时要弹文件选择面板，popover 一失去焦点就关闭。
+        .sheet(isPresented: $showingShares) { SharesSheet(name: name) }
     }
 }
 
@@ -107,5 +114,34 @@ extension MachineWindow {
             text += "；改回之前这次开机不能挂起"
         }
         withAnimation { notice = text }
+    }
+}
+
+/// 窗口工具栏里的共享目录。本进程运行的 macOS 客户机可实时增删，其他情况关机后才能改。
+private struct SharesSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let name: String
+
+    var body: some View {
+        let editable = model.canEditSharesLive(name)
+        VStack(spacing: 0) {
+            Form {
+                if let config = model.config(of: name) {
+                    SharesSection(vmName: name, config: config, editable: editable)
+                }
+                if !editable {
+                    Text("运行中只有在本 App 里启动的 macOS 客户机能实时修改共享目录，其他情况请关机后修改。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("完成") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 460)
     }
 }

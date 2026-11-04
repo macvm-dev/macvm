@@ -65,6 +65,24 @@ public final class VZRunner: NSObject, MachineRunner {
 
     public var stateLabel: String { virtualMachine.state.label }
 
+    public var supportsLiveShares: Bool { automountShareDevice != nil }
+
+    /// macOS 客户机的共享目录设备；从没有它的挂起状态恢复的这次开机里为 nil。
+    private var automountShareDevice: VZVirtioFileSystemDevice? {
+        guard config.os == .macOS else { return nil }
+        return virtualMachine.directorySharingDevices.lazy
+            .compactMap { $0 as? VZVirtioFileSystemDevice }
+            .first { $0.tag == VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag }
+    }
+
+    /// 客户机里 `My Shared Files` 下的目录随之增减。
+    public func updateShares(_ shares: [ShareConfig]) throws {
+        guard let device = automountShareDevice else {
+            throw MacVMError.unsupported("\(bundle.name) 运行中不能改共享目录，关机后再改")
+        }
+        device.share = try ConfigBuilder.macOSShare(shares, in: bundle)
+    }
+
     public var canSuspend: Bool {
         guard config.supportsSuspend else { return false }
         return (try? vzConfiguration.validateSaveRestoreSupport()) != nil
@@ -215,11 +233,26 @@ public final class VZRunner: NSObject, MachineRunner {
             throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
         }
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
+        try markShareDevice()
         if virtualMachine.state == .running { try await pause() }
         let url = bundle.savedStateURL
         try await virtualMachine.saveMachineStateTo(url: url)
         try await virtualMachine.stop()
         finish(.suspended)
+    }
+
+    /// 在写挂起状态之前记下这次开机有没有共享目录设备，记不下就不挂起：恢复时 `ConfigBuilder` 靠它组装同样的设备。
+    private func markShareDevice() throws {
+        let marker = bundle.savedStateShareDeviceURL
+        do {
+            if automountShareDevice != nil {
+                try Data().write(to: marker)
+            } else if FileManager.default.fileExists(atPath: marker.path) {
+                try FileManager.default.removeItem(at: marker)
+            }
+        } catch {
+            throw MacVMError.io("写入 \(marker.path) 失败：\(error.localizedDescription)")
+        }
     }
 
     /// 连接客户机内监听的 vsock 端口。返回的连接须保持引用直到用完。

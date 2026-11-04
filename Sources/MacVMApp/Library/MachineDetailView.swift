@@ -91,7 +91,7 @@ struct MachineDetailView: View {
                 }
             }
             if let config, config.supportsShares || !config.shares.isEmpty {
-                SharesSection(vmName: vm.name, config: config, editable: editable)
+                SharesSection(vmName: vm.name, config: config, editable: editable || model.canEditSharesLive(vm.name))
             }
             SnapshotsSection(vmName: vm.name, state: vm.state)
         }

@@ -17,6 +17,9 @@ public struct VMBundle: Sendable, Equatable {
     public var machineIdentifierURL: URL { url.appending(path: "machine.id") }
     public var efiVariableStoreURL: URL { url.appending(path: "efi.vars") }
     public var savedStateURL: URL { url.appending(path: "state.vzvmsave") }
+    /// 存在即表示 `savedStateURL` 的挂起状态里有 macOS 客户机的自动挂载共享目录设备。每次挂起都重写，
+    /// 只在有挂起状态时才有意义。
+    public var savedStateShareDeviceURL: URL { url.appending(path: "state.shares") }
     public var snapshotsURL: URL { url.appending(path: "snapshots", directoryHint: .isDirectory) }
     public var lockURL: URL { url.appending(path: "run.lock") }
     public var logURL: URL { url.appending(path: "run.log") }
@@ -31,6 +34,8 @@ public struct VMBundle: Sendable, Equatable {
     public var controlSocketURL: URL { RuntimeDirectory.url.appending(path: "\(name).sock") }
 
     public var hasSavedState: Bool { FileManager.default.fileExists(atPath: savedStateURL.path) }
+
+    public var savedStateHasShareDevice: Bool { FileManager.default.fileExists(atPath: savedStateShareDeviceURL.path) }
 
     public func loadConfig() throws -> VMConfig {
         let data: Data
