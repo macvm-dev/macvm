@@ -47,6 +47,7 @@
 - 本仓库所在卷大小写不敏感，产品名不能只差大小写（CLI 叫 `macvm`，App 叫 `MacVMApp`）。
 - 测试时用 `MACVM_HOME=<临时目录>` 隔离虚拟机目录。
 - 构建、测试一律走 `make`：直接 `swift build` 不带 `SWIFT_FLAGS`，App 会以旧版外观显示。
+- 发布：推送 `v*` 标签（如 `v0.2.0`），`.github/workflows/release.yml` 以标签为版本号构建、签名、公证并发布到 GitHub Releases；手动运行只构建并上传 artifact。需要 secrets：`MACOS_CERTIFICATE`（Developer ID Application 证书导出的 .p12，base64）、`MACOS_CERTIFICATE_PASSWORD`、`SIGN_IDENTITY`（签名身份全名）、`NOTARY_KEY_P8`、`NOTARY_KEY_ID`、`NOTARY_ISSUER`（App Store Connect API 密钥）。
 - CI（`.github/workflows/ci.yml`）跑 `make lint`、`make build`、`make test-swift` 与 `make lint-guest`、`make test-guest`；客户机代码要过 `make lint-guest`（clippy 有警告即失败）。
 
 ## CLI 契约

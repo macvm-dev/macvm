@@ -1,0 +1,124 @@
+name: Release
+
+# 推送 v* 标签时构建、签名、公证 App 并发布到 GitHub Releases；手动运行时只构建，产物作为 artifact 上传。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    # 自带的 QEMU 要求与构建机相同的 macOS，用 macOS 27 加 Xcode 27 的镜像。
+    runs-on: xcode-27
+    # 首次编译 QEMU 图形栈（含 LLVM）很久，之后走缓存。
+    timeout-minutes: 300
+    env:
+      KEYCHAIN: ${{ runner.temp }}/release.keychain-db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '27'
+
+      - name: 版本号
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}
+          else
+            version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)-dev
+          fi
+          plutil -replace CFBundleShortVersionString -string "$version" packaging/Info.plist
+          plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" packaging/Info.plist
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: 安装构建依赖
+        run: |
+          brew install cmake ninja meson pkgconf glib pixman openssl python libslirp
+          xcodebuild -downloadComponent MetalToolchain
+          rustup toolchain install stable --profile minimal
+          cargo install --locked cargo-xwin
+
+      - name: 导入签名证书与公证凭据
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$password" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$KEYCHAIN" >/dev/null
+          # App Store Connect API 密钥：.p8 原文或其 base64 都接受。
+          key="$RUNNER_TEMP/notary-key.p8"
+          if [[ "$NOTARY_KEY_P8" == -----BEGIN* ]]; then printf '%s\n' "$NOTARY_KEY_P8" > "$key"; else echo "$NOTARY_KEY_P8" | base64 --decode > "$key"; fi
+          xcrun notarytool store-credentials macvm --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$KEYCHAIN"
+          rm "$key"
+
+      - name: 恢复 QEMU 缓存
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/qemu
+          key: qemu-xcode27-${{ hashFiles('scripts/build-qemu.sh', 'qemu/**') }}
+          restore-keys: qemu-xcode27-
+      - name: 编译 QEMU
+        id: qemu
+        run: make qemu
+      # QEMU 编得久，后续步骤失败也先存下来。
+      - name: 保存 QEMU 缓存
+        if: always() && steps.qemu.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/qemu
+          key: qemu-xcode27-${{ hashFiles('scripts/build-qemu.sh', 'qemu/**') }}-${{ github.run_id }}
+
+      - name: 编译客户机代理与引导程序
+        run: make agent boot
+
+      - name: 构建、签名并公证
+        env:
+          SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
+        run: make release SIGN_IDENTITY="$SIGN_IDENTITY"
+
+      - name: 打包
+        id: package
+        run: |
+          zip=dist/MacVM-${{ steps.version.outputs.version }}.zip
+          ditto -c -k --keepParent dist/MacVM.app "$zip"
+          shasum -a 256 "$zip" | sed 's| dist/| |' > "$zip.sha256"
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacVM-${{ steps.version.outputs.version }}
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.zip }}.sha256
+
+      - name: 发布
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "MacVM ${{ steps.version.outputs.version }}" \
+            "${{ steps.package.outputs.zip }}" "${{ steps.package.outputs.zip }}.sha256"
+
+      - name: 清理钥匙串
+        if: always()
+        run: security delete-keychain "$KEYCHAIN" 2>/dev/null || true
