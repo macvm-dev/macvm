@@ -285,17 +285,22 @@ private struct PanelRow<Leading: View, Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            leading
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                Text(activity?.text ?? subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                    .contentTransition(.opacity)
-                if let fraction = activity?.fraction {
-                    ProgressView(value: fraction).controlSize(.mini).padding(.top, 2)
+            // 整行的提示只挂在按钮以外的部分：挂在整行上会盖掉按钮各自的提示。
+            HStack(spacing: 11) {
+                leading
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                    Text(activity?.text ?? subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                        .contentTransition(.opacity)
+                    if let fraction = activity?.fraction {
+                        ProgressView(value: fraction).controlSize(.mini).padding(.top, 2)
+                    }
                 }
+                Spacer(minLength: 6)
             }
-            Spacer(minLength: 6)
+            .contentShape(.rect)
+            .help(help ?? "")
             HStack(spacing: 0) { trailing }
         }
         .padding(.horizontal, 10)
@@ -304,7 +309,6 @@ private struct PanelRow<Leading: View, Trailing: View>: View {
         .contentShape(.rect)
         .onHover { hovering = $0 }
         .onTapGesture { open?() }
-        .help(help ?? "")
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
