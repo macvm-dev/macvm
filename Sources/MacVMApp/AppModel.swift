@@ -242,16 +242,28 @@ final class AppModel {
         updateConfig(name, requiresStopped: true) { try $0.switchEngine(to: engine) }
     }
 
+    // MARK: - 声音
+
+    /// 运行中也可改，下次开机生效。返回是否已保存。
+    @discardableResult
+    func setAudio(_ name: String, _ on: Bool) -> Bool {
+        updateConfig(name, requiresStopped: !isRunning(name)) { $0.audio = on }
+    }
+
+    /// 运行中也可改，下次开机生效。返回是否已保存。
+    @discardableResult
+    func setMicrophone(_ name: String, _ on: Bool) -> Bool {
+        updateConfig(name, requiresStopped: !isRunning(name)) { $0.microphone = on }
+    }
+
+    private func isRunning(_ name: String) -> Bool { runners[name] != nil || summary(name)?.state == .running }
+
     func setCPUCount(_ name: String, _ count: Int) {
         updateConfig(name, requiresStopped: true) { $0.cpuCount = count }
     }
 
     func setMemory(_ name: String, gigabytes: Int) {
         updateConfig(name, requiresStopped: true) { $0.memorySize = UInt64(gigabytes) << 30 }
-    }
-
-    func setAudio(_ name: String, _ on: Bool) {
-        updateConfig(name, requiresStopped: true) { $0.audio = on }
     }
 
     func addShares(_ name: String, _ urls: [URL]) {

@@ -214,6 +214,7 @@ public final class VZRunner: NSObject, MachineRunner {
         guard canSuspend else {
             throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
         }
+        if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
         if virtualMachine.state == .running { try await pause() }
         let url = bundle.savedStateURL
         try await virtualMachine.saveMachineStateTo(url: url)

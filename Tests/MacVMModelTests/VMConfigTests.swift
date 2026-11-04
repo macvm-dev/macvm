@@ -128,4 +128,16 @@ struct OutputContractTests {
         var windows = VMConfig(name: "w", os: .windows, cpuCount: 2, memorySize: 1 << 30, disks: [])
         #expect(throws: MacVMError.self) { try windows.addShare(hostPath: "/usr/bin") }
     }
+
+    @Test func audioDiffersOnlyForSoundAndMicrophone() {
+        let booted = VMConfig(name: "m", os: .macOS, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        var saved = booted
+        saved.display.retina = true
+        #expect(!saved.audioDiffers(from: booted))
+        saved.microphone = true
+        #expect(saved.audioDiffers(from: booted))
+        saved = booted
+        saved.audio = false
+        #expect(saved.audioDiffers(from: booted))
+    }
 }

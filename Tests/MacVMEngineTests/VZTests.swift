@@ -31,4 +31,23 @@ struct ConfigBuilderTests {
         #expect(vz.audioDevices.count == 1)
         #expect(try DiskImage.allocatedSize(at: bundle.diskURL).physical < 1 << 20)
     }
+
+    @Test func soundAndMicrophoneAreSeparateStreams() async throws {
+        let library = VMLibrary(root: FileManager.default.temporaryDirectory.appending(path: "macvm-tests-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: library.root) }
+        let bundle = try await VMFactory.createEFIGuest(.init(name: "t", os: .linux, cpuCount: 2, memorySize: 1 << 30, diskSize: 1 << 30), in: library)
+        var config = try bundle.loadConfig()
+        func streams() throws -> [VZVirtioSoundDeviceStreamConfiguration] {
+            let vz = try ConfigBuilder(bundle: bundle, config: config).build(validate: Entitlements.has(Entitlements.virtualization))
+            return (vz.audioDevices.first as? VZVirtioSoundDeviceConfiguration)?.streams ?? []
+        }
+        config.audio = false
+        config.microphone = true
+        #expect(try streams().map { $0 is VZVirtioSoundDeviceInputStreamConfiguration } == [true])
+        config.microphone = false
+        #expect(try streams().isEmpty)
+        config.audio = true
+        config.microphone = true
+        #expect(try streams().count == 2)
+    }
 }

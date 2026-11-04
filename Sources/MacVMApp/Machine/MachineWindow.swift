@@ -10,13 +10,15 @@ struct MachineWindow: View {
     let name: String
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
+    /// 改了声音或麦克风后在画面顶部短暂显示的说明。
+    @State private var notice: String?
 
     private var isRunning: Bool { model.summary(name)?.state == .running }
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
 
     var body: some View {
         let bundle = try? model.library.bundle(named: name)
-        let config = try? bundle?.loadConfig()
+        let config = model.config(of: name)
         Group {
             if let vz = runner as? VZRunner {
                 VirtualMachineView(runner: vz)
@@ -37,6 +39,24 @@ struct MachineWindow: View {
             }
         }
         .frame(minWidth: 640, minHeight: 400)
+        .overlay(alignment: .top) {
+            if let notice {
+                Label(notice, systemImage: "info.circle")
+                    .font(.callout)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: .capsule)
+                    .shadow(radius: 6, y: 2)
+                    .padding(.top, 10)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onTapGesture { withAnimation { self.notice = nil } }
+            }
+        }
+        .task(id: notice) {
+            guard notice != nil else { return }
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation { notice = nil }
+        }
         .navigationTitle(name)
         .task(id: name) {
             guard !runningElsewhere else { return }
@@ -52,11 +72,40 @@ struct MachineWindow: View {
         }
         .toolbar {
             if runner != nil || runningElsewhere {
+                if let config, config.supportsMicrophone {
+                    Button {
+                        let on = !config.microphone
+                        if model.setMicrophone(name, on) { announce(on ? "下次开机时接上麦克风" : "下次开机时断开麦克风") }
+                    } label: {
+                        Label(config.microphone ? "关闭麦克风" : "打开麦克风", systemImage: config.microphone ? "mic.fill" : "mic.slash")
+                    }
+                    .help(config.microphone ? "麦克风：开（下次开机生效）" : "麦克风：关（下次开机生效）")
+                }
+                if let config, config.supportsAudio {
+                    Button {
+                        let on = !config.audio
+                        if model.setAudio(name, on) { announce(on ? "下次开机时打开声音" : "下次开机时关闭声音") }
+                    } label: {
+                        Label(config.audio ? "关闭声音" : "打开声音", systemImage: config.audio ? "speaker.wave.2.fill" : "speaker.slash")
+                    }
+                    .help(config.audio ? "声音：开（下次开机生效）" : "声音：关（下次开机生效）")
+                }
                 if config?.supportsSuspend == true {
                     Button { Task { await model.suspend(name) } } label: { Label("挂起", systemImage: "pause.fill") }
                 }
                 Button { Task { await model.stop(name) } } label: { Label("关机", systemImage: "power") }
             }
         }
+    }
+}
+
+extension MachineWindow {
+    /// 改了声音或麦克风后的提示。与本进程开机时的设置不同时，补一句这次开机不能挂起。
+    fileprivate func announce(_ text: String) {
+        var text = text
+        if let runner, runner.config.supportsSuspend, let saved = model.config(of: name), saved.audioDiffers(from: runner.config) {
+            text += "；改回之前这次开机不能挂起"
+        }
+        withAnimation { notice = text }
     }
 }

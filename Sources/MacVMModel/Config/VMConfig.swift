@@ -104,6 +104,17 @@ public struct VMConfig: Codable, Sendable, Equatable {
     /// 能否挂声音设备。VZ 只有 virtio-sound，Windows 没有它的驱动。
     public var supportsAudio: Bool { engine == .qemu || os != .windows }
 
+    /// 能否把主机麦克风接给客户机：只有 VZ 的 virtio-sound 带输入流，与声音输出各自开关。
+    public var supportsMicrophone: Bool { engine == .vz && supportsAudio }
+
+    /// 声卡与麦克风只在开机时接上，运行中可改、下次开机生效。与开机时的 `booted` 不同时，
+    /// 挂起保存的设备与恢复时按本配置组装的对不上，不能挂起。
+    public func audioDiffers(from booted: VMConfig) -> Bool {
+        audio != booted.audio || microphone != booted.microphone
+    }
+
+    public static let audioChangedSinceBootError = MacVMError.unsupported("开机后改过声音或麦克风设置，挂起后无法恢复，请关机：下次开机按新设置启动")
+
     /// 能否挂起。VZ 下通用平台（Linux、Windows）带 USB 控制器或 USB 设备时恢复会报 invalid argument，
     /// 而 `validateSaveRestoreSupport()` 并不拦截，因此在这里排除。
     public var supportsSuspend: Bool {

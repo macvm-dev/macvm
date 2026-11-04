@@ -98,6 +98,7 @@ public final class QEMURunner: MachineRunner {
     /// 暂停后把内存与设备状态迁移到包内文件，然后退出 QEMU；下次 `start` 以 `-incoming` 读回。
     public func suspend() async throws {
         guard canSuspend else { throw MacVMError.unsupported("该虚拟机的配置不支持挂起") }
+        if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }
         try await qmp.execute("stop")
         stateLabel = "saving"

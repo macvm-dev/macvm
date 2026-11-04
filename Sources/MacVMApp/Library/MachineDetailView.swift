@@ -45,6 +45,11 @@ struct MachineDetailView: View {
                     Toggle("声音", isOn: Binding(get: { config.audio }, set: { model.setAudio(vm.name, $0) }))
                         .disabled(!editable)
                 }
+                if let config, config.supportsMicrophone {
+                    Toggle("麦克风", isOn: Binding(get: { config.microphone }, set: { model.setMicrophone(vm.name, $0) }))
+                        .disabled(!editable)
+                        .help("把主机麦克风接给客户机，开机时主机会请求麦克风权限")
+                }
                 if let diskSize {
                     LabeledContent("磁盘") {
                         HStack(spacing: 10) {
@@ -112,7 +117,7 @@ struct MachineDetailView: View {
 
     private var lockedReason: String? {
         switch vm.state {
-        case .running: "关机后可修改处理器、内存、声音、磁盘容量与共享目录。"
+        case .running: "关机后可修改处理器、内存、声音、麦克风与磁盘容量。"
         case .suspended: "已挂起：继续运行并关机后才能修改。"
         case .stopped: nil
         }

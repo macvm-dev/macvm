@@ -175,17 +175,22 @@ public struct ConfigBuilder {
 
     // MARK: - 音频
 
+    /// 声音输出与麦克风输入是同一块 virtio-sound 上的两路流，各自开关；两路都关时不挂声卡。
     private func configureAudio(_ vz: VZVirtualMachineConfiguration) {
-        guard config.audio, config.supportsAudio else { return }
-        let sound = VZVirtioSoundDeviceConfiguration()
-        let output = VZVirtioSoundDeviceOutputStreamConfiguration()
-        output.sink = VZHostAudioOutputStreamSink()
-        sound.streams = [output]
-        if config.microphone {
+        var streams: [VZVirtioSoundDeviceStreamConfiguration] = []
+        if config.audio, config.supportsAudio {
+            let output = VZVirtioSoundDeviceOutputStreamConfiguration()
+            output.sink = VZHostAudioOutputStreamSink()
+            streams.append(output)
+        }
+        if config.microphone, config.supportsMicrophone {
             let input = VZVirtioSoundDeviceInputStreamConfiguration()
             input.source = VZHostAudioInputStreamSource()
-            sound.streams.append(input)
+            streams.append(input)
         }
+        guard !streams.isEmpty else { return }
+        let sound = VZVirtioSoundDeviceConfiguration()
+        sound.streams = streams
         vz.audioDevices = [sound]
     }
 
