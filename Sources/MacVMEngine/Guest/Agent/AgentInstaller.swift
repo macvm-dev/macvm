@@ -71,7 +71,7 @@ public enum AgentInstaller {
         case .linux:
             script = """
             set -e
-            sudo install -m 0755 /dev/stdin \(linuxPath)
+            sudo sh -c 'cat > \(linuxPath).new && chmod 0755 \(linuxPath).new && mv -f \(linuxPath).new \(linuxPath)'
             sudo tee /etc/systemd/system/macvm-agent.service >/dev/null <<'UNIT'
             \(linuxCloudInit(user: user).unit)UNIT
             sudo systemctl daemon-reload

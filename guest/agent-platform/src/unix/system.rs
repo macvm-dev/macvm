@@ -108,6 +108,23 @@ fn sysctl_u64(name: &str) -> u64 {
     if rc == 0 { value } else { 0 }
 }
 
+/// 默认路由的网关：`/proc/net/route` 里目的地址为 0 的行，网关按网络字节序存成十六进制。
+#[cfg(target_os = "linux")]
+pub(crate) fn default_gateways() -> Vec<std::net::IpAddr> {
+    let text = std::fs::read_to_string("/proc/net/route").unwrap_or_default();
+    text.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.get(1) != Some(&"00000000") {
+                return None;
+            }
+            let gateway = u32::from_str_radix(fields.get(2)?, 16).ok()?;
+            Some(std::net::IpAddr::V4(std::net::Ipv4Addr::from(gateway.to_le_bytes())))
+        })
+        .collect()
+}
+
 pub(crate) fn is_root() -> bool {
     // SAFETY: 无副作用。
     unsafe { libc::geteuid() == 0 }

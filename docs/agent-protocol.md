@@ -4,7 +4,7 @@
 
 ## 传输
 
-- Linux、macOS 客户机：代理监听 vsock 端口 **6100**（CID 任意）。
+- Linux、macOS 客户机：代理监听 vsock 端口 **6100**（CID 任意）。Linux 上没有 virtio vsock 设备时（QEMU 引擎）改为监听 TCP 端口 **6100**，规则同下面的 Windows，宿主经用户态网络转发连这个端口；有 vsock 设备时不监听 TCP。
 - Windows 客户机：没有可用的 vsock 驱动，代理监听 TCP 端口 **6100**，只接受源地址是客户机默认网关的连接（VZ 的 NAT 网关、QEMU 用户态网络的网关都是宿主）。安装时同时开放该端口的防火墙入站规则。
 - 每个连接只承载一个请求。宿主先发一行 UTF-8 JSON（以 `\n` 结尾），代理回一行 JSON 响应。
 - 响应 `{"ok":false,"error":"…"}` 表示失败，代理随后关闭连接。
