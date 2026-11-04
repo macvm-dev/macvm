@@ -428,6 +428,31 @@ final class AppModel {
         }
     }
 
+    // MARK: - SSH
+
+    /// `~/.ssh/config` 是否 Include 了 `SSHConfig.fileURL`。`macvm ssh-config` 也会改它，显示 SSH 命令的视图出现时调 `refreshSSHIncluded`。
+    private(set) var sshIncluded = SSHConfig.isIncluded
+
+    func refreshSSHIncluded() {
+        let included = SSHConfig.isIncluded
+        if included != sshIncluded { sshIncluded = included }
+    }
+
+    func setSSHIncluded(_ include: Bool) {
+        do {
+            if include {
+                _ = try SSHConfig.write(library: library, macvmPath: CLILocation.path)
+                try SSHConfig.installInclude()
+            } else {
+                try SSHConfig.removeInclude()
+            }
+        } catch { report(error) }
+        refreshSSHIncluded()
+    }
+
+    /// 连上虚拟机的终端命令：已 Include 时直接 `ssh <名字>`，否则经 `macvm ssh`。
+    func sshCommand(_ name: String) -> String { sshIncluded ? "ssh \(name)" : "macvm ssh \(name)" }
+
     // MARK: - 新建
 
     /// 在后台按 `request` 新建；需要用户在窗口里操作时（装 Windows、图形安装）调用 `openMachineWindow`。

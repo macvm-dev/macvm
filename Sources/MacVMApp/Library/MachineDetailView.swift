@@ -81,7 +81,7 @@ struct MachineDetailView: View {
                     CopyableRow(title: "IP 地址", value: ip)
                 }
                 if config?.guestUser != nil {
-                    CopyableRow(title: "SSH", value: "macvm ssh \(vm.name)")
+                    CopyableRow(title: "SSH", value: model.sshCommand(vm.name))
                 }
                 LabeledContent("位置") {
                     HStack(spacing: 6) {
@@ -104,6 +104,7 @@ struct MachineDetailView: View {
         .formStyle(.grouped)
         .acceptsShareDrops(vmName: vm.name, editable: config?.supportsShares == true && (editable || model.canEditSharesLive(vm.name)))
         .task(id: vm) { loadDiskSize(config) }
+        .onAppear { model.refreshSSHIncluded() }
         .sheet(isPresented: $growingDisk, onDismiss: { loadDiskSize(model.config(of: vm.name)) }) {
             if let config, let diskSize { DiskGrowSheet(vmName: vm.name, config: config, currentSize: diskSize.logical) }
         }

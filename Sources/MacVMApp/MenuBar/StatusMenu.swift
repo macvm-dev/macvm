@@ -15,8 +15,6 @@ struct StatusMenu: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
-    /// 读的是 `~/.ssh/config`，下载进度刷新面板时不重复读文件，只在面板出现时读一次。
-    @State private var sshIncluded = false
     /// 从面板发起、还没返回的挂起与强制断电，值是行里显示的进行中文字；期间该行的操作按钮换成转圈。
     @State private var busy: [String: String] = [:]
 
@@ -39,7 +37,7 @@ struct StatusMenu: View {
             footer
         }
         .frame(width: 360)
-        .onAppear { sshIncluded = SSHConfig.isIncluded }
+        .onAppear { model.refreshSSHIncluded() }
     }
 
     // MARK: 顶栏与底栏
@@ -197,7 +195,7 @@ struct StatusMenu: View {
                 Button("拷贝 IP 地址") { copy(ip) }
             }
             if config?.guestUser != nil {
-                Button("拷贝 SSH 命令") { copy(sshCommand(vm.name)) }
+                Button("拷贝 SSH 命令") { copy(model.sshCommand(vm.name)) }
             }
             if vm.ipAddress != nil || config?.guestUser != nil { Divider() }
             Button("关机") { Task { await model.stop(vm.name) } }
@@ -231,11 +229,9 @@ struct StatusMenu: View {
         guard vm.state == .running else { return [] }
         var chips: [String] = []
         if let ip = vm.ipAddress { chips.append(ip) }
-        if config?.guestUser != nil { chips.append(sshCommand(vm.name)) }
+        if config?.guestUser != nil { chips.append(model.sshCommand(vm.name)) }
         return chips
     }
-
-    private func sshCommand(_ name: String) -> String { sshIncluded ? "ssh \(name)" : "macvm ssh \(name)" }
 
     private func pendingRow(_ name: String) -> some View {
         let activity = model.activity[name]

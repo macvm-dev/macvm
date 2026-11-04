@@ -6,7 +6,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var capabilities = HostCapabilities.current()
-    @State private var sshIncluded = SSHConfig.isIncluded
     @AppStorage(StatusMenu.visibleKey) private var showsMenuBarExtra = true
 
     var body: some View {
@@ -33,17 +32,7 @@ struct SettingsView: View {
                 footer(locationFooter)
             }
             Section {
-                Toggle("把虚拟机加入 ~/.ssh/config", isOn: Binding(get: { sshIncluded }, set: { enable in
-                    do {
-                        if enable {
-                            _ = try SSHConfig.write(library: model.library, macvmPath: CLILocation.path)
-                            try SSHConfig.installInclude()
-                        } else {
-                            try SSHConfig.removeInclude()
-                        }
-                    } catch { model.report(error) }
-                    sshIncluded = SSHConfig.isIncluded
-                }))
+                Toggle("把虚拟机加入 ~/.ssh/config", isOn: Binding(get: { model.sshIncluded }, set: { model.setSSHIncluded($0) }))
             } header: {
                 Text("SSH")
             } footer: {
@@ -52,6 +41,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 460)
+        .onAppear { model.refreshSSHIncluded() }
     }
 
     /// 分组表单的说明文字默认是正文色、右对齐，改成次要色左对齐的小字。
