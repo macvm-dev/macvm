@@ -96,6 +96,7 @@ struct MachineDetailView: View {
             SnapshotsSection(vmName: vm.name, state: vm.state)
         }
         .formStyle(.grouped)
+        .acceptsShareDrops(vmName: vm.name, editable: config?.supportsShares == true && (editable || model.canEditSharesLive(vm.name)))
         .task(id: vm) { loadDiskSize(config) }
         .sheet(isPresented: $growingDisk, onDismiss: { loadDiskSize(model.config(of: vm.name)) }) {
             if let config, let diskSize { DiskGrowSheet(vmName: vm.name, config: config, currentSize: diskSize.logical) }

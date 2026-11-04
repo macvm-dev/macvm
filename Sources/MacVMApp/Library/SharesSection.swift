@@ -15,7 +15,8 @@ struct SharesSection: View {
             if config.shares.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("没有共享目录").foregroundStyle(.secondary)
-                    Text("把主机上的文件夹共享给客户机，两边看到同一份文件。").font(.caption).foregroundStyle(.tertiary)
+                    Text(editable ? "把主机上的文件夹共享给客户机，两边看到同一份文件。也可以把文件夹拖到这里。" : "把主机上的文件夹共享给客户机，两边看到同一份文件。")
+                        .font(.caption).foregroundStyle(.tertiary)
                 }
             }
             ForEach(config.shares, id: \.hostPath) { share in
@@ -71,5 +72,43 @@ struct SharesSection: View {
         if config.os == .macOS { return "客户机里在 /Volumes/My Shared Files 下，以名称为目录。" }
         let example = config.shares[0].tag
         return "Linux 客户机里挂载：sudo mkdir -p /mnt/\(example) && sudo mount -t virtiofs \(example) /mnt/\(example)，开机自动挂载要写进 /etc/fstab。"
+    }
+}
+
+extension View {
+    /// 接受从 Finder 拖来的文件夹，加为 `vmName` 的共享目录；`editable` 为 false 时不接受。
+    func acceptsShareDrops(vmName: String, editable: Bool) -> some View {
+        modifier(ShareDropTarget(vmName: vmName, editable: editable))
+    }
+}
+
+private struct ShareDropTarget: ViewModifier {
+    @Environment(AppModel.self) private var model
+    let vmName: String
+    let editable: Bool
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .dropDestination(for: URL.self) { urls, _ in
+                let folders = urls.filter(Self.isFolder)
+                guard editable, !folders.isEmpty else { return false }
+                model.addShares(vmName, folders)
+                return true
+            } isTargeted: { targeted = editable && $0 }
+            .overlay {
+                if targeted {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                        .padding(4)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    /// 只收文件夹；App 之类的包虽是目录也不收，与「添加」的文件选择面板一致。
+    private static func isFolder(_ url: URL) -> Bool {
+        guard url.isFileURL, let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]) else { return false }
+        return values.isDirectory == true && values.isPackage != true
     }
 }

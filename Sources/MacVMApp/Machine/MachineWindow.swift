@@ -213,5 +213,6 @@ private struct SharesSheet: View {
             .padding()
         }
         .frame(width: 460)
+        .acceptsShareDrops(vmName: name, editable: editable)
     }
 }
