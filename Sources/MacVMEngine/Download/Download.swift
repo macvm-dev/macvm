@@ -37,6 +37,15 @@ enum Download {
         return target
     }
 
+    /// `file` 的 SHA-256 不等于 `expected`（十六进制，不分大小写）时删掉 `file` 并报错，`name` 用在错误信息里。
+    static func verifySHA256(of file: URL, expected: String, name: String) async throws {
+        let digest = try await Subprocess.run("/usr/bin/shasum", ["-a", "256", file.path])
+        guard digest.split(separator: " ").first.map({ $0.lowercased() == expected.lowercased() }) == true else {
+            try? FileManager.default.removeItem(at: file)
+            throw MacVMError.io("\(name) 的 SHA-256 与发布方的不符，已删除，请重试")
+        }
+    }
+
     /// 绑定了 `DownloadProgress.handler` 时每半秒回报一次进度。调用方须持有 `destination` 的 `DownloadLock`。
     /// 探测时连不上服务器就报错，已下的内容原样留着。
     private static func file(_ url: URL, to destination: URL, showProgress: Bool) async throws {

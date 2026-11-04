@@ -36,7 +36,7 @@
 | 目录 | 默认 | 覆盖顺序 |
 | --- | --- | --- |
 | 虚拟机 | `~/Library/Application Support/MacVM/VMs` | 环境变量 `MACVM_HOME` > `libraryPath` > 默认 |
-| 下载（`ipsw/`、`images/`、`iso/`、`virtio-win.iso`） | `~/Library/Caches/MacVM` | `downloadPath` > 默认 |
+| 下载（`ipsw/`、`images/`、`iso/`、`virtio-win/`） | `~/Library/Caches/MacVM` | `downloadPath` > 默认 |
 
 `doctor --json` 的结果里有 `libraryPath` 与 `downloadPath`，是当前实际生效的位置。
 

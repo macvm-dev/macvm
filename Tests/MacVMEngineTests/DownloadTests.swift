@@ -77,4 +77,25 @@ struct DownloadLockTests {
         first.release()
         try await waiter.value.release()
     }
+
+    @Test func verifySHA256KeepsMatchingFileAndDeletesMismatch() async throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "macvm-sha-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("hello".utf8).write(to: file)
+        try await Download.verifySHA256(of: file, expected: "2CF24DBA5FB0A30E26E83B2AC5B9E29E1B161E5C1FA7425E73043362938B9824", name: "f")
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        await #expect(throws: (any Error).self) { try await Download.verifySHA256(of: file, expected: "00", name: "f") }
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @Test func removeStaleVirtioWinKeepsCurrentAndPartials() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "macvm-virtio-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let names = ["virtio-win-0.1.285.iso", "virtio-win-0.1.302.iso", "virtio-win-0.1.302.iso.part", "virtio-win-0.1.302.iso.part.lock"]
+        for name in names { FileManager.default.createFile(atPath: root.appending(path: name).path, contents: nil) }
+        WindowsInstaller.removeStaleVirtioWin(keeping: "virtio-win-0.1.302.iso", in: root)
+        let left = try Set(FileManager.default.contentsOfDirectory(atPath: root.path))
+        #expect(left == ["virtio-win-0.1.302.iso", "virtio-win-0.1.302.iso.part", "virtio-win-0.1.302.iso.part.lock"])
+    }
 }

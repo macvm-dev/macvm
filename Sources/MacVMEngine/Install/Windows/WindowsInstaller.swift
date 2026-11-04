@@ -10,7 +10,9 @@ public import MacVMModel
 public enum WindowsInstaller {
     public static let setupImageName = "windows-setup.img"
     public static let dataImageName = "windows-data.img"
-    static let virtioWinURL = URL(string: "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso")!
+    /// Red Hat 签名的 virtio 驱动盘，固定版本。上游不公布 ISO 的校验和，`virtioWinSHA256` 是下载这一版后算出的，换版本时两者一起改。
+    static let virtioWinURL = URL(string: "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.302-1/virtio-win-0.1.302.iso")!
+    static let virtioWinSHA256 = "303f7ae40dad495d6ae474fdc571df58958a4dbc5c37a522d80f9a203867949d"
     /// 微软的 Windows 11 ARM64 ISO 下载页；直链要在页面里选语言后由微软生成，只能在浏览器里下载。
     public static let downloadPage = URL(string: "https://www.microsoft.com/software-download/windows11arm64")!
     static let drivers = ["NetKVM", "viostor", "vioscsi", "viogpudo", "viosock", "viofs", "Balloon", "vioserial", "viorng", "vioinput"]
@@ -238,9 +240,24 @@ public enum WindowsInstaller {
         }
     }
 
+    /// 缓存在 `DownloadCache.root` 下 virtio-win 目录里、以版本命名的驱动盘，不在时下载并校验；该目录里其他版本的随后删掉。
     static func cachedVirtioWin(showProgress: Bool) async throws -> URL {
-        let cache = DownloadCache.root.appending(path: "virtio-win.iso")
-        return try await Download.cached(cache, from: virtioWinURL, via: cache.appendingPathExtension("part"), showProgress: showProgress)
+        let directory = DownloadCache.root.appending(path: "virtio-win", directoryHint: .isDirectory)
+        let name = virtioWinURL.lastPathComponent
+        let cache = directory.appending(path: name)
+        return try await Download.cached(cache, from: virtioWinURL, via: cache.appendingPathExtension("part"), showProgress: showProgress) { partial in
+            try await Download.verifySHA256(of: partial, expected: virtioWinSHA256, name: name)
+            try FileManager.default.moveItem(at: partial, to: cache)
+            removeStaleVirtioWin(keeping: name, in: directory)
+        }
+    }
+
+    /// 删掉 `directory` 里除 `current` 外下完的驱动盘；下载中的 `.part` 及其锁不动。
+    static func removeStaleVirtioWin(keeping current: String, in directory: URL) {
+        let items = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for item in items where item.lastPathComponent != current && item.pathExtension == "iso" {
+            try? FileManager.default.removeItem(at: item)
+        }
     }
 }
 

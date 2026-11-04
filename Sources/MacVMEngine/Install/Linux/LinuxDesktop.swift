@@ -115,11 +115,7 @@ public enum ISOCache {
         let iso = root.appending(path: release.fileName)
         let partial = root.appending(path: release.fileName + ".part")
         return try await Download.cached(iso, from: release.url, via: partial, showProgress: showProgress) { partial in
-            let digest = try await Subprocess.run("/usr/bin/shasum", ["-a", "256", partial.path])
-            guard digest.split(separator: " ").first.map({ $0.lowercased() == release.sha256 }) == true else {
-                try? FileManager.default.removeItem(at: partial)
-                throw MacVMError.io("\(release.fileName) 的 SHA-256 与发行方公布的不符，已删除，请重试")
-            }
+            try await Download.verifySHA256(of: partial, expected: release.sha256, name: release.fileName)
             try FileManager.default.moveItem(at: partial, to: iso)
             removeStalePartials(of: desktop, keeping: release.fileName, in: root)
         }
