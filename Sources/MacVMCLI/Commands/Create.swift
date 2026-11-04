@@ -88,7 +88,9 @@ struct Create: AsyncParsableCommand {
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
                 installMedia: installMedia, network: try Self.parseNetwork(network),
-                shares: try share.map(Self.parseShare), rosetta: rosetta, serialConsole: console,
+                shares: try share.map(Self.parseShare).map {
+                    ShareConfig(hostPath: $0.hostPath, tag: $0.tag ?? URL(filePath: $0.hostPath).lastPathComponent, readOnly: $0.readOnly)
+                }, rosetta: rosetta, serialConsole: console,
                 image: try image.map(LinuxImage.named), desktop: try desktop.map(LinuxDesktop.named), user: user,
                 showProgress: !global.json && isatty(STDERR_FILENO) == 1, headless: headless
             )
@@ -140,15 +142,19 @@ struct Create: AsyncParsableCommand {
         }
     }
 
-    static func parseShare(_ text: String) throws -> ShareConfig {
+    /// `主机路径[:tag][:ro]`；路径展开 `~` 并标准化，没写 tag 时为 nil。
+    static func parseShare(_ text: String) throws -> (hostPath: String, tag: String?, readOnly: Bool) {
         var parts = text.split(separator: ":").map(String.init)
         guard let first = parts.first else { throw MacVMError.invalidConfig("共享目录参数为空") }
-        let path = URL(filePath: (first as NSString).expandingTildeInPath).standardizedFileURL.path
+        let path = standardizedPath(first)
         parts.removeFirst()
         let readOnly = parts.last == "ro"
         if readOnly { parts.removeLast() }
-        let tag = parts.first ?? URL(filePath: path).lastPathComponent
-        return ShareConfig(hostPath: path, tag: tag, readOnly: readOnly)
+        return (path, parts.first, readOnly)
+    }
+
+    static func standardizedPath(_ text: String) -> String {
+        URL(filePath: (text as NSString).expandingTildeInPath).standardizedFileURL.path
     }
 }
 
