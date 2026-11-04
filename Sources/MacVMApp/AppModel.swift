@@ -27,12 +27,15 @@ final class AppModel {
         var fraction: Double?
         /// 下载速度，平滑过的；不在下载时为 nil。
         var bytesPerSecond: Double?
+        /// 这一步是下载。
+        var downloading: Bool
         @ObservationIgnored private var sampledAt: Date?
         @ObservationIgnored private var sampledBytes: Int64?
 
-        init(title: String, fraction: Double?) {
+        init(title: String, fraction: Double?, downloading: Bool) {
             self.title = title
             self.fraction = fraction
+            self.downloading = downloading
         }
 
         var text: String {
@@ -44,9 +47,10 @@ final class AppModel {
         }
 
         /// 换到新的一步：清掉上一步的下载进度。
-        func begin(_ title: String, fraction: Double?) {
+        func begin(_ title: String, fraction: Double?, downloading: Bool) {
             self.title = title
             self.fraction = fraction
+            self.downloading = downloading
             detail = nil
             bytesPerSecond = nil
             sampledAt = nil
@@ -132,13 +136,19 @@ final class AppModel {
         activity.keys.filter { name in !machines.contains { $0.name == name } }.sorted()
     }
 
-    func setActivity(_ name: String, _ title: String?, fraction: Double? = nil) {
+    func setActivity(_ name: String, _ title: String?, fraction: Double? = nil, downloading: Bool = false) {
         guard let title else {
             activity[name] = nil
             return
         }
-        if let current = activity[name] { current.begin(title, fraction: fraction) } else { activity[name] = Activity(title: title, fraction: fraction) }
+        if let current = activity[name] {
+            current.begin(title, fraction: fraction, downloading: downloading)
+        } else {
+            activity[name] = Activity(title: title, fraction: fraction, downloading: downloading)
+        }
     }
+
+    var isDownloading: Bool { activity.values.contains { $0.downloading } }
 
     /// 运行 `body`，其间发生的下载把字节进度写进 `activity[name]`。
     func trackingDownloads<T>(of name: String, _ body: () async throws -> T) async rethrows -> T {
@@ -560,7 +570,7 @@ final class AppModel {
                                                  creationToken: token)
             _ = try await MacOSInstaller.install(options, in: library) { [weak self] phase in
                 switch phase {
-                case .downloading: self?.setActivity(name, "正在下载 macOS…")
+                case .downloading: self?.setActivity(name, "正在下载 macOS…", downloading: true)
                 // 安装程序先校验、展开 IPSW，这几分钟进度一直是 0，显示为进度未知。
                 case .installing(let f) where f <= 0: self?.setActivity(name, "正在准备安装，需要几分钟…")
                 case .installing(let f): self?.setActivity(name, "正在安装 \(Int(f * 100))%", fraction: f)
@@ -569,7 +579,7 @@ final class AppModel {
         case (.windows, _):
             let iso: URL
             if r.source == .windowsLatest {
-                setActivity(name, "正在下载 Windows…")
+                setActivity(name, "正在下载 Windows…", downloading: true)
                 iso = try await WindowsISO.iso(showProgress: false)
             } else {
                 guard let file = r.file else { throw MacVMError.invalidConfig("没有选择 Windows 安装 ISO") }
@@ -589,7 +599,7 @@ final class AppModel {
             guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
         case (_, .desktop(let id)):
             let desktop = try LinuxDesktop.named(id)
-            setActivity(name, "正在下载 \(desktop.title) 安装盘…")
+            setActivity(name, "正在下载 \(desktop.title) 安装盘…", downloading: true)
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
                                             rosetta: r.rosetta, desktop: desktop, unattended: r.manualInstall != true,
                                             user: r.user ?? NSUserName(), password: r.password, creationToken: token)
@@ -606,7 +616,7 @@ final class AppModel {
                 guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name)") }
             }
         case (_, .cloudImage(let id)):
-            setActivity(name, "正在下载镜像…")
+            setActivity(name, "正在下载镜像…", downloading: true)
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
                                             rosetta: r.rosetta, image: try LinuxImage.named(id), user: r.user ?? NSUserName(), password: r.password,
                                             creationToken: token)
