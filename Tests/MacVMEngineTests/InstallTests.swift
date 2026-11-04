@@ -191,3 +191,23 @@ struct WindowsUnattendTests {
         _ = try XMLDocument(xmlString: WindowsUnattend.autounattend())
     }
 }
+
+struct CloudInitTests {
+    private func options(password: String?) -> CloudInit.Options {
+        CloudInit.Options(hostname: "dev", user: "ethan", password: password, sshPublicKey: "ssh-ed25519 AAAA test",
+                          macAddress: "02:00:00:00:00:01", agentBinary: nil)
+    }
+
+    @Test func withoutPasswordLocksPasswordLogin() {
+        let data = CloudInit.userData(options(password: nil))
+        #expect(data.contains("lock_passwd: true"))
+        #expect(!data.contains("chpasswd:"))
+    }
+
+    @Test func passwordUnlocksConsoleLoginButNotSSH() {
+        let data = CloudInit.userData(options(password: #"p"w\d"#))
+        #expect(data.contains("lock_passwd: false"))
+        #expect(data.contains("chpasswd:\n  expire: false\n  users:\n    - name: \"ethan\"\n      password: \"p\\\"w\\\\d\"\n      type: text\n"))
+        #expect(data.contains("ssh_pwauth: false"))
+    }
+}

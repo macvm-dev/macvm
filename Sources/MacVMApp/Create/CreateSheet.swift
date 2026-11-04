@@ -21,6 +21,9 @@ struct CreateSheet: View {
     @State private var choosingFile = false
     @State private var rosetta = false
     @State private var productKey = ""
+    @State private var user = ""
+    @State private var password = ""
+    @State private var revealsPassword = false
     /// 点了「从微软下载」的时刻；之后「下载」文件夹里出现的 Windows ISO 自动选上。
     @State private var downloadRequestedAt: Date?
     /// 输入框里的数字无效的 `NumberField`，按标题记。
@@ -46,6 +49,34 @@ struct CreateSheet: View {
                     NumberField(title: "内存", unit: "GB", value: $memoryGB, invalid: invalid("内存"), range: ResourceRange.memoryGB)
                     NumberField(title: "磁盘", unit: "GB（按实际写入占用）", value: $diskGB, invalid: invalid("磁盘"), range: 16...2048, step: 16)
                     if os == .linux { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
+                }
+                if setsPassword {
+                    Section {
+                        TextField("用户名", text: $user, prompt: Text(NSUserName()))
+                        LabeledContent("密码") {
+                            HStack(spacing: 6) {
+                                let prompt = Text(os == .linux ? "可选，留空则只能用 SSH 登录" : "可选，留空则随机生成")
+                                if revealsPassword {
+                                    TextField("密码", text: $password, prompt: prompt)
+                                } else {
+                                    SecureField("密码", text: $password, prompt: prompt)
+                                }
+                                Button { revealsPassword.toggle() } label: {
+                                    Image(systemName: revealsPassword ? "eye.slash" : "eye")
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
+                                .help(revealsPassword ? "隐藏密码" : "显示密码")
+                            }
+                            .labelsHidden()
+                        }
+                    } header: {
+                        Text("账户")
+                    } footer: {
+                        let problem = accountProblem
+                        Text(problem ?? "密码保存在虚拟机包内的 guest-password，只有你能读。")
+                            .font(.caption).foregroundStyle(problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+                    }
                 }
                 if os == .windows {
                     TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
@@ -122,6 +153,23 @@ struct CreateSheet: View {
         }
     }
 
+    /// 图形安装（桌面版、ISO）的账户由安装程序设置。
+    private var setsPassword: Bool {
+        switch source {
+        case .cloudImage: os == .linux
+        default: os == .macOS || os == .windows
+        }
+    }
+    /// 用户名留空时用主机用户名，密码留空时按系统默认处理，都不另做检查。
+    private var accountProblem: String? {
+        do {
+            if !user.isEmpty { try GuestAccount.validate(user: user) }
+            if !password.isEmpty { try GuestAccount.validate(password: password) }
+        } catch {
+            return (error as? MacVMError)?.message ?? error.localizedDescription
+        }
+        return nil
+    }
     private var needsFile: Bool { source == .iso || source == .ipswFile || os == .windows }
     private var allowedTypes: [UTType] { [UTType(filenameExtension: os == .macOS ? "ipsw" : "iso") ?? .data] }
     private var defaultName: String { os == .macOS ? "macos" : os == .windows ? "windows" : "linux" }
@@ -134,6 +182,7 @@ struct CreateSheet: View {
     private var isValid: Bool {
         invalidFields.isEmpty && model.activity[finalName] == nil && (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
             && (os != .windows || hasQEMU)
+            && (!setsPassword || accountProblem == nil)
             && (os != .windows || productKey.isEmpty || (try? WindowsInstaller.normalizeProductKey(productKey)) != nil)
     }
 
@@ -151,7 +200,9 @@ struct CreateSheet: View {
 
     private func create() {
         let request = CreationRequest(name: finalName, os: os, source: source, cpus: cpus, memoryGB: memoryGB, diskGB: diskGB,
-                                      rosetta: rosetta, file: file, productKey: os == .windows && !productKey.isEmpty ? productKey : nil)
+                                      rosetta: rosetta, file: file, productKey: os == .windows && !productKey.isEmpty ? productKey : nil,
+                                      user: setsPassword && !user.isEmpty ? user : nil,
+                                      password: setsPassword && !password.isEmpty ? password : nil)
         let openWindow = openWindow
         dismiss()
         model.create(request) { openWindow(id: "machine", value: $0) }

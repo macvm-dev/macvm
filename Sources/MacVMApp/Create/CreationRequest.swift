@@ -21,11 +21,15 @@ struct CreationRequest: Codable, Sendable, Equatable {
     /// 用户选的 ISO 或 IPSW。
     var file: URL?
     var productKey: String?
+    /// 客户机登录用户名；nil 时与主机用户同名。
+    var user: String?
+    /// 客户机登录密码；nil 时 macOS、Windows 随机生成，Linux 云镜像只能用 SSH 密钥登录。
+    var password: String?
     /// 建包时作为 `VMBundle.creationMarkerURL` 的令牌写进包里，用来认出本请求留下的半成品。
     var id = UUID()
 }
 
-/// 未结束的新建请求，存在设置文件旁的 `creations.json`。含 Windows 产品密钥，文件只给本用户读写。
+/// 未结束的新建请求，存在设置文件旁的 `creations.json`。含客户机密码与 Windows 产品密钥，文件只给本用户读写。
 enum CreationStore {
     static var fileURL: URL {
         MacVMSettings.fileURL.deletingLastPathComponent().appending(path: "creations.json")

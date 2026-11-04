@@ -491,7 +491,8 @@ final class AppModel {
         switch (r.os, r.source) {
         case (.macOS, _):
             let options = MacOSInstaller.Options(name: name, source: r.file.map { .file($0) } ?? .latest,
-                                                 cpuCount: r.cpus, memorySize: memory, diskSize: disk, creationToken: token)
+                                                 cpuCount: r.cpus, memorySize: memory, diskSize: disk, user: r.user ?? NSUserName(), password: r.password,
+                                                 creationToken: token)
             _ = try await MacOSInstaller.install(options, in: library) { [weak self] phase in
                 switch phase {
                 case .downloading: self?.setActivity(name, "正在下载 macOS…")
@@ -504,7 +505,8 @@ final class AppModel {
             guard let iso = r.file else { throw MacVMError.invalidConfig("没有选择 Windows 安装 ISO") }
             setActivity(name, "正在准备 Windows 安装盘…")
             let bundle = try await WindowsInstaller.create(.init(name: name, iso: iso, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
-                                                                 productKey: r.productKey, creationToken: token), in: library)
+                                                                 user: r.user ?? NSUserName(), password: r.password, productKey: r.productKey,
+                                                                 creationToken: token), in: library)
             setActivity(name, "正在安装 Windows…")
             guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name) 开始安装") }
             openMachineWindow(name)
@@ -524,7 +526,8 @@ final class AppModel {
         case (_, .cloudImage(let id)):
             setActivity(name, "正在下载镜像…")
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
-                                            rosetta: r.rosetta, image: try LinuxImage.named(id), creationToken: token)
+                                            rosetta: r.rosetta, image: try LinuxImage.named(id), user: r.user ?? NSUserName(), password: r.password,
+                                            creationToken: token)
             _ = try await VMFactory.createEFIGuest(options, in: library)
         default:
             let options = VMFactory.Options(name: name, os: r.os, cpuCount: r.cpus, memorySize: memory, diskSize: disk,

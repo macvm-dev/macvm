@@ -21,7 +21,7 @@ struct InstallMacOS: AsyncParsableCommand {
     @Option(name: .customLong("cpus"), help: "vCPU 数。") var cpuCount: Int?
     @Option(help: "内存，如 8G。") var memory: String?
     @Option(help: "磁盘容量（稀疏），如 96G。") var disk: String?
-    @Option(help: "客户机用户名，默认与主机用户同名。") var user: String = NSUserName()
+    @Option(help: "客户机用户名，默认与主机用户同名。") var user: String?
     @Option(help: "客户机密码，默认随机生成，保存在虚拟机包内的 guest-password。") var password: String?
     @Option(help: "显示分辨率，如 1920x1200。") var resolution: String = "1920x1200"
     @Flag(help: "安装完不开机配置 SSH。") var noProvision = false
@@ -40,6 +40,9 @@ struct InstallMacOS: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         try await Output.run(json: global.json, human: Self.render) {
+            if let user { try GuestAccount.validate(user: user) }
+            if let password { try GuestAccount.validate(password: password) }
+            let user = user ?? NSUserName()
             let parts = resolution.lowercased().split(separator: "x").compactMap { Int($0) }
             guard parts.count == 2 else { throw MacVMError.invalidConfig("分辨率格式应为 宽x高：\(resolution)") }
             let interactive = !global.json && isatty(STDERR_FILENO) == 1

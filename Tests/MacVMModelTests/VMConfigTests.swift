@@ -141,3 +141,22 @@ struct OutputContractTests {
         #expect(saved.audioDiffers(from: booted))
     }
 }
+
+struct GuestAccountTests {
+    @Test func acceptsPortableNames() throws {
+        for user in ["ethan", "dev_1", "a.b-c", "_svc", String(repeating: "a", count: 20)] { try GuestAccount.validate(user: user) }
+    }
+
+    @Test func rejectsNamesSomeGuestCannotCreate() {
+        for user in ["", "Ethan", "1abc", "-x", "a b", "x;rm", String(repeating: "a", count: 21), "root", "administrator"] {
+            #expect(throws: MacVMError.self) { try GuestAccount.validate(user: user) }
+        }
+    }
+
+    @Test func passwordsMustSurviveStorageAndGuestConfig() throws {
+        try GuestAccount.validate(password: #"p a"s\w"#)
+        for password in ["", " lead", "trail ", "two\nlines", "tab\tin"] {
+            #expect(throws: MacVMError.self) { try GuestAccount.validate(password: password) }
+        }
+    }
+}

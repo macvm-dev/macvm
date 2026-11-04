@@ -13,6 +13,8 @@ public enum CloudInit {
     public struct Options: Sendable {
         public var hostname: String
         public var user: String
+        /// 控制台登录密码；nil 时锁定密码登录。SSH 始终只认密钥。
+        public var password: String?
         public var sshPublicKey: String
         public var shares: [ShareConfig]
         public var rosetta: Bool
@@ -20,10 +22,11 @@ public enum CloudInit {
         /// 放进种子盘并在首启时安装为 systemd 服务的代理二进制。
         public var agentBinary: URL?
 
-        public init(hostname: String, user: String, sshPublicKey: String, macAddress: String, shares: [ShareConfig] = [], rosetta: Bool = false,
-                    agentBinary: URL? = AgentInstaller.binary(for: .linux)) {
+        public init(hostname: String, user: String, password: String? = nil, sshPublicKey: String, macAddress: String, shares: [ShareConfig] = [],
+                    rosetta: Bool = false, agentBinary: URL? = AgentInstaller.binary(for: .linux)) {
             self.hostname = hostname
             self.user = user
+            self.password = password
             self.sshPublicKey = sshPublicKey
             self.shares = shares
             self.rosetta = rosetta
@@ -48,6 +51,8 @@ public enum CloudInit {
         let seed = bundle.url.appending(path: seedFileName)
         try? FileManager.default.removeItem(at: seed)
         try await Subprocess.run("/usr/bin/hdiutil", ["makehybrid", "-quiet", "-iso", "-joliet", "-default-volume-name", "cidata", "-o", seed.path, staging.path])
+        // user-data 里可能有明文密码，种子盘只给本用户读。
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: seed.path)
     }
 
     static func metaData(instanceID: String, hostname: String) -> String {
@@ -99,10 +104,11 @@ public enum CloudInit {
             groups: [sudo, adm]
             shell: /bin/bash
             sudo: "ALL=(ALL) NOPASSWD:ALL"
-            lock_passwd: true
+            lock_passwd: \(o.password == nil)
             ssh_authorized_keys:
               - \(yaml(o.sshPublicKey))
         ssh_pwauth: false
+        \(o.password.map { "chpasswd:\n  expire: false\n  users:\n    - name: \(yaml(o.user))\n      password: \(yaml($0))\n      type: text" } ?? "")
         growpart:
           mode: auto
           devices: ["/"]

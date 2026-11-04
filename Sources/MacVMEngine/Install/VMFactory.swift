@@ -22,6 +22,8 @@ public enum VMFactory {
         public var desktop: LinuxDesktop?
         /// 云镜像里创建的登录用户。
         public var user: String
+        /// 云镜像里登录用户的密码，存进包内 `guest-password`；nil 时只能用 SSH 密钥登录。
+        public var password: String?
         public var showProgress: Bool
         /// 默认云镜像为 headless（可挂起），安装介质方式带键鼠。
         public var headless: Bool?
@@ -31,7 +33,8 @@ public enum VMFactory {
         public init(name: String, os: GuestOS, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
                     installMedia: [String] = [], network: NetworkConfig = .init(), shares: [ShareConfig] = [],
                     rosetta: Bool = false, serialConsole: Bool = false, image: LinuxImage? = nil, desktop: LinuxDesktop? = nil,
-                    user: String = NSUserName(), showProgress: Bool = false, headless: Bool? = nil, creationToken: String? = nil) {
+                    user: String = NSUserName(), password: String? = nil, showProgress: Bool = false, headless: Bool? = nil,
+                    creationToken: String? = nil) {
             self.name = name
             self.os = os
             self.cpuCount = cpuCount ?? HostInfo.defaultCPUCount()
@@ -45,6 +48,7 @@ public enum VMFactory {
             self.image = image
             self.desktop = desktop
             self.user = user
+            self.password = password
             self.showProgress = showProgress
             self.headless = headless
             self.creationToken = creationToken
@@ -84,9 +88,11 @@ public enum VMFactory {
                 if try DiskImage.allocatedSize(at: bundle.diskURL).logical < options.diskSize {
                     try DiskImage.grow(at: bundle.diskURL, to: options.diskSize)
                 }
-                let seed = CloudInit.Options(hostname: options.name, user: options.user, sshPublicKey: try await SSHKeys.ensurePublicKey(),
+                let seed = CloudInit.Options(hostname: options.name, user: options.user, password: options.password,
+                                             sshPublicKey: try await SSHKeys.ensurePublicKey(),
                                              macAddress: network.macAddress!, shares: options.shares, rosetta: options.rosetta)
                 try await CloudInit.writeSeed(seed, instanceID: UUID().uuidString, in: bundle)
+                if let password = options.password { try GuestCredentials.storePassword(password, in: bundle) }
                 hasAgent = seed.agentBinary != nil
                 disks.append(DiskConfig(path: CloudInit.seedFileName, readOnly: true))
             } else {

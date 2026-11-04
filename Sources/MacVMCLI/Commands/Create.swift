@@ -41,8 +41,11 @@ struct Create: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Linux 桌面版：下载官方安装 ISO 并以它启动，在窗口里完成图形安装。", valueName: LinuxDesktop.allCases.map(\.rawValue).joined(separator: "|")))
     var desktop: String?
 
-    @Option(help: "云镜像里创建的登录用户，默认与主机用户同名。")
-    var user: String = NSUserName()
+    @Option(help: "云镜像与 Windows 里创建的登录用户，默认与主机用户同名。")
+    var user: String?
+
+    @Option(help: "Linux 云镜像与 Windows：登录密码，保存在虚拟机包内的 guest-password。省略时云镜像只能用 SSH 密钥登录，Windows 随机生成。")
+    var password: String?
 
     @Option(name: .customLong("iso"), help: "以只读 U 盘挂载的安装介质，可重复。")
     var installMedia: [String] = []
@@ -76,6 +79,8 @@ struct Create: AsyncParsableCommand {
 
     func run() async throws {
         try await Output.run(json: global.json, human: { (s: VMSummary) in "已创建 \(s.name)：\(s.path)" }) {
+            if let user { try GuestAccount.validate(user: user) }
+            if let password { try GuestAccount.validate(password: password) }
             guard os.usesEFI else {
                 throw MacVMError.invalidConfig("macOS 客户机请用 macvm install-macos 创建")
             }
@@ -84,6 +89,7 @@ struct Create: AsyncParsableCommand {
                 return try await createWindows()
             }
             if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
+            if password != nil, image == nil { throw MacVMError.invalidConfig("--password 只用于 Linux 云镜像（--image）与 Windows") }
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
@@ -91,7 +97,7 @@ struct Create: AsyncParsableCommand {
                 shares: try share.map(Self.parseShare).map {
                     ShareConfig(hostPath: $0.hostPath, tag: $0.tag ?? URL(filePath: $0.hostPath).lastPathComponent, readOnly: $0.readOnly)
                 }, rosetta: rosetta, serialConsole: console,
-                image: try image.map(LinuxImage.named), desktop: try desktop.map(LinuxDesktop.named), user: user,
+                image: try image.map(LinuxImage.named), desktop: try desktop.map(LinuxDesktop.named), user: user ?? NSUserName(), password: password,
                 showProgress: !global.json && isatty(STDERR_FILENO) == 1, headless: headless
             )
             let bundle = try await VMFactory.createEFIGuest(options)
@@ -116,7 +122,7 @@ struct Create: AsyncParsableCommand {
             name: name, iso: URL(filePath: (iso as NSString).expandingTildeInPath).standardizedFileURL,
             virtioWin: virtioWin.map { URL(filePath: ($0 as NSString).expandingTildeInPath) },
             cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
-            user: user, productKey: productKey, showProgress: interactive
+            user: user ?? NSUserName(), password: password, productKey: productKey, showProgress: interactive
         )
         let bundle = try await WindowsInstaller.create(options)
         SSHConfigCommand.refresh()
