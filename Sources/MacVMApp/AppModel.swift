@@ -462,6 +462,9 @@ final class AppModel {
 
     func isCreating(_ name: String) -> Bool { creationTasks[name] != nil }
 
+    /// 本进程里正在新建的虚拟机的客户机系统。
+    func creatingOS(_ name: String) -> GuestOS? { runningCreations[name]?.os }
+
     /// 新建的 macOS 虚拟机首次开机，等远程登录可用后用密码登录一次装入 macvm 公钥，之后 SSH 都走密钥。
     /// 不会自动开通时不开机：用户要先在窗口里走完设置助理。失败只报告，不影响虚拟机本身。
     private func installSSHKeyOnFirstBoot(_ name: String, openMachineWindow: @escaping @MainActor (String) -> Void) {
