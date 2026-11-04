@@ -51,7 +51,7 @@ fn adapters() -> (Vec<Ipv4Addr>, Vec<Ipv4Addr>) {
             if (*adapter).OperStatus == IfOperStatusUp {
                 let mut u = (*adapter).FirstUnicastAddress;
                 while !u.is_null() {
-                    if let Some(ip) = ipv4((*u).Address.lpSockaddr) { if !ip.is_loopback() { unicast.push(ip) } }
+                    if let Some(ip) = ipv4((*u).Address.lpSockaddr) && !ip.is_loopback() { unicast.push(ip) }
                     u = (*u).Next;
                 }
                 let mut g = (*adapter).FirstGatewayAddress;

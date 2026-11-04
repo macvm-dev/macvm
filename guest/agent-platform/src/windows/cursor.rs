@@ -93,19 +93,19 @@ fn watch_hardware_cursor(alive: impl Fn() -> bool, mut on_change: impl FnMut(Gue
         if !HARDWARE_CURSOR_ACTIVE.load(Ordering::Relaxed) {
             return Err(io::Error::new(io::ErrorKind::Unsupported, "客户机未使用硬件光标"));
         }
-        if let Some((cursor, showing)) = current_cursor() {
-            if last != Some((cursor, showing)) {
-                let update = if !showing {
-                    Some(GuestCursor::Hidden)
-                } else if let Some(kind) = lookup(&system, cursor) {
-                    Some(GuestCursor::System(kind))
-                } else {
-                    unsafe { cursor_image(cursor) }.map(GuestCursor::Image)
-                };
-                if let Some(update) = update {
-                    on_change(update)?;
-                    last = Some((cursor, showing));
-                }
+        if let Some((cursor, showing)) = current_cursor()
+            && last != Some((cursor, showing))
+        {
+            let update = if !showing {
+                Some(GuestCursor::Hidden)
+            } else if let Some(kind) = lookup(&system, cursor) {
+                Some(GuestCursor::System(kind))
+            } else {
+                unsafe { cursor_image(cursor) }.map(GuestCursor::Image)
+            };
+            if let Some(update) = update {
+                on_change(update)?;
+                last = Some((cursor, showing));
             }
         }
         thread::sleep(POLL_INTERVAL);
@@ -121,12 +121,12 @@ fn watch_hidden_cursors(alive: impl Fn() -> bool, mut on_change: impl FnMut(Gues
     let mut last: Option<(HCURSOR, bool, u64)> = None;
     while alive() {
         let generation = HiddenCursors::refresh(effective_dpi());
-        if let Some((cursor, showing)) = current_cursor() {
-            if last != Some((cursor, showing, generation)) {
-                let kind = if showing { HiddenCursors::kind(cursor) } else { None };
-                on_change(kind.map_or(GuestCursor::Hidden, GuestCursor::System))?;
-                last = Some((cursor, showing, generation));
-            }
+        if let Some((cursor, showing)) = current_cursor()
+            && last != Some((cursor, showing, generation))
+        {
+            let kind = if showing { HiddenCursors::kind(cursor) } else { None };
+            on_change(kind.map_or(GuestCursor::Hidden, GuestCursor::System))?;
+            last = Some((cursor, showing, generation));
         }
         thread::sleep(POLL_INTERVAL);
     }

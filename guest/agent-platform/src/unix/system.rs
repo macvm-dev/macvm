@@ -139,7 +139,7 @@ pub fn clipboard_get() -> io::Result<String> {
     #[cfg(target_os = "macos")]
     {
         let out = Command::new("/usr/bin/pbpaste").output()?;
-        return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
     #[cfg(target_os = "linux")]
     Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机的剪贴板经 SPICE 代理同步"))
@@ -152,7 +152,7 @@ pub fn clipboard_set(text: &str) -> io::Result<()> {
         let mut child = Command::new("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn()?;
         child.stdin.take().unwrap().write_all(text.as_bytes())?;
         child.wait()?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "linux")]
     {
@@ -181,7 +181,7 @@ pub fn mount_virtiofs(tag: &str, path: &str, read_only: bool) -> io::Result<()> 
     {
         std::fs::create_dir_all(path)?;
         let options = if read_only { "ro" } else { "rw" };
-        return run("/bin/mount", &["-t", "virtiofs", "-o", options, tag, path]);
+        run("/bin/mount", &["-t", "virtiofs", "-o", options, tag, path])
     }
     #[cfg(target_os = "macos")]
     {

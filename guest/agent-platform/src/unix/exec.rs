@@ -134,10 +134,8 @@ fn spawn_as(o: Options) -> io::Result<Spawned> {
             if tty && libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
                 return Err(io::Error::last_os_error());
             }
-            if switch {
-                if libc::initgroups(name.as_ptr(), gid as _) != 0 || libc::setgid(gid) != 0 || libc::setuid(uid) != 0 {
-                    return Err(io::Error::last_os_error());
-                }
+            if switch && (libc::initgroups(name.as_ptr(), gid as _) != 0 || libc::setgid(gid) != 0 || libc::setuid(uid) != 0) {
+                return Err(io::Error::last_os_error());
             }
             Ok(())
         });
@@ -166,7 +164,7 @@ fn openpty(cols: u16, rows: u16) -> io::Result<(OwnedFd, OwnedFd)> {
     let mut slave = -1;
     let mut ws = libc::winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 };
     // SAFETY: 输出参数指向本地变量，name 与 termios 传空表示使用默认值。
-    let rc = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws) };
+    let rc = unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), &raw mut ws) };
     if rc != 0 {
         return Err(io::Error::last_os_error());
     }

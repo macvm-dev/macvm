@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    name: Swift
+    # 引擎用到 macOS 27 SDK 的 API，需要 Xcode 27。
+    runs-on: macos-26
+    env:
+      MACVM_HOME: ${{ github.workspace }}/.ci-home
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '27'
+      - run: swift --version
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+      - run: make lint
+      - run: make build
+      - run: make test-swift
+
+  guest:
+    name: Guest (Rust)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: guest
+      - run: make lint-guest
+      - run: make test-guest

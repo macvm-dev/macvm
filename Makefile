@@ -8,7 +8,7 @@ BIN           := .build/$(CONFIG)
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
 SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
-.PHONY: build sign test lint agent boot qemu app release clean
+.PHONY: build sign test test-swift test-guest lint lint-guest agent boot qemu app release clean
 
 build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
@@ -18,12 +18,19 @@ sign: build
 	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/macvm
 	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/MacVMApp
 
-test:
+test: test-swift test-guest
+
+test-swift:
 	swift test $(SWIFT_FLAGS)
+
+test-guest:
 	cd guest && cargo test
 
 lint:
 	scripts/check-layers.sh
+
+lint-guest:
+	scripts/lint-guest.sh
 
 agent:
 	scripts/build-agent.sh

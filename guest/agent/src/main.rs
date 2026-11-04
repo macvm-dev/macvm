@@ -239,10 +239,10 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
         while let Ok(Some((kind, payload))) = proto::read_frame(&mut reader) {
             match kind {
                 FrameKind::Stdin => {
-                    if let Some(w) = input.as_mut() {
-                        if w.write_all(&payload).is_err() {
-                            input = None;
-                        }
+                    if let Some(w) = input.as_mut()
+                        && w.write_all(&payload).is_err()
+                    {
+                        input = None;
                     }
                 }
                 FrameKind::StdinEof => {
