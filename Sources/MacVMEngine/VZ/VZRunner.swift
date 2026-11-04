@@ -118,8 +118,8 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 向客户机发送关机请求，客户机可能忽略。Linux 按电源键。
-    /// Windows 收不到 VZ 的电源键事件，macOS 收到也不关机：改在后台请客户机代理关机，
-    /// 没有代理时经 SSH 执行关机命令，都不行才按电源键。
+    /// Windows 收不到 VZ 的电源键事件，macOS 收到只弹关机确认框：改在后台经客户机代理或 SSH 关机，
+    /// 都不行才按电源键。
     public func requestStop() throws {
         guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
         switch config.os {
@@ -143,8 +143,13 @@ public final class VZRunner: NSObject, MachineRunner {
         }
     }
 
-    /// 经 vsock 请代理关机；没有代理时经 SSH 用包内保存的客户机密码 sudo 关机。返回客户机是否接受。
+    /// 先经 SSH 用包内保存的客户机密码 sudo 立即关机；不行再经 vsock 请代理关机。返回客户机是否接受。
+    /// 代理以登录用户身份运行，只能像用户点「关机」那样请求，其他 App 可以拦下，所以排在后面。
     private func shutdownMacOSGuest() async -> Bool {
+        if let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle),
+           await Task.detached(operation: { Self.sshSudoShutdown(user: user, ip: ip, password: password) }).value {
+            return true
+        }
         if config.guestAgent, let connection = try? await connectToGuest(port: AgentProtocol.port) {
             let held = Unchecked(value: connection)
             defer { held.value.close() }
@@ -156,33 +161,39 @@ public final class VZRunner: NSObject, MachineRunner {
                 return true
             }
         }
-        guard let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle) else { return false }
-        return await Task.detached { Self.sshSudoShutdown(user: user, ip: ip, password: password) }.value
+        return false
     }
 
-    /// sudo 认证通过后在客户机后台延迟一秒关机，ssh 先正常退出；返回 sudo 是否成功。
+    /// 登录先试 macvm 专用密钥，客户机没装公钥时用 `password`；sudo 认证通过后先输出 `sshShutdownMarker`，
+    /// 再在客户机后台立即关机。返回是否收到标记：关机会断开连接，ssh 的退出码不能说明 sudo 是否成功。
     nonisolated private static func sshSudoShutdown(user: String, ip: String, password: String) -> Bool {
+        guard let askpass = try? GuestSSH.makeAskpass() else { return false }
+        defer { try? FileManager.default.removeItem(at: askpass) }
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/ssh")
-        let remote = #"sudo -S -p '' /bin/sh -c 'nohup /bin/sh -c "sleep 1; /sbin/shutdown -h now" >/dev/null 2>&1 &'"#
+        let remote = "sudo -S -p '' /bin/sh -c 'echo \(sshShutdownMarker); nohup /sbin/shutdown -h now >/dev/null 2>&1 &'"
         process.arguments = ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: nil)
-            + ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "\(user)@\(ip)", remote]
-        let stdin = Pipe()
+            + ["-o", "PreferredAuthentications=publickey,keyboard-interactive,password", "-o", "NumberOfPasswordPrompts=1",
+               "-o", "ConnectTimeout=10", "\(user)@\(ip)", remote]
+        process.environment = GuestSSH.askpassEnvironment(askpass, password: password)
+        let stdin = Pipe(), stdout = Pipe()
         process.standardInput = stdin
-        process.standardOutput = FileHandle.nullDevice
+        process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
         let exited = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in exited.signal() }
         guard (try? process.run()) != nil else { return false }
         stdin.fileHandleForWriting.write(Data((password + "\n").utf8))
         try? stdin.fileHandleForWriting.close()
-        guard exited.wait(timeout: .now() + sshShutdownTimeout) == .success else {
+        if exited.wait(timeout: .now() + sshShutdownTimeout) == .timedOut {
             process.terminate()
-            return false
+            exited.wait()
         }
-        return process.terminationStatus == 0
+        let output = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return output.contains(sshShutdownMarker)
     }
 
+    nonisolated private static let sshShutdownMarker = "macvm-shutdown-accepted"
     nonisolated private static let sshShutdownTimeout: TimeInterval = 20
 
     private func pressPowerButton() throws {

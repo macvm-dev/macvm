@@ -5,16 +5,11 @@ public import MacVMModel
 public enum GuestSSH {
     public static func installPublicKey(bundle: VMBundle, user: String, password: String, proxyCommand: String, timeout: TimeInterval) async throws {
         let key = try await SSHKeys.ensurePublicKey()
-        let askpass = FileManager.default.temporaryDirectory.appending(path: "macvm-askpass-\(UUID().uuidString)")
-        try "#!/bin/sh\nprintf '%s\\n' \"$MACVM_GUEST_PASSWORD\"\n".write(to: askpass, atomically: true, encoding: .utf8)
-        chmod(askpass.path, 0o700)
+        let askpass = try makeAskpass()
         defer { try? FileManager.default.removeItem(at: askpass) }
 
         let remote = "umask 077; mkdir -p ~/.ssh && grep -qxF '\(key)' ~/.ssh/authorized_keys 2>/dev/null || printf '%s\\n' '\(key)' >> ~/.ssh/authorized_keys"
-        var environment = ProcessInfo.processInfo.environment
-        environment["SSH_ASKPASS"] = askpass.path
-        environment["SSH_ASKPASS_REQUIRE"] = "force"
-        environment["MACVM_GUEST_PASSWORD"] = password
+        let environment = askpassEnvironment(askpass, password: password)
 
         let deadline = Date().addingTimeInterval(timeout)
         var lastError = ""
@@ -37,5 +32,22 @@ public enum GuestSSH {
             try await Task.sleep(for: .seconds(5))
         }
         throw MacVMError.timeout("未能登录 \(bundle.name) 装入 SSH 公钥：\(lastError)")
+    }
+
+    /// 新建一个 SSH_ASKPASS 脚本，它输出 `askpassEnvironment` 放进环境的密码；调用方用完删除。
+    static func makeAskpass() throws -> URL {
+        let askpass = FileManager.default.temporaryDirectory.appending(path: "macvm-askpass-\(UUID().uuidString)")
+        try "#!/bin/sh\nprintf '%s\\n' \"$MACVM_GUEST_PASSWORD\"\n".write(to: askpass, atomically: true, encoding: .utf8)
+        chmod(askpass.path, 0o700)
+        return askpass
+    }
+
+    /// 让 ssh 不经终端、改由 `askpass` 回答密码提示的进程环境。
+    static func askpassEnvironment(_ askpass: URL, password: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["SSH_ASKPASS"] = askpass.path
+        environment["SSH_ASKPASS_REQUIRE"] = "force"
+        environment["MACVM_GUEST_PASSWORD"] = password
+        return environment
     }
 }
