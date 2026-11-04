@@ -40,7 +40,15 @@
 
 ## 安装
 
-目前需要从源码构建，步骤见[从源码构建](#从源码构建)。构建出的 `dist/MacVM.app` 拖进「应用程序」即可使用，命令行工具 `macvm` 在 App 包内的 `Contents/Resources/bin/macvm`。
+1. 从 [Releases](https://github.com/macvm-dev/macvm/releases/latest) 下载最新的 `MacVM-<版本>.dmg`。
+2. 打开 DMG，把 `MacVM.app` 拖到「应用程序」。App 已经过 Apple 公证，可以直接打开。
+3. （可选）把命令行工具 `macvm` 加到 PATH：
+
+   ```sh
+   sudo mkdir -p /usr/local/bin && sudo ln -sf /Applications/MacVM.app/Contents/Resources/bin/macvm /usr/local/bin/macvm
+   ```
+
+想自己编译，见[从源码构建](#从源码构建)。
 
 ## 快速上手
 
