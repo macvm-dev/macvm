@@ -5,7 +5,8 @@ CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 # swift build 链接时不把 SDK 路径交给 clang，二进制记下的 SDK 版本会退成部署目标，
 # 系统据此按旧版外观（兼容模式）显示 App；显式传 -isysroot 让它记成实际使用的 SDK。
-SWIFT_FLAGS   := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(shell xcrun --sdk macosx --show-sdk-path)
+SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
+SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
 .PHONY: build sign test lint agent boot qemu app release clean
 

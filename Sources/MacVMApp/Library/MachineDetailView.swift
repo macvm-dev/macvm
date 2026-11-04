@@ -86,14 +86,8 @@ struct MachineDetailView: View {
                 .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 4) {
                 Text(vm.name).font(.title2.weight(.semibold)).lineLimit(1)
-                HStack(spacing: 6) {
-                    StateBadge(state: vm.state)
-                    Text("·").foregroundStyle(.tertiary)
-                    Text(model.activity[vm.name]?.text ?? vm.os.label)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .font(.callout)
+                StatusLine(state: vm.state, os: vm.os, activity: model.activity[vm.name])
+                    .font(.callout)
             }
             Spacer(minLength: 12)
             controls(config)
@@ -159,14 +153,21 @@ struct MachineDetailView: View {
     }
 }
 
-/// 状态圆点加文字；停止时圆点为灰色。
-struct StateBadge: View {
+/// 状态圆点、状态文字，后接进行中任务的进度，没有任务时接系统名。
+/// 进度只在这里读，进度更新时不重算整个详情页。
+struct StatusLine: View {
     let state: VMSummary.State
+    let os: GuestOS
+    let activity: AppModel.Activity?
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Circle().fill(state.color).frame(width: 7, height: 7)
             Text(state.label).foregroundStyle(.secondary)
+            Text("·").foregroundStyle(.tertiary)
+            Text(activity?.text ?? os.label)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }
