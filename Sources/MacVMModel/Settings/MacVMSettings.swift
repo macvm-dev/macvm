@@ -7,10 +7,13 @@ public struct MacVMSettings: Codable, Sendable, Equatable {
     public var libraryPath: String?
     /// 下载缓存目录。
     public var downloadPath: String?
+    /// 模板目录。
+    public var templatePath: String?
 
-    public init(libraryPath: String? = nil, downloadPath: String? = nil) {
+    public init(libraryPath: String? = nil, downloadPath: String? = nil, templatePath: String? = nil) {
         self.libraryPath = libraryPath
         self.downloadPath = downloadPath
+        self.templatePath = templatePath
     }
 
     public static var fileURL: URL {
@@ -33,6 +36,9 @@ public struct MacVMSettings: Codable, Sendable, Equatable {
 
     /// 本设置下实际生效的下载缓存目录。
     public var downloadRoot: URL { Self.directory(downloadPath) ?? DownloadCache.defaultRoot }
+
+    /// 本设置下实际生效的模板目录。
+    public var templateRoot: URL { Self.directory(templatePath) ?? TemplateLibrary.defaultRoot }
 
     static func directory(_ path: String?) -> URL? {
         guard let path, !path.isEmpty else { return nil }

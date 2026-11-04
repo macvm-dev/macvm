@@ -26,10 +26,21 @@ struct SettingsView: View {
                             editable: model.canChangeLibrary) { model.setLibraryPath($0) }
                 LocationRow(title: "下载", url: model.settings.downloadRoot, isCustom: model.settings.downloadPath != nil,
                             editable: model.canChangeDownloads) { model.setDownloadPath($0) }
+                LocationRow(title: "模板", url: model.templateLibrary.root, isCustom: model.settings.templatePath != nil,
+                            editable: model.canChangeTemplates) { model.setTemplatePath($0) }
             } header: {
                 Text("位置")
             } footer: {
                 footer(locationFooter)
+            }
+            Section {
+                ForEach(model.templates, id: \.name) { TemplateRow(template: $0) }
+            } header: {
+                Text("模板")
+            } footer: {
+                footer(model.templates.isEmpty
+                       ? "在虚拟机的「更多操作」里选「存为模板…」，之后新建虚拟机时可从模板创建。"
+                       : "从模板新建的虚拟机获得新的机器标识与 MAC；删除模板不影响由它新建的虚拟机。")
             }
             Section {
                 Toggle("把虚拟机加入 ~/.ssh/config", isOn: Binding(get: { model.sshIncluded }, set: { model.setSSHIncluded($0) }))
@@ -41,7 +52,10 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 460)
-        .onAppear { model.refreshSSHIncluded() }
+        .onAppear {
+            model.refreshSSHIncluded()
+            model.refreshTemplates()
+        }
     }
 
     /// 分组表单的说明文字默认是正文色、右对齐，改成次要色左对齐的小字。
@@ -55,7 +69,7 @@ struct SettingsView: View {
     private var locationFooter: String {
         if VMLibrary.environmentRoot != nil { return "虚拟机目录由环境变量 MACVM_HOME 指定。" }
         if !model.canChangeLibrary { return "有虚拟机运行或正在创建时不能更改虚拟机目录。" }
-        if !model.canChangeDownloads { return "正在下载或安装时不能更改下载目录。" }
+        if !model.canChangeDownloads { return "正在下载、安装或存模板时不能更改下载目录与模板目录。" }
         return "更改后不会搬动已有文件，命令行同样生效。"
     }
 
@@ -63,6 +77,47 @@ struct SettingsView: View {
         LabeledContent(title) {
             Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle").foregroundStyle(ok ? .green : .secondary)
         }
+    }
+}
+
+/// 一个模板：名称、系统与资源，悬停时出现删除按钮。
+private struct TemplateRow: View {
+    @Environment(AppModel.self) private var model
+    let template: TemplateSummary
+    @State private var hovering = false
+    @State private var confirmingDelete = false
+
+    var body: some View {
+        LabeledContent {
+            Button { confirmingDelete = true } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .help("删除模板")
+        } label: {
+            Label {
+                Text(template.name)
+                Text(detail)
+            } icon: {
+                Image(systemName: template.os.symbol)
+            }
+        }
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: template.path)]) }
+            Button("删除…", role: .destructive) { confirmingDelete = true }
+        }
+        .confirmationDialog("删除模板「\(template.name)」？", isPresented: $confirmingDelete) {
+            Button("删除", role: .destructive) { model.deleteTemplate(template.name) }
+        } message: {
+            Text("由它新建的虚拟机不受影响。")
+        }
+    }
+
+    private var detail: String {
+        var parts = [template.os.label, "\(template.cpuCount) 核", DisplaySize.format(template.memorySize)]
+        if let disk = template.diskSize { parts.append("磁盘 " + DisplaySize.format(disk)) }
+        return parts.joined(separator: " · ")
     }
 }
 

@@ -14,6 +14,7 @@ public enum MacVMError: Error, Sendable, Equatable {
     case io(String)
     case engine(String)
     case snapshotNotFound(String)
+    case templateNotFound(String)
 
     public var code: String {
         switch self {
@@ -28,6 +29,7 @@ public enum MacVMError: Error, Sendable, Equatable {
         case .io: "io"
         case .engine: "engine"
         case .snapshotNotFound: "snapshot_not_found"
+        case .templateNotFound: "template_not_found"
         }
     }
 
@@ -44,16 +46,18 @@ public enum MacVMError: Error, Sendable, Equatable {
         case .io: 18
         case .engine: 19
         case .snapshotNotFound: 20
+        case .templateNotFound: 21
         }
     }
 
     public var message: String {
         switch self {
         case .vmNotFound(let name): "虚拟机不存在：\(name)"
-        case .alreadyExists(let name): "虚拟机已存在：\(name)"
+        case .alreadyExists(let name): "已存在：\(name)"
         case .alreadyRunning(let name): "虚拟机已在运行：\(name)"
         case .notRunning(let name): "虚拟机未运行：\(name)"
         case .snapshotNotFound(let what): "快照不存在：\(what)"
+        case .templateNotFound(let name): "模板不存在：\(name)"
         case .invalidConfig(let m), .unsupported(let m), .entitlementMissing(let m),
              .timeout(let m), .io(let m), .engine(let m): m
         }
@@ -65,12 +69,13 @@ extension MacVMError {
     public static let catalog: [MacVMError] = [
         .vmNotFound(""), .alreadyExists(""), .alreadyRunning(""), .notRunning(""), .invalidConfig(""),
         .unsupported(""), .entitlementMissing(""), .timeout(""), .io(""), .engine(""), .snapshotNotFound(""),
+        .templateNotFound(""),
     ]
 
     public var summary: String {
         switch self {
         case .vmNotFound: "虚拟机不存在"
-        case .alreadyExists: "虚拟机已存在"
+        case .alreadyExists: "同名虚拟机或模板已存在"
         case .alreadyRunning: "虚拟机已在运行"
         case .notRunning: "虚拟机未运行"
         case .invalidConfig: "配置或参数无效"
@@ -80,6 +85,7 @@ extension MacVMError {
         case .io: "文件或 socket 读写失败"
         case .engine: "Virtualization.framework 报错"
         case .snapshotNotFound: "快照不存在"
+        case .templateNotFound: "模板不存在"
         }
     }
 }

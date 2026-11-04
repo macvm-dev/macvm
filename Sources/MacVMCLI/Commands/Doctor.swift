@@ -24,6 +24,7 @@ struct Doctor: AsyncParsableCommand {
         \(mark(c.saveRestore)) 挂起恢复
         虚拟机目录：\(c.libraryPath)
         下载目录：\(c.downloadPath)
+        模板目录：\(c.templatePath)
         """
     }
 }

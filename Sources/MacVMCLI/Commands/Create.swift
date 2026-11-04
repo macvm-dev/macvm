@@ -16,6 +16,8 @@ struct Create: AsyncParsableCommand {
           macvm create desk --desktop ubuntu-desktop
         安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。
           macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso
+        模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--network、--engine。
+          macvm create dev2 --template dev-base
         """
     )
 
@@ -24,8 +26,13 @@ struct Create: AsyncParsableCommand {
     @Argument(help: "虚拟机名称（字母、数字、. _ -，最长 40）。")
     var name: String
 
-    @Option(help: "客户机系统：linux、windows、macos。")
-    var os: GuestOS = .linux
+    @Option(name: .customLong("os"), help: "客户机系统：linux（默认）、windows、macos。")
+    var osOption: GuestOS?
+
+    var os: GuestOS { osOption ?? .linux }
+
+    @Option(help: "从模板新建（见 macvm template）。")
+    var template: String?
 
     @Option(name: .customLong("cpus"), help: "vCPU 数，默认 4，且不超过主机核数。")
     var cpuCount: Int?
@@ -57,8 +64,8 @@ struct Create: AsyncParsableCommand {
     @Option(help: "共享目录：主机路径[:tag][:ro]，可重复。")
     var share: [String] = []
 
-    @Option(help: "网络：nat 或 bridged[:网卡名]。")
-    var network: String = "nat"
+    @Option(help: "网络：nat（默认）或 bridged[:网卡名]。")
+    var network: String?
 
     @Flag(help: "Linux：挂载 Rosetta，运行 x86_64 程序。")
     var rosetta = false
@@ -83,6 +90,7 @@ struct Create: AsyncParsableCommand {
 
     func run() async throws {
         try await Output.run(json: global.json, human: { (s: VMSummary) in "已创建 \(s.name)：\(s.path)" }) {
+            if let template { return try await createFromTemplate(template) }
             if let user { try GuestAccount.validate(user: user) }
             if let password { try GuestAccount.validate(password: password) }
             guard os.usesEFI else {
@@ -90,7 +98,7 @@ struct Create: AsyncParsableCommand {
             }
             if os == .windows {
                 if image != nil || desktop != nil { throw MacVMError.invalidConfig("--image 与 --desktop 只用于 Linux 客户机") }
-                if network != "nat" { throw MacVMError.invalidConfig("Windows 用 NAT 网络安装，装好后再用 macvm set --network 改") }
+                if let network, network != "nat" { throw MacVMError.invalidConfig("Windows 用 NAT 网络安装，装好后再用 macvm set --network 改") }
                 return try await createWindows()
             }
             if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
@@ -101,7 +109,7 @@ struct Create: AsyncParsableCommand {
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
-                installMedia: installMedia, network: try Self.parseNetwork(network),
+                installMedia: installMedia, network: try Self.parseNetwork(network ?? "nat"),
                 shares: try share.map(Self.parseShare).map {
                     ShareConfig(hostPath: $0.hostPath, tag: $0.tag ?? URL(filePath: $0.hostPath).lastPathComponent, readOnly: $0.readOnly)
                 }, rosetta: rosetta, serialConsole: console,
@@ -121,6 +129,31 @@ struct Create: AsyncParsableCommand {
             if options.autoinstalls { try await installUbuntu(bundle) }
             return try VMStatus.summary(of: bundle)
         }
+    }
+
+    private func createFromTemplate(_ name: String) async throws -> VMSummary {
+        let conflicting: [(String, Bool)] = [
+            ("--image", image != nil), ("--desktop", desktop != nil), ("--manual-install", manualInstall), ("--user", user != nil),
+            ("--password", password != nil), ("--iso", !installMedia.isEmpty), ("--share", !share.isEmpty), ("--rosetta", rosetta),
+            ("--headless", headless != nil), ("--virtio-win", virtioWin != nil), ("--product-key", productKey != nil),
+            ("--no-install", noInstall), ("--console", console),
+        ]
+        if let option = conflicting.first(where: \.1)?.0 {
+            throw MacVMError.invalidConfig("\(option) 不能与 --template 同用：系统、账户与设备都沿用模板")
+        }
+        let template = try TemplateLibrary.default.template(named: name)
+        if let osOption, osOption != (try template.loadConfig()).os {
+            throw MacVMError.invalidConfig("模板 \(name) 不是 \(osOption.rawValue) 客户机")
+        }
+        let network = try network.map(Self.parseNetwork)
+        let bundle = try await VMTemplate.instantiate(
+            template, as: self.name, cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse)
+        ) { config in
+            if let network { config.setNetwork(network.mode, interface: network.interface) }
+            if let engine { try config.switchEngine(to: engine) }
+        }
+        SSHConfigCommand.refresh()
+        return try VMStatus.summary(of: bundle)
     }
 
     private func installUbuntu(_ bundle: VMBundle) async throws {

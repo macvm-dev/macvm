@@ -18,6 +18,7 @@ public struct HostCapabilities: Codable, Sendable {
     public let saveRestore: Bool
     public let libraryPath: String
     public let downloadPath: String
+    public let templatePath: String
 
     /// 网络辅助程序已启用、获允许并在响应。会等它回应，不要在主线程调用。
     public static func networkHelperRunning() -> Bool { BridgeSession.ping() != nil }
@@ -37,7 +38,8 @@ public struct HostCapabilities: Codable, Sendable {
             bridgeInterfaces: NetworkAttachments.bridgeableInterfaces,
             saveRestore: true,
             libraryPath: VMLibrary.default.root.path,
-            downloadPath: DownloadCache.root.path
+            downloadPath: DownloadCache.root.path,
+            templatePath: TemplateLibrary.default.root.path
         )
     }
 }

@@ -53,3 +53,25 @@ public struct VMSummary: Codable, Sendable, Equatable {
         self.ipAddress = ipAddress
     }
 }
+
+/// `macvm template ls` 中单个模板的视图。
+public struct TemplateSummary: Codable, Sendable, Equatable {
+    public let name: String
+    public let os: GuestOS
+    public let engine: Engine
+    public let cpuCount: Int
+    public let memorySize: UInt64
+    /// 系统盘容量；读不到时为 nil。
+    public let diskSize: UInt64?
+    public let path: String
+
+    public init(name: String, os: GuestOS, engine: Engine, cpuCount: Int, memorySize: UInt64, diskSize: UInt64?, path: String) {
+        self.name = name
+        self.os = os
+        self.engine = engine
+        self.cpuCount = cpuCount
+        self.memorySize = memorySize
+        self.diskSize = diskSize
+        self.path = path
+    }
+}

@@ -25,20 +25,25 @@
 | `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand |
 | `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名即虚拟机名 |
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
+| `template save <虚拟机> [<模板>]` / `template ls` / `template rm <模板>` | 把已关机的虚拟机存为模板（模板名缺省与虚拟机同名；运行中报 `already_running`，挂起时报 `invalid_config`；不含快照）/ 列出模板，结果为 `TemplateSummary` 数组（`name`、`os`、`engine`、`cpuCount`、`memorySize`、`diskSize`、`path`）/ 删除模板。找不到模板报 `template_not_found` |
+| `create <名> --template <模板> [--os 系统] [--cpus N] [--memory 8G] [--disk 128G] [--network nat\|bridged[:网卡]] [--engine vz\|qemu]` | 从模板新建任何系统的虚拟机（含 macOS）：复制模板的磁盘、配置、客户机密码与代理令牌，换新的机器标识与 MAC，云镜像建的 Linux 以新主机名重新初始化；`--disk` 只能比模板的大；给了 `--os` 而与模板不符时报 `invalid_config`；不能与 `--image`、`--desktop`、`--iso`、`--user`、`--password` 等决定系统与账户的选项同用 |
 | `tune <名> [--skip 项]… [--revert] [--password 密码]` | 经 SSH 调整 macOS 客户机设置以降低空闲占用，项为 `spotlight`、`sleep`、`screensaver`、`updates`、`animations`、`transparency`；其中 `spotlight`、`sleep`、`updates` 要 root，用包内的客户机密码 sudo。结果为 `{applied, failed, reverted}`，单项失败只记进 `failed`，sudo 认证失败才整体报错；`--revert` 恢复系统默认 |
 | `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU） |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
 
 ## 目录
 
-虚拟机目录与下载目录在 App 设置里更改，存在 `~/Library/Application Support/MacVM/settings.json`（字段 `libraryPath`、`downloadPath`，缺省即默认），CLI 读同一个文件。
+虚拟机目录、下载目录与模板目录在 App 设置里更改，存在 `~/Library/Application Support/MacVM/settings.json`（字段 `libraryPath`、`downloadPath`、`templatePath`，缺省即默认），CLI 读同一个文件。
 
 | 目录 | 默认 | 覆盖顺序 |
 | --- | --- | --- |
 | 虚拟机 | `~/Library/Application Support/MacVM/VMs` | 环境变量 `MACVM_HOME` > `libraryPath` > 默认 |
 | 下载（`ipsw/`、`images/`、`iso/`、`windows/`、`virtio-win/`） | `~/Library/Caches/MacVM` | `downloadPath` > 默认 |
+| 模板 | `~/Library/Application Support/MacVM/Templates` | `templatePath` > 默认 |
 
-`doctor --json` 的结果里有 `libraryPath` 与 `downloadPath`，是当前实际生效的位置。
+模板目录与虚拟机目录在同一 APFS 卷上时，存模板与从模板新建都是零拷贝；不在同一卷时整盘复制。
+
+`doctor --json` 的结果里有 `libraryPath`、`downloadPath` 与 `templatePath`，是当前实际生效的位置。
 
 ## 引擎
 

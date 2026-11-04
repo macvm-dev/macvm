@@ -90,9 +90,13 @@ final class AppModel {
     private var refreshGeneration = 0
     private(set) var library = VMLibrary.default
     private(set) var settings = MacVMSettings.load()
+    private(set) var templateLibrary = TemplateLibrary.default
+    /// CLI 也会增删模板，不随虚拟机列表轮询；显示模板的界面出现时调 `refreshTemplates`。
+    private(set) var templates: [TemplateSummary] = []
 
     init() {
         refresh()
+        refreshTemplates()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
@@ -404,6 +408,9 @@ final class AppModel {
     /// 下载中改目录会让下载完的镜像落在旧目录、新目录里找不到。
     var canChangeDownloads: Bool { activity.isEmpty }
 
+    /// 存模板、从模板新建都在 `activity` 里，进行中改目录会让模板存到旧目录、或找不到要复制的模板。
+    var canChangeTemplates: Bool { activity.isEmpty }
+
     /// `url` 为 nil 时恢复默认位置。
     func setLibraryPath(_ url: URL?) {
         guard canChangeLibrary, updateSettings({ $0.libraryPath = url?.path }) else { return }
@@ -418,6 +425,13 @@ final class AppModel {
         updateSettings { $0.downloadPath = url?.path }
     }
 
+    /// `url` 为 nil 时恢复默认位置。
+    func setTemplatePath(_ url: URL?) {
+        guard canChangeTemplates, updateSettings({ $0.templatePath = url?.path }) else { return }
+        templateLibrary = .default
+        refreshTemplates()
+    }
+
     @discardableResult
     private func updateSettings(_ change: (inout MacVMSettings) -> Void) -> Bool {
         var next = settings
@@ -430,6 +444,34 @@ final class AppModel {
             report(error)
             return false
         }
+    }
+
+    // MARK: - 模板
+
+    func refreshTemplates() {
+        let list = VMTemplate.summaries(in: templateLibrary)
+        if list != templates { templates = list }
+    }
+
+    func template(_ name: String) -> TemplateSummary? { templates.first { $0.name == name } }
+
+    /// 跨卷时要整盘复制，期间虚拟机显示进度、不能开机或修改。
+    func saveTemplate(_ name: String, as templateName: String) async {
+        setActivity(name, "正在存为模板…")
+        defer {
+            setActivity(name, nil)
+            refreshTemplates()
+        }
+        do {
+            let bundle = try library.bundle(named: name)
+            try requireStopped(bundle)
+            _ = try await VMTemplate.save(bundle, as: templateName, in: templateLibrary)
+        } catch { report(error) }
+    }
+
+    func deleteTemplate(_ name: String) {
+        do { try VMTemplate.delete(named: name, in: templateLibrary) } catch { report(error) }
+        refreshTemplates()
     }
 
     // MARK: - SSH
@@ -487,7 +529,7 @@ final class AppModel {
                 try? FileManager.default.removeItem(at: VMBundle(url: library.bundleURL(named: name)).creationMarkerURL)
                 SSHConfig.refreshIfInstalled(library: library, macvmPath: CLILocation.path)
                 selection = name
-                if request.os == .macOS { installSSHKeyOnFirstBoot(name, openMachineWindow: openMachineWindow) }
+                if request.os == .macOS, request.source.template == nil { installSSHKeyOnFirstBoot(name, openMachineWindow: openMachineWindow) }
             } catch {
                 if Task.isCancelled {
                     cleanUpCancelled(request)
@@ -593,6 +635,13 @@ final class AppModel {
         let name = r.name, token = r.id.uuidString
         let memory = UInt64(r.memoryGB) << 30, disk = UInt64(r.diskGB) << 30
         switch (r.os, r.source) {
+        case (_, .template(let templateName)):
+            setActivity(name, "正在从模板创建…")
+            let template = try templateLibrary.template(named: templateName)
+            // 表单里模板的磁盘按 GB 向上取整显示，没调大时不扩。
+            let currentGB = (try DiskImage.allocatedSize(at: template.diskURL).logical + (1 << 30) - 1) >> 30
+            _ = try await VMTemplate.instantiate(template, as: name, in: library, cpuCount: r.cpus, memorySize: memory,
+                                                 diskSize: UInt64(r.diskGB) > currentGB ? disk : nil, creationToken: token)
         case (.macOS, _):
             let options = MacOSInstaller.Options(name: name, source: r.file.map { .file($0) } ?? .latest,
                                                  cpuCount: r.cpus, memorySize: memory, diskSize: disk, user: r.user ?? NSUserName(), password: r.password,

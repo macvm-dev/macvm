@@ -10,6 +10,8 @@ struct MachineDetailView: View {
     @State private var confirmingDelete = false
     @State private var cloneName = ""
     @State private var showingClone = false
+    @State private var templateName = ""
+    @State private var showingSaveTemplate = false
     /// 磁盘镜像的容量与实际占用；读文件系统，不放在 body 里每次重绘都算。
     @State private var diskSize: (logical: UInt64, physical: UInt64)?
     @State private var growingDisk = false
@@ -124,6 +126,13 @@ struct MachineDetailView: View {
             Button("克隆") { Task { await model.clone(vm.name, as: cloneName) } }
             Button("取消", role: .cancel) {}
         }
+        .alert("存为模板", isPresented: $showingSaveTemplate) {
+            TextField("模板名称", text: $templateName)
+            Button("存为模板") { Task { await model.saveTemplate(vm.name, as: templateName) } }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("快照不随模板保存。新建虚拟机时可从模板创建。")
+        }
     }
 
     /// 硬件与共享目录只在关机时可改，挂起或有进行中的任务（创建、安装）时也不行。
@@ -214,6 +223,8 @@ struct MachineDetailView: View {
             Menu {
                 Button("克隆…") { cloneName = vm.name + "-copy"; showingClone = true }
                     .disabled(vm.state == .running)
+                Button("存为模板…") { templateName = vm.name; showingSaveTemplate = true }
+                    .disabled(!editable)
                 Button("在 Finder 中显示") { revealInFinder() }
                 Divider()
                 Button("删除…", role: .destructive) { confirmingDelete = true }

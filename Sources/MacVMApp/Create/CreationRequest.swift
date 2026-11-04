@@ -11,9 +11,15 @@ struct CreationRequest: Codable, Sendable, Equatable {
         case iso, ipswLatest, ipswFile
         /// 从微软下载 Windows ISO。
         case windowsLatest
+        /// 模板名。
+        case template(String)
 
         var isCloudImage: Bool {
             if case .cloudImage = self { true } else { false }
+        }
+
+        var template: String? {
+            if case .template(let name) = self { name } else { nil }
         }
     }
 

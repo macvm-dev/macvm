@@ -3,10 +3,12 @@ public import MacVMModel
 
 public enum VMClone {
     /// 源虚拟机须已停止。挂起状态不复制：它绑定源机器的标识与网卡，换了标识后无法恢复。
-    public static func clone(_ source: VMBundle, as name: String, in library: VMLibrary = .default) async throws -> VMBundle {
+    /// `customize` 在新包的文件都就位、配置保存前调用；它抛错时新包整个删掉。
+    public static func clone(_ source: VMBundle, as name: String, in library: VMLibrary = .default, creationToken: String? = nil,
+                             customize: (inout VMConfig, VMBundle) throws -> Void = { _, _ in }) async throws -> VMBundle {
         if BundleLock.holder(of: source) != nil { throw MacVMError.alreadyRunning(source.name) }
         var config = try source.loadConfig()
-        return try await VMFactory.withNewBundle(named: name, in: library) { target in
+        return try await VMFactory.withNewBundle(named: name, in: library, creationToken: creationToken) { target in
             for file in BundleFiles.stateFiles(of: source, config: config) {
                 try Clone.file(from: source.url.appending(path: file), to: target.url.appending(path: file))
             }
@@ -27,6 +29,7 @@ public enum VMClone {
                                              agentBinary: nil)
                 try await CloudInit.writeSeed(seed, instanceID: UUID().uuidString, in: target)
             }
+            try customize(&config, target)
             try target.saveConfig(config)
             return target
         }

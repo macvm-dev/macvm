@@ -11,7 +11,7 @@ struct MacVM: AsyncParsableCommand {
         version: "0.1.0",
         subcommands: [
             Create.self, InstallMacOS.self, Set.self, List.self, Run.self, Start.self, Stop.self, Suspend.self,
-            Status.self, IP.self, Wait.self, Screenshot.self, Display.self, CloneCommand.self, SnapshotCommand.self,
+            Status.self, IP.self, Wait.self, Screenshot.self, Display.self, CloneCommand.self, SnapshotCommand.self, TemplateCommand.self,
             Exec.self, SSH.self, Proxy.self, SSHConfigCommand.self, Agent.self, Tune.self,
             Delete.self, Doctor.self,
         ]
@@ -31,7 +31,7 @@ private let discussion: String = {
     \(rows.joined(separator: "\n"))
       64  命令行用法错误
 
-    虚拟机目录与下载目录可在 App 设置里更改（存在 ~/Library/Application Support/MacVM/settings.json，CLI 同样遵循）；
+    虚拟机目录、下载目录与模板目录可在 App 设置里更改（存在 ~/Library/Application Support/MacVM/settings.json，CLI 同样遵循）；
     环境变量 MACVM_HOME 优先于设置里的虚拟机目录。
     """
 }()

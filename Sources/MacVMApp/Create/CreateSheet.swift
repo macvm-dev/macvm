@@ -48,8 +48,8 @@ struct CreateSheet: View {
                 Section("资源") {
                     NumberField(title: "CPU", unit: "核", value: $cpus, invalid: invalid("CPU"), range: ResourceRange.cpuCount)
                     NumberField(title: "内存", unit: "GB", value: $memoryGB, invalid: invalid("内存"), range: ResourceRange.memoryGB)
-                    NumberField(title: "磁盘", unit: "GB（按实际写入占用）", value: $diskGB, invalid: invalid("磁盘"), range: 16...2048, step: 16)
-                    if os == .linux { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
+                    NumberField(title: "磁盘", unit: "GB（按实际写入占用）", value: $diskGB, invalid: invalid("磁盘"), range: diskRange, step: 16)
+                    if os == .linux, template == nil { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
                 }
                 if setsPassword {
                     Section {
@@ -79,7 +79,7 @@ struct CreateSheet: View {
                             .font(.caption).foregroundStyle(problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
                     }
                 }
-                if os == .windows {
+                if os == .windows, template == nil {
                     TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
                     Text(!hasQEMU
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
@@ -99,6 +99,8 @@ struct CreateSheet: View {
         }
         .frame(width: 520)
         .onChange(of: os) { _, os in resetDefaults(for: os) }
+        .onChange(of: source) { _, _ in applyTemplateResources() }
+        .onAppear { model.refreshTemplates() }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: allowedTypes) { result in
             file = try? result.get()
         }
@@ -111,6 +113,7 @@ struct CreateSheet: View {
                 ForEach(LinuxImage.catalog, id: \.id) { Text("\($0.title)（云镜像，免安装）").tag(Source.cloudImage($0.id)) }
                 ForEach(LinuxDesktop.allCases, id: \.self) { Text("\($0.title)（下载安装盘）").tag(Source.desktop($0.rawValue)) }
                 Text("安装 ISO…").tag(Source.iso)
+                templateOptions
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
@@ -131,6 +134,7 @@ struct CreateSheet: View {
             Picker("", selection: $source) {
                 Text("下载本机支持的最新版本").tag(Source.ipswLatest)
                 Text("本地 IPSW 文件…").tag(Source.ipswFile)
+                templateOptions
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
@@ -138,9 +142,14 @@ struct CreateSheet: View {
             Picker("", selection: $source) {
                 Text("从微软下载 Windows 11 ARM64").tag(Source.windowsLatest)
                 Text("本地 ISO 文件…").tag(Source.iso)
+                templateOptions
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+        }
+        if template != nil {
+            Text("复制模板的磁盘与设置，账户沿用模板里的；新虚拟机获得新的机器标识与 MAC。磁盘只能比模板的大。")
+                .font(.caption).foregroundStyle(.secondary)
         }
         if needsFile {
             HStack {
@@ -160,6 +169,28 @@ struct CreateSheet: View {
         }
     }
 
+    @ViewBuilder private var templateOptions: some View {
+        ForEach(model.templates.filter { $0.os == os }, id: \.name) { Text("模板：\($0.name)").tag(Source.template($0.name)) }
+    }
+
+    /// 选中的模板。
+    private var template: TemplateSummary? { source.template.flatMap(model.template) }
+
+    /// 模板的磁盘容量向上取整到 GB。
+    private var templateDiskGB: Int? {
+        template?.diskSize.map { Int(($0 + (1 << 30) - 1) >> 30) }
+    }
+
+    private var diskRange: ClosedRange<Int> { (templateDiskGB.map { max(16, $0) } ?? 16)...2048 }
+
+    /// 选了模板就把资源换成模板的配置。
+    private func applyTemplateResources() {
+        guard let template else { return }
+        cpus = min(template.cpuCount, ResourceRange.cpuCount.upperBound)
+        memoryGB = min(max(1, Int(template.memorySize >> 30)), ResourceRange.memoryGB.upperBound)
+        if let templateDiskGB { diskGB = max(templateDiskGB, diskRange.lowerBound) }
+    }
+
     /// 等浏览器把 Windows ISO 下载完；用户自己选了文件或换了系统就不再等。
     private func watchDownloads() async {
         guard let since = downloadRequestedAt else { return }
@@ -175,6 +206,7 @@ struct CreateSheet: View {
     /// 图形安装（Fedora 桌面版、ISO）的账户由安装程序设置。
     private var setsPassword: Bool {
         switch source {
+        case .template: false
         case .cloudImage: os == .linux
         case .desktop: desktop?.supportsUnattended == true && !manualInstall
         default: os == .macOS || os == .windows
@@ -205,9 +237,10 @@ struct CreateSheet: View {
 
     private var isValid: Bool {
         invalidFields.isEmpty && model.activity[finalName] == nil && (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
-            && (os != .windows || hasQEMU)
+            && (os != .windows || hasQEMU || template != nil)
+            && (source.template == nil || template != nil)
             && (!setsPassword || accountProblem == nil)
-            && (os != .windows || productKey.isEmpty || (try? WindowsInstaller.normalizeProductKey(productKey)) != nil)
+            && (os != .windows || template != nil || productKey.isEmpty || (try? WindowsInstaller.normalizeProductKey(productKey)) != nil)
     }
 
     private func resetDefaults(for os: GuestOS) {
@@ -224,7 +257,8 @@ struct CreateSheet: View {
 
     private func create() {
         let request = CreationRequest(name: finalName, os: os, source: source, cpus: cpus, memoryGB: memoryGB, diskGB: diskGB,
-                                      rosetta: rosetta, file: file, productKey: os == .windows && !productKey.isEmpty ? productKey : nil,
+                                      rosetta: template == nil && rosetta, file: file,
+                                      productKey: os == .windows && template == nil && !productKey.isEmpty ? productKey : nil,
                                       user: setsPassword && !user.isEmpty ? user : nil,
                                       password: setsPassword && !password.isEmpty ? password : nil,
                                       manualInstall: desktop?.supportsUnattended == true && manualInstall ? true : nil)
