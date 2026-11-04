@@ -5,6 +5,11 @@ public import MacVMModel
 public enum CloudInit {
     public static let seedFileName = "cidata.iso"
 
+    /// 种子盘一直挂着，cloud-init 每次开机都执行 `userData` 里的 growpart，系统盘扩容后根分区随之扩展。
+    public static func growsRootPartition(_ config: VMConfig) -> Bool {
+        config.disks.contains { $0.path == seedFileName }
+    }
+
     public struct Options: Sendable {
         public var hostname: String
         public var user: String

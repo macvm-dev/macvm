@@ -209,3 +209,68 @@ public struct ShareConfig: Codable, Sendable, Equatable {
         self.samePath = samePath
     }
 }
+
+extension ShareConfig {
+    /// virtio-fs tag 的最大字节数。
+    public static let maxTagBytes = 36
+
+    /// 由目录名生成 tag，与 `taken` 重复时加 `-2`、`-3`…，不超过 `maxTagBytes`。
+    /// macOS 客户机里 tag 是 `My Shared Files` 下的目录名，保留原名；Linux 客户机要在 mount 命令里输入，
+    /// 只留 ASCII 字母、数字与 `.`、`_`、`-`。
+    public static func tag(for hostPath: String, os: GuestOS, taken: Set<String>) -> String {
+        var base = URL(filePath: hostPath).lastPathComponent
+        if os != .macOS {
+            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+            base = String(String.UnicodeScalarView(base.unicodeScalars.map { allowed.contains($0) ? $0 : "-" }))
+            base = base.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        }
+        if base.isEmpty || base == "/" { base = "share" }
+        var n = 1
+        while true {
+            let suffix = n == 1 ? "" : "-\(n)"
+            let candidate = truncated(base, toBytes: maxTagBytes - suffix.utf8.count) + suffix
+            if !taken.contains(candidate) { return candidate }
+            n += 1
+        }
+    }
+
+    /// 按字符截断，不切开多字节字符。
+    private static func truncated(_ text: String, toBytes limit: Int) -> String {
+        var result = ""
+        for character in text {
+            guard result.utf8.count + String(character).utf8.count <= limit else { break }
+            result.append(character)
+        }
+        return result
+    }
+}
+
+extension VMConfig {
+    /// 共享目录只能用 VZ 引擎挂载，Windows 客户机没有 virtio-fs 驱动。
+    public var supportsShares: Bool { engine == .vz && os != .windows }
+
+    /// 添加共享目录；`tag` 为 nil 时由目录名生成。目录不存在、已共享，或 `tag` 已被占用、超长时报错。
+    public mutating func addShare(hostPath: String, tag: String? = nil, readOnly: Bool = false) throws {
+        guard supportsShares else { throw MacVMError.unsupported("\(name) 不支持共享目录：只有 VZ 引擎的 macOS、Linux 客户机可以") }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: hostPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw MacVMError.invalidConfig("共享目录不存在：\(hostPath)")
+        }
+        guard !shares.contains(where: { $0.hostPath == hostPath }) else { throw MacVMError.invalidConfig("已共享：\(hostPath)") }
+        let taken = Set(shares.map(\.tag))
+        if let tag {
+            guard !tag.isEmpty, tag.utf8.count <= ShareConfig.maxTagBytes else {
+                throw MacVMError.invalidConfig("共享名称应为 1 到 \(ShareConfig.maxTagBytes) 字节：\(tag)")
+            }
+            guard !taken.contains(tag) else { throw MacVMError.invalidConfig("共享名称已被占用：\(tag)") }
+        }
+        shares.append(ShareConfig(hostPath: hostPath, tag: tag ?? ShareConfig.tag(for: hostPath, os: os, taken: taken), readOnly: readOnly))
+    }
+
+    /// 按主机路径或 tag 移除共享目录，没有匹配的时报错。
+    public mutating func removeShare(_ pathOrTag: String) throws {
+        let before = shares.count
+        shares.removeAll { $0.hostPath == pathOrTag || $0.tag == pathOrTag }
+        guard shares.count < before else { throw MacVMError.invalidConfig("没有这个共享目录：\(pathOrTag)") }
+    }
+}

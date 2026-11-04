@@ -229,6 +229,34 @@ final class AppModel {
         updateConfig(name, requiresStopped: true) { $0.audio = on }
     }
 
+    func addShares(_ name: String, _ urls: [URL]) {
+        updateConfig(name, requiresStopped: true) { config in
+            for url in urls { try config.addShare(hostPath: url.standardizedFileURL.path) }
+        }
+    }
+
+    func removeShare(_ name: String, hostPath: String) {
+        updateConfig(name, requiresStopped: true) { $0.shares.removeAll { $0.hostPath == hostPath } }
+    }
+
+    func setShareReadOnly(_ name: String, hostPath: String, _ readOnly: Bool) {
+        updateConfig(name, requiresStopped: true) { config in
+            for i in config.shares.indices where config.shares[i].hostPath == hostPath { config.shares[i].readOnly = readOnly }
+        }
+    }
+
+    /// 只扩大系统盘镜像，客户机里的分区要另行扩展。
+    func growDisk(_ name: String, gigabytes: Int) {
+        defer { refresh() }
+        do {
+            let bundle = try library.bundle(named: name)
+            try requireStopped(bundle)
+            try DiskImage.grow(at: bundle.diskURL, to: UInt64(gigabytes) << 30)
+        } catch {
+            report(error)
+        }
+    }
+
     /// `runners` 覆盖本进程刚启动、锁的持有状态还没反映到界面的那一刻。
     private func requireStopped(_ bundle: VMBundle) throws {
         if runners[bundle.name] != nil { throw MacVMError.alreadyRunning(bundle.name) }

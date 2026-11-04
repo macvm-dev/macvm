@@ -168,6 +168,13 @@ struct WindowsUnattendTests {
         #expect(config.engine == .qemu)
     }
 
+    @Test func sharedLinuxCannotSwitchToQEMU() throws {
+        var config = VMConfig(name: "l", os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        try config.addShare(hostPath: "/usr/bin")
+        #expect(throws: MacVMError.self) { try config.switchEngine(to: .qemu) }
+        #expect(config.engine == .vz)
+    }
+
     @Test func encodedPowerShellIsUTF16LEBase64() throws {
         let script = "Write-Output '你好'\nexit 3"
         let command = AgentInstaller.encodedPowerShell(script)

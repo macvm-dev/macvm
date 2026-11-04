@@ -12,6 +12,7 @@ struct MachineDetailView: View {
     @State private var showingClone = false
     /// 磁盘镜像的容量与实际占用；读文件系统，不放在 body 里每次重绘都算。
     @State private var diskSize: (logical: UInt64, physical: UInt64)?
+    @State private var growingDisk = false
 
     var body: some View {
         let config = model.config(of: vm.name)
@@ -46,9 +47,14 @@ struct MachineDetailView: View {
                 }
                 if let diskSize {
                     LabeledContent("磁盘") {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(DisplaySize.format(diskSize.logical))
-                            Text("已占用 \(DisplaySize.format(diskSize.physical))").font(.caption).foregroundStyle(.tertiary)
+                        HStack(spacing: 10) {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(DisplaySize.format(diskSize.logical))
+                                Text("已占用 \(DisplaySize.format(diskSize.physical))").font(.caption).foregroundStyle(.tertiary)
+                            }
+                            if editable, config != nil {
+                                Button("扩容…") { growingDisk = true }.controlSize(.small)
+                            }
                         }
                     }
                 }
@@ -79,10 +85,16 @@ struct MachineDetailView: View {
                     }
                 }
             }
+            if let config, config.supportsShares || !config.shares.isEmpty {
+                SharesSection(vmName: vm.name, config: config, editable: editable)
+            }
             SnapshotsSection(vmName: vm.name, state: vm.state)
         }
         .formStyle(.grouped)
         .task(id: vm) { loadDiskSize(config) }
+        .sheet(isPresented: $growingDisk, onDismiss: { loadDiskSize(model.config(of: vm.name)) }) {
+            if let config, let diskSize { DiskGrowSheet(vmName: vm.name, config: config, currentSize: diskSize.logical) }
+        }
         .confirmationDialog("删除「\(vm.name)」？", isPresented: $confirmingDelete) {
             Button("删除", role: .destructive) { model.delete(vm.name) }
         } message: {
@@ -95,12 +107,12 @@ struct MachineDetailView: View {
         }
     }
 
-    /// 硬件只在关机时可改，挂起或有进行中的任务（创建、安装）时也不行。
+    /// 硬件与共享目录只在关机时可改，挂起或有进行中的任务（创建、安装）时也不行。
     private var editable: Bool { vm.state == .stopped && model.activity[vm.name] == nil }
 
     private var lockedReason: String? {
         switch vm.state {
-        case .running: "关机后可修改处理器、内存与声音。"
+        case .running: "关机后可修改处理器、内存、声音、磁盘容量与共享目录。"
         case .suspended: "已挂起：继续运行并关机后才能修改。"
         case .stopped: nil
         }

@@ -92,4 +92,40 @@ struct OutputContractTests {
         let data = try JSONEnvelope<R>.failure(.vmNotFound("x")).encoded()
         #expect(String(decoding: data, as: UTF8.self) == #"{"error":{"code":"vm_not_found","message":"虚拟机不存在：x"},"schemaVersion":1}"#)
     }
+
+    @Test func shareTagForLinuxIsASCIIAndUnique() {
+        #expect(ShareConfig.tag(for: "/Users/a/My 项目", os: .linux, taken: []) == "My")
+        #expect(ShareConfig.tag(for: "/Users/a/项目", os: .linux, taken: []) == "share")
+        #expect(ShareConfig.tag(for: "/Users/a/src", os: .linux, taken: ["src", "src-2"]) == "src-3")
+        let long = ShareConfig.tag(for: "/x/" + String(repeating: "a", count: 50), os: .linux, taken: [String(repeating: "a", count: 36)])
+        #expect(long == String(repeating: "a", count: 34) + "-2")
+    }
+
+    @Test func shareTagForMacOSKeepsNameWithinLimit() {
+        #expect(ShareConfig.tag(for: "/Users/a/项目", os: .macOS, taken: []) == "项目")
+        let tag = ShareConfig.tag(for: "/x/" + String(repeating: "项", count: 20), os: .macOS, taken: [])
+        #expect(tag.utf8.count <= ShareConfig.maxTagBytes)
+        #expect(tag == String(repeating: "项", count: 12))
+    }
+
+    @Test func addAndRemoveShares() throws {
+        var linux = VMConfig(name: "l", os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        try linux.addShare(hostPath: "/usr/bin")
+        try linux.addShare(hostPath: "/bin")
+        #expect(linux.shares.map(\.tag) == ["bin", "bin-2"])
+        #expect(throws: MacVMError.self) { try linux.addShare(hostPath: "/usr/bin") }
+        #expect(throws: MacVMError.self) { try linux.addShare(hostPath: "/usr/sbin", tag: "bin") }
+        #expect(throws: MacVMError.self) { try linux.addShare(hostPath: "/usr/sbin", tag: String(repeating: "a", count: 37)) }
+        #expect(throws: MacVMError.self) { try linux.addShare(hostPath: "/no/such/dir") }
+        try linux.addShare(hostPath: "/usr/sbin", tag: "tools", readOnly: true)
+        #expect(linux.shares.last == ShareConfig(hostPath: "/usr/sbin", tag: "tools", readOnly: true))
+
+        try linux.removeShare("tools")
+        try linux.removeShare("/bin")
+        #expect(linux.shares.map(\.tag) == ["bin"])
+        #expect(throws: MacVMError.self) { try linux.removeShare("tools") }
+
+        var windows = VMConfig(name: "w", os: .windows, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        #expect(throws: MacVMError.self) { try windows.addShare(hostPath: "/usr/bin") }
+    }
 }
