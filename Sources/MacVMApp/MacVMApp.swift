@@ -41,7 +41,7 @@ struct MacVMApp: App {
         }
 
         // 有虚拟机在创建、下载或安装时换个图标，菜单没打开也能看出来。
-        MenuBarExtra("MacVM", systemImage: model.activity.isEmpty ? "desktopcomputer" : "desktopcomputer.and.arrow.down",
+        MenuBarExtra("MacVM", systemImage: model.creatingNames.isEmpty ? "desktopcomputer" : "desktopcomputer.and.arrow.down",
                      isInserted: $showsMenuBarExtra) {
             StatusMenu()
                 .environment(model)

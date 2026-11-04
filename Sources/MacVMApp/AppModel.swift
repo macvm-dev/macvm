@@ -105,6 +105,7 @@ final class AppModel {
 
     private func apply(_ list: [VMSummary]) {
         if list != machines { machines = list }
+        for vm in list where vm.state != .running { clearStopping(vm.name) }
     }
 
     func summary(_ name: String) -> VMSummary? { machines.first { $0.name == name } }
@@ -115,6 +116,11 @@ final class AppModel {
     }
 
     func isRunningHere(_ name: String) -> Bool { runners[name] != nil }
+
+    /// 有创建、下载、安装或取消在进行的虚拟机名；等客户机关机不算。
+    var creatingNames: [String] {
+        activity.filter { $0.value.title != Self.stoppingTitle }.keys.sorted()
+    }
 
     /// 正在创建、还没出现在 `machines` 里的虚拟机名。
     var pendingCreations: [String] {
@@ -180,9 +186,28 @@ final class AppModel {
                 let bundle = try library.bundle(named: name)
                 try ControlClient.perform(.stop(force: force), on: bundle)
             }
+            if !force { showStopping(name) }
         } catch { report(error) }
         refresh()
     }
+
+    /// 正常关机要等客户机自己关，期间状态显示「正在关机」；停下或等满 `stoppingTimeout` 后撤掉。
+    /// 已有进行中的任务（如安装）时不覆盖它的进度。
+    private func showStopping(_ name: String) {
+        guard activity[name] == nil else { return }
+        setActivity(name, Self.stoppingTitle)
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.stoppingTimeout)
+            self?.clearStopping(name)
+        }
+    }
+
+    private func clearStopping(_ name: String) {
+        if activity[name]?.title == Self.stoppingTitle { setActivity(name, nil) }
+    }
+
+    private static let stoppingTitle = "正在关机…"
+    private static let stoppingTimeout: Duration = .seconds(90)
 
     func suspend(_ name: String) async {
         do {

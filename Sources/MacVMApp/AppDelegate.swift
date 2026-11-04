@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let busy = model.activity.keys.sorted()
+        let busy = model.creatingNames
         guard !busy.isEmpty else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = "\(busy.joined(separator: "、")) 还在创建，要退出吗？"

@@ -99,20 +99,73 @@ public final class VZRunner: NSObject, MachineRunner {
         return outcome
     }
 
-    /// 向客户机发送关机请求（相当于按电源键），客户机可能忽略。
-    /// Windows 收不到 VZ 的电源键事件，改在后台请客户机代理关机，没有代理时经 SSH 执行关机命令，都不行才按电源键。
+    /// 向客户机发送关机请求，客户机可能忽略。Linux 按电源键。
+    /// Windows 收不到 VZ 的电源键事件，macOS 收到也不关机：改在后台请客户机代理关机，
+    /// 没有代理时经 SSH 执行关机命令，都不行才按电源键。
     public func requestStop() throws {
         guard virtualMachine.canRequestStop else { throw MacVMError.notRunning(bundle.name) }
-        guard config.os == .windows, let mac = guestMAC else { return try pressPowerButton() }
-        let agent = config.guestAgent, user = config.guestUser
-        Task.detached { [weak self] in
-            if let ip = DHCPLeases.ipAddress(forMAC: mac) {
-                if agent, Self.callAgent(ip, .shutdown(reboot: false)) { return }
-                if let user, Self.sshShutdown(user: user, ip: ip) { return }
+        switch config.os {
+        case .linux:
+            try pressPowerButton()
+        case .windows:
+            guard let mac = guestMAC else { return try pressPowerButton() }
+            let agent = config.guestAgent, user = config.guestUser
+            Task.detached { [weak self] in
+                if let ip = DHCPLeases.ipAddress(forMAC: mac) {
+                    if agent, Self.callAgent(ip, .shutdown(reboot: false)) { return }
+                    if let user, Self.sshShutdown(user: user, ip: ip) { return }
+                }
+                try? await self?.pressPowerButton()
             }
-            try? await self?.pressPowerButton()
+        case .macOS:
+            Task { [weak self] in
+                guard let self, await !shutdownMacOSGuest() else { return }
+                try? pressPowerButton()
+            }
         }
     }
+
+    /// 经 vsock 请代理关机；没有代理时经 SSH 用包内保存的客户机密码 sudo 关机。返回客户机是否接受。
+    private func shutdownMacOSGuest() async -> Bool {
+        if config.guestAgent, let connection = try? await connectToGuest(port: AgentProtocol.port) {
+            let held = Unchecked(value: connection)
+            defer { held.value.close() }
+            // `UnixSocket` 用完会关掉自己的 fd，交给它一份副本，连接本身由 `held` 关闭。
+            let fd = dup(connection.fileDescriptor)
+            if fd >= 0, await Task.detached(operation: {
+                AgentClient.call(.shutdown(reboot: false), over: UnixSocket(fd: fd), timeout: 3)
+            }).value {
+                return true
+            }
+        }
+        guard let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle) else { return false }
+        return await Task.detached { Self.sshSudoShutdown(user: user, ip: ip, password: password) }.value
+    }
+
+    /// sudo 认证通过后在客户机后台延迟一秒关机，ssh 先正常退出；返回 sudo 是否成功。
+    nonisolated private static func sshSudoShutdown(user: String, ip: String, password: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/ssh")
+        let remote = #"sudo -S -p '' /bin/sh -c 'nohup /bin/sh -c "sleep 1; /sbin/shutdown -h now" >/dev/null 2>&1 &'"#
+        process.arguments = ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: nil)
+            + ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "\(user)@\(ip)", remote]
+        let stdin = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+        guard (try? process.run()) != nil else { return false }
+        stdin.fileHandleForWriting.write(Data((password + "\n").utf8))
+        try? stdin.fileHandleForWriting.close()
+        guard exited.wait(timeout: .now() + sshShutdownTimeout) == .success else {
+            process.terminate()
+            return false
+        }
+        return process.terminationStatus == 0
+    }
+
+    nonisolated private static let sshShutdownTimeout: TimeInterval = 20
 
     private func pressPowerButton() throws {
         do { try virtualMachine.requestStop() } catch {
