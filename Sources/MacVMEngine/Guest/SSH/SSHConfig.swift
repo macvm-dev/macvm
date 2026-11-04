@@ -63,6 +63,30 @@ public enum SSHConfig {
         return text.split(separator: "\n").contains { $0.trimmingCharacters(in: .whitespaces) == includeLine }
     }
 
+    /// 从 `~/.ssh/config` 删掉 `installInclude` 加的那一行，其余内容原样保留。
+    public static func removeInclude() throws {
+        guard let text = try? String(contentsOf: userConfigURL, encoding: .utf8) else { return }
+        let updated = removingInclude(from: text)
+        guard updated != text else { return }
+        try updated.write(to: userConfigURL, atomically: true, encoding: .utf8)
+        chmod(userConfigURL.path, 0o600)
+    }
+
+    /// 去掉 Include 行及紧随其后的一个空行。
+    static func removingInclude(from text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        var i = 0
+        while i < lines.count {
+            if lines[i].trimmingCharacters(in: .whitespaces) == includeLine {
+                lines.remove(at: i)
+                if i < lines.count, lines[i].trimmingCharacters(in: .whitespaces).isEmpty { lines.remove(at: i) }
+            } else {
+                i += 1
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// 把 Include 加到 `~/.ssh/config` 最前面：Include 写在某个 Host 块之后会只对该块生效。
     public static func installInclude() throws {
         guard !isIncluded else { return }

@@ -11,6 +11,8 @@ public enum WindowsInstaller {
     public static let setupImageName = "windows-setup.img"
     public static let dataImageName = "windows-data.img"
     static let virtioWinURL = URL(string: "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso")!
+    /// 微软的 Windows 11 ARM64 ISO 下载页；直链要在页面里选语言后由微软生成，只能在浏览器里下载。
+    public static let downloadPage = URL(string: "https://www.microsoft.com/software-download/windows11arm64")!
     static let drivers = ["NetKVM", "viostor", "vioscsi", "viogpudo", "viosock", "viofs", "Balloon", "vioserial", "viorng", "vioinput"]
 
     public struct Options: Sendable {
@@ -25,9 +27,12 @@ public enum WindowsInstaller {
         /// 装好后用它激活；不写进虚拟机配置。省略时系统保持未激活。
         public var productKey: String?
         public var showProgress: Bool
+        /// 写进 `VMBundle.creationMarkerURL`。
+        public var creationToken: String?
 
         public init(name: String, iso: URL, virtioWin: URL? = nil, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
-                    user: String = NSUserName(), password: String? = nil, productKey: String? = nil, showProgress: Bool = false) {
+                    user: String = NSUserName(), password: String? = nil, productKey: String? = nil, showProgress: Bool = false,
+                    creationToken: String? = nil) {
             self.name = name
             self.iso = iso
             self.virtioWin = virtioWin
@@ -38,7 +43,32 @@ public enum WindowsInstaller {
             self.password = password
             self.productKey = productKey
             self.showProgress = showProgress
+            self.creationToken = creationToken
         }
+    }
+
+    /// 浏览器下载中的文件旁的临时文件后缀：Firefox 下载期间先放一个最终文件名的空文件，数据写在 `.part` 里。
+    private static let inProgressSuffixes = [".part", ".crdownload", ".download"]
+
+    /// 「下载」文件夹里从微软下载页下载、在 `since` 之后改动过的 ISO（文件名形如 `Win11_25H2_Chinese_Simplified_Arm64.iso`），新的在前。
+    /// 空文件和旁边还有浏览器临时文件的不算，列出的都是下载完的。
+    public static func downloadedISOs(modifiedAfter since: Date = .distantPast) -> [URL] {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+        guard let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first,
+              let items = try? FileManager.default.contentsOfDirectory(at: downloads, includingPropertiesForKeys: Array(keys))
+        else { return [] }
+        let names = Set(items.map(\.lastPathComponent))
+        let complete = items.compactMap { url -> (URL, Date)? in
+            let name = url.lastPathComponent
+            let lower = name.lowercased()
+            guard lower.hasPrefix("win11"), lower.contains("arm64"), lower.hasSuffix(".iso"),
+                  !inProgressSuffixes.contains(where: { names.contains(name + $0) }),
+                  let values = try? url.resourceValues(forKeys: keys), (values.fileSize ?? 0) > 0,
+                  let modified = values.contentModificationDate, modified > since
+            else { return nil }
+            return (url, modified)
+        }
+        return complete.sorted { $0.1 > $1.1 }.map(\.0)
     }
 
     /// 产品密钥统一成大写、以连字符分成五组各五个字符；格式不对时报错。
@@ -73,7 +103,7 @@ public enum WindowsInstaller {
         // 驱动由代理装，没有代理就不放。
         unattend.installGPUDriver = unattend.installAgent && WindowsGPUDriver.package(qemu) != nil
 
-        return try await VMFactory.withNewBundle(named: options.name, in: library) { bundle in
+        return try await VMFactory.withNewBundle(named: options.name, in: library, creationToken: options.creationToken) { bundle in
             try await buildSetupImage(unattend, gpuDriver: unattend.installGPUDriver ? WindowsGPUDriver.package(qemu) : nil,
                                       to: bundle.url.appending(path: setupImageName))
             try await buildDataImage(iso: options.iso, virtioWin: virtioWin!, to: bundle.url.appending(path: dataImageName))

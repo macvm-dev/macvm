@@ -20,6 +20,12 @@ public struct VMBundle: Sendable, Equatable {
     public var snapshotsURL: URL { url.appending(path: "snapshots", directoryHint: .isDirectory) }
     public var lockURL: URL { url.appending(path: "run.lock") }
     public var logURL: URL { url.appending(path: "run.log") }
+    /// 存发起方给的创建令牌。引擎建好包后不删它，由发起方在整个创建流程结束时删掉；
+    /// 包里留着这个文件、内容又与发起方记下的令牌相同，就是它中断时留下的半成品。
+    public var creationMarkerURL: URL { url.appending(path: "creating") }
+
+    /// `creationMarkerURL` 里的令牌；没有标记时为 nil。
+    public var creationToken: String? { try? String(contentsOf: creationMarkerURL, encoding: .utf8) }
 
     /// 控制 socket 放在短路径的运行时目录：`sun_path` 只有 104 字节，放进包内会被长路径撑爆。
     public var controlSocketURL: URL { RuntimeDirectory.url.appending(path: "\(name).sock") }

@@ -61,6 +61,9 @@ struct MachineDetailView: View {
     }
 
     @ViewBuilder private func controls(_ config: VMConfig?) -> some View {
+        if model.isCreating(vm.name) {
+            Button("取消创建", role: .destructive) { model.cancelCreation(vm.name) }
+        }
         switch vm.state {
         case .stopped, .suspended:
             Button { openWindow(id: "machine", value: vm.name) } label: { Label(vm.state == .suspended ? "继续" : "启动", systemImage: "play.fill") }
@@ -73,8 +76,7 @@ struct MachineDetailView: View {
             } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
         case .running:
-            // QEMU 的画面经 VNC 显示，别的进程运行的也能接上。
-            if model.isRunningHere(vm.name) || config?.engine == .qemu {
+            if model.canDisplay(vm.name) {
                 Button { openWindow(id: "machine", value: vm.name) } label: { Label("显示", systemImage: "macwindow") }
             }
             if config?.supportsSuspend == true {

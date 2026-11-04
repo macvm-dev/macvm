@@ -105,7 +105,7 @@ struct Create: AsyncParsableCommand {
 
     private func createWindows() async throws -> VMSummary {
         guard installMedia.count == 1, let iso = installMedia.first else {
-            throw MacVMError.invalidConfig("Windows 需要用 --iso 指定一张 Windows 11 ARM64 安装 ISO")
+            throw MacVMError.invalidConfig("Windows 需要用 --iso 指定一张 Windows 11 ARM64 安装 ISO，可在 \(WindowsInstaller.downloadPage.absoluteString) 下载")
         }
         let interactive = !global.json && isatty(STDERR_FILENO) == 1
         func say(_ text: String) { if interactive { FileHandle.standardError.write(Data((text + "\n").utf8)) } }

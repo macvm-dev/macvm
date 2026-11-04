@@ -7,19 +7,24 @@ struct CreateSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
 
-    enum Source: Hashable { case cloudImage(String), iso, ipswLatest, ipswFile }
+    typealias Source = CreationRequest.Source
 
     @State private var os: GuestOS = .linux
     @State private var source: Source = .cloudImage(LinuxImage.catalog[0].id)
     @State private var name = ""
     @State private var cpus = HostInfo.defaultCPUCount()
-    @State private var memoryGB = 4
+    @State private var memoryGB = Int(HostInfo.defaultMemorySize() >> 30)
     @State private var diskGB = 64
     @State private var file: URL?
     @State private var choosingFile = false
     @State private var rosetta = false
     @State private var productKey = ""
+    /// 点了「从微软下载」的时刻；之后「下载」文件夹里出现的 Windows ISO 自动选上。
+    @State private var downloadRequestedAt: Date?
+    /// 输入框里的数字无效的 `NumberField`，按标题记。
+    @State private var invalidFields: Set<String> = []
     /// 表单打开时探测一次，免得每敲一个字都去找一遍 QEMU。
     @State private var hasQEMU = QEMUInstallation.locate() != nil
 
@@ -39,16 +44,16 @@ struct CreateSheet: View {
                 Section("来源") { sourcePicker }
 
                 Section("资源") {
-                    Stepper("CPU：\(cpus) 核", value: $cpus, in: 1...ProcessInfo.processInfo.activeProcessorCount)
-                    Stepper("内存：\(memoryGB) GB", value: $memoryGB, in: 1...max(1, maxMemoryGB / 2 * 2))
-                    Stepper("磁盘：\(diskGB) GB（按实际写入占用）", value: $diskGB, in: 16...2048, step: 16)
+                    NumberField(title: "CPU", unit: "核", value: $cpus, invalid: invalid("CPU"), range: 1...ProcessInfo.processInfo.activeProcessorCount)
+                    NumberField(title: "内存", unit: "GB", value: $memoryGB, invalid: invalid("内存"), range: 1...max(1, maxMemoryGB / 2 * 2))
+                    NumberField(title: "磁盘", unit: "GB（按实际写入占用）", value: $diskGB, invalid: invalid("磁盘"), range: 16...2048, step: 16)
                     if os == .linux { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
                 }
                 if os == .windows {
                     TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
                     Text(!hasQEMU
                          ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
-                         : "选择 Windows 11 ARM64 安装 ISO。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
+                         : "选择 Windows 11 ARM64 安装 ISO，或点「从微软下载」在浏览器里下载（选好语言后点 Download），下载完成会自动选上。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -74,6 +79,7 @@ struct CreateSheet: View {
         case .linux:
             Picker("", selection: $source) {
                 ForEach(LinuxImage.catalog, id: \.id) { Text("\($0.title)（云镜像，免安装）").tag(Source.cloudImage($0.id)) }
+                ForEach(LinuxDesktop.allCases, id: \.self) { Text("\($0.title)（下载安装盘，在窗口里图形安装）").tag(Source.desktop($0.rawValue)) }
                 Text("安装 ISO…").tag(Source.iso)
             }
             .pickerStyle(.radioGroup)
@@ -90,10 +96,31 @@ struct CreateSheet: View {
         }
         if needsFile {
             HStack {
-                Text(file?.lastPathComponent ?? "未选择文件").foregroundStyle(file == nil ? .secondary : .primary)
+                Text(file?.lastPathComponent ?? (downloadRequestedAt != nil ? "下载完成后自动选上…" : "未选择文件"))
+                    .foregroundStyle(file == nil ? .secondary : .primary)
+                    .lineLimit(1).truncationMode(.middle)
                 Spacer()
+                if os == .windows {
+                    Button("从微软下载…") {
+                        downloadRequestedAt = .now
+                        openURL(WindowsInstaller.downloadPage)
+                    }
+                }
                 Button("选择…") { choosingFile = true }
             }
+            .task(id: downloadRequestedAt) { await watchDownloads() }
+        }
+    }
+
+    /// 等浏览器把 Windows ISO 下载完；用户自己选了文件或换了系统就不再等。
+    private func watchDownloads() async {
+        guard let since = downloadRequestedAt else { return }
+        while !Task.isCancelled, file == nil, os == .windows {
+            if let fresh = WindowsInstaller.downloadedISOs(modifiedAfter: since).first {
+                file = fresh
+                return
+            }
+            try? await Task.sleep(for: .seconds(2))
         }
     }
 
@@ -101,14 +128,20 @@ struct CreateSheet: View {
     private var allowedTypes: [UTType] { [UTType(filenameExtension: os == .macOS ? "ipsw" : "iso") ?? .data] }
     private var defaultName: String { os == .macOS ? "macos" : os == .windows ? "windows" : "linux" }
     private var finalName: String { name.isEmpty ? defaultName : name }
+    private func invalid(_ field: String) -> Binding<Bool> {
+        Binding(get: { invalidFields.contains(field) },
+                set: { if $0 { invalidFields.insert(field) } else { invalidFields.remove(field) } })
+    }
+
     private var isValid: Bool {
-        (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
+        invalidFields.isEmpty && model.activity[finalName] == nil && (try? VMLibrary.validate(name: finalName)) != nil && (!needsFile || file != nil)
             && (os != .windows || hasQEMU)
             && (os != .windows || productKey.isEmpty || (try? WindowsInstaller.normalizeProductKey(productKey)) != nil)
     }
 
     private func resetDefaults(for os: GuestOS) {
         file = nil
+        downloadRequestedAt = nil
         memoryGB = Int(HostInfo.defaultMemorySize() >> 30)
         diskGB = Int(HostInfo.defaultDiskSize(for: os) >> 30)
         switch os {
@@ -119,53 +152,54 @@ struct CreateSheet: View {
     }
 
     private func create() {
-        let name = finalName
-        let os = os, source = source, file = file
-        let cpus = cpus, memory = UInt64(memoryGB) << 30, disk = UInt64(diskGB) << 30, rosetta = rosetta
+        let request = CreationRequest(name: finalName, os: os, source: source, cpus: cpus, memoryGB: memoryGB, diskGB: diskGB,
+                                      rosetta: rosetta, file: file, productKey: os == .windows && !productKey.isEmpty ? productKey : nil)
+        let openWindow = openWindow
         dismiss()
-        Task { @MainActor in
-            model.activity[name] = "正在创建…"
-            defer { model.activity[name] = nil; model.refresh() }
-            do {
-                switch (os, source) {
-                case (.macOS, _):
-                    let options = MacOSInstaller.Options(name: name, source: file.map { .file($0) } ?? .latest,
-                                                         cpuCount: cpus, memorySize: memory, diskSize: disk)
-                    _ = try await MacOSInstaller.install(options, in: model.library) { phase in
-                        switch phase {
-                        case .downloading: model.activity[name] = "正在下载 macOS…"
-                        case .installing(let f): model.activity[name] = "正在安装 \(Int(f * 100))%"
-                        }
-                    }
-                case (.windows, _):
-                    guard let iso = file else { return }
-                    model.activity[name] = "正在准备 Windows 安装盘…"
-                    let bundle = try await WindowsInstaller.create(.init(name: name, iso: iso, cpuCount: cpus, memorySize: memory, diskSize: disk,
-                                                                 productKey: productKey.isEmpty ? nil : productKey),
-                                                                   in: model.library)
-                    model.activity[name] = "正在安装 Windows…"
-                    guard await model.start(name) != nil else { return }
-                    openWindow(id: "machine", value: name)
-                    let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: CLILocation.path) {
-                        model.activity[name] = "正在完成安装…"
-                        await model.stop(name)
-                    }
-                    guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
-                case (_, .cloudImage(let id)):
-                    model.activity[name] = "正在下载镜像…"
-                    let options = VMFactory.Options(name: name, os: .linux, cpuCount: cpus, memorySize: memory, diskSize: disk,
-                                                    rosetta: rosetta, image: try LinuxImage.named(id))
-                    _ = try await VMFactory.createEFIGuest(options, in: model.library)
-                default:
-                    let options = VMFactory.Options(name: name, os: os, cpuCount: cpus, memorySize: memory, diskSize: disk,
-                                                    installMedia: file.map { [$0.path] } ?? [], rosetta: rosetta)
-                    _ = try await VMFactory.createEFIGuest(options, in: model.library)
-                }
-                SSHConfig.refreshIfInstalled(library: model.library, macvmPath: CLILocation.path)
-                model.selection = name
-            } catch {
-                model.report(error)
+        model.create(request) { openWindow(id: "machine", value: $0) }
+    }
+}
+
+/// 可直接输入、也可用步进器调整的整数。输入超出 `range` 或不是数字时不改 `value`，字标红并置 `invalid`；
+/// 离开输入框或回车后文字回到当前 `value`。
+private struct NumberField: View {
+    let title: String
+    let unit: String
+    @Binding var value: Int
+    @Binding var invalid: Bool
+    let range: ClosedRange<Int>
+    var step = 1
+
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var valid: Bool { Int(text).map(range.contains) ?? false }
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack(spacing: 6) {
+                TextField(title, text: $text)
+                    .labelsHidden()
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 64)
+                    .foregroundStyle(valid ? Color.primary : Color.red)
+                    .focused($focused)
+                    .onSubmit { text = String(value) }
+                Text(unit).foregroundStyle(.secondary)
+                Stepper(title, value: $value, in: range, step: step).labelsHidden()
             }
+        }
+        .help("\(range.lowerBound)–\(range.upperBound)")
+        .onAppear { text = String(value) }
+        .onChange(of: text) { _, new in
+            if let number = Int(new), range.contains(number), number != value { value = number }
+        }
+        .onChange(of: value) { _, new in
+            if Int(text) != new { text = String(new) }
+        }
+        .onChange(of: valid, initial: true) { _, valid in invalid = !valid }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { text = String(value) }
         }
     }
 }

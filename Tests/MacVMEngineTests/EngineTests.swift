@@ -268,31 +268,48 @@ struct CursorShapeTests {
     }
 }
 
-struct MacOSTuningTests {
-    @Test func scriptRunsEachStepAndReports() throws {
-        let script = MacOSTuning.script([.spotlight, .screensaver], revert: false)
-        #expect(script.contains("mdutil -a -i off"))
-        #expect(script.contains("echo 'ok screensaver'"))
-        #expect(MacOSTuning.script([.screensaver], revert: true).contains("defaults -currentHost delete com.apple.screensaver idleTime"))
-
-        let report = MacOSTuning.parse("ok spotlight\nfail screensaver\n", steps: [.spotlight, .screensaver, .updates], revert: false)
-        #expect(report.applied == [.spotlight])
-        #expect(report.failed == [.screensaver, .updates])
+struct LinuxDesktopTests {
+    @Test func ubuntuPicksLatestPointReleaseOfDesktopArm64() throws {
+        let sums = """
+        c2afd538 *ubuntu-26.04-desktop-arm64.iso
+        c8b5d454 *ubuntu-26.04-preinstalled-desktop-arm64+raspi.img.xz
+        C54D1964 *ubuntu-26.04.1-desktop-arm64.iso
+        a7110f6c *ubuntu-26.04.1-desktop-riscv64.iso
+        601e30fb *ubuntu-26.04.1-desktop-amd64.iso
+        """
+        let release = try #require(LinuxDesktop.ubuntuRelease(sha256sums: sums, series: "26.04", base: URL(string: "https://example.com/r/")!))
+        #expect(release.fileName == "ubuntu-26.04.1-desktop-arm64.iso")
+        #expect(release.url.absoluteString == "https://example.com/r/ubuntu-26.04.1-desktop-arm64.iso")
+        #expect(release.sha256 == "c54d1964")
     }
 
-    @Test func scriptRunsUnderShell() async throws {
-        let dir = FileManager.default.temporaryDirectory.appending(path: "macvm-tune-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        // 用不存在的命令代替真实设置，只验证 sh 能解析脚本、每项各出一行结果。
-        let script = MacOSTuning.script(MacOSTuning.Step.allCases, revert: false)
-        let process = Process()
-        process.executableURL = URL(filePath: "/bin/sh")
-        process.arguments = ["-n", "-c", script]
-        try process.run()
-        process.waitUntilExit()
-        #expect(process.terminationStatus == 0)
-        #expect(script.split(separator: "\n").count == MacOSTuning.Step.allCases.count + 1)
+    @Test func ubuntuWithoutArm64DesktopIsNil() {
+        #expect(LinuxDesktop.ubuntuRelease(sha256sums: "aa *ubuntu-26.04-desktop-amd64.iso", series: "26.04", base: URL(string: "https://e/")!) == nil)
+    }
+
+    @Test func fedoraPicksNewestFinalWorkstationAarch64() throws {
+        let json = """
+        [
+          {"version":"45 Beta","arch":"aarch64","variant":"Workstation","link":"https://f/test/45_Beta/W.aarch64.iso","sha256":"bb"},
+          {"version":"44","arch":"aarch64","variant":"Workstation","link":"https://f/44/Fedora-Workstation-Live-44-1.7.aarch64.iso","sha256":"CC"},
+          {"version":"44","arch":"x86_64","variant":"Workstation","link":"https://f/44/x.iso","sha256":"dd"},
+          {"version":"44","arch":"aarch64","variant":"KDE","link":"https://f/44/k.iso","sha256":"ee"},
+          {"version":"43","arch":"aarch64","variant":"Workstation","link":"https://f/43/old.aarch64.iso","sha256":"ff"},
+          {"version":"44","arch":"aarch64","variant":"Workstation","link":"https://f/44/raw.xz"}
+        ]
+        """
+        let release = try #require(LinuxDesktop.fedoraRelease(releasesJSON: Data(json.utf8)))
+        #expect(release.fileName == "Fedora-Workstation-Live-44-1.7.aarch64.iso")
+        #expect(release.sha256 == "cc")
+    }
+}
+
+struct SSHConfigIncludeTests {
+    @Test func removingIncludeUndoesInstall() {
+        let existing = "Host work\n  HostName example.com\n"
+        let installed = SSHConfig.includeLine + "\n\n" + existing
+        #expect(SSHConfig.removingInclude(from: installed) == existing)
+        #expect(SSHConfig.removingInclude(from: existing) == existing)
     }
 }
 
@@ -391,39 +408,42 @@ struct DownloadLockTests {
     }
 }
 
-struct LinuxDesktopTests {
-    @Test func ubuntuPicksLatestPointReleaseOfDesktopArm64() throws {
-        let sums = """
-        c2afd538 *ubuntu-26.04-desktop-arm64.iso
-        c8b5d454 *ubuntu-26.04-preinstalled-desktop-arm64+raspi.img.xz
-        C54D1964 *ubuntu-26.04.1-desktop-arm64.iso
-        a7110f6c *ubuntu-26.04.1-desktop-riscv64.iso
-        601e30fb *ubuntu-26.04.1-desktop-amd64.iso
-        """
-        let release = try #require(LinuxDesktop.ubuntuRelease(sha256sums: sums, series: "26.04", base: URL(string: "https://example.com/r/")!))
-        #expect(release.fileName == "ubuntu-26.04.1-desktop-arm64.iso")
-        #expect(release.url.absoluteString == "https://example.com/r/ubuntu-26.04.1-desktop-arm64.iso")
-        #expect(release.sha256 == "c54d1964")
+struct MacOSTuningTests {
+    @Test func scriptRunsEachStepAndReports() throws {
+        let script = MacOSTuning.script([.spotlight, .screensaver], revert: false)
+        #expect(script.contains("mdutil -a -i off"))
+        #expect(script.contains("echo 'ok screensaver'"))
+        #expect(MacOSTuning.script([.screensaver], revert: true).contains("defaults -currentHost delete com.apple.screensaver idleTime"))
+
+        let report = MacOSTuning.parse("ok spotlight\nfail screensaver\n", steps: [.spotlight, .screensaver, .updates], revert: false)
+        #expect(report.applied == [.spotlight])
+        #expect(report.failed == [.screensaver, .updates])
     }
 
-    @Test func ubuntuWithoutArm64DesktopIsNil() {
-        #expect(LinuxDesktop.ubuntuRelease(sha256sums: "aa *ubuntu-26.04-desktop-amd64.iso", series: "26.04", base: URL(string: "https://e/")!) == nil)
+    @Test func scriptRunsUnderShell() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "macvm-tune-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // 用不存在的命令代替真实设置，只验证 sh 能解析脚本、每项各出一行结果。
+        let script = MacOSTuning.script(MacOSTuning.Step.allCases, revert: false)
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = ["-n", "-c", script]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        #expect(script.split(separator: "\n").count == MacOSTuning.Step.allCases.count + 1)
     }
+}
 
-    @Test func fedoraPicksNewestFinalWorkstationAarch64() throws {
-        let json = """
-        [
-          {"version":"45 Beta","arch":"aarch64","variant":"Workstation","link":"https://f/test/45_Beta/W.aarch64.iso","sha256":"bb"},
-          {"version":"44","arch":"aarch64","variant":"Workstation","link":"https://f/44/Fedora-Workstation-Live-44-1.7.aarch64.iso","sha256":"CC"},
-          {"version":"44","arch":"x86_64","variant":"Workstation","link":"https://f/44/x.iso","sha256":"dd"},
-          {"version":"44","arch":"aarch64","variant":"KDE","link":"https://f/44/k.iso","sha256":"ee"},
-          {"version":"43","arch":"aarch64","variant":"Workstation","link":"https://f/43/old.aarch64.iso","sha256":"ff"},
-          {"version":"44","arch":"aarch64","variant":"Workstation","link":"https://f/44/raw.xz"}
-        ]
-        """
-        let release = try #require(LinuxDesktop.fedoraRelease(releasesJSON: Data(json.utf8)))
-        #expect(release.fileName == "Fedora-Workstation-Live-44-1.7.aarch64.iso")
-        #expect(release.sha256 == "cc")
+struct CreationMarkerTests {
+    @Test func newBundleCarriesCreationToken() async throws {
+        let library = VMLibrary(root: FileManager.default.temporaryDirectory.appending(path: "macvm-tests-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: library.root) }
+        let marked = try await VMFactory.withNewBundle(named: "marked", in: library, creationToken: "token") { $0 }
+        #expect(marked.creationToken == "token")
+        let plain = try await VMFactory.withNewBundle(named: "plain", in: library) { $0 }
+        #expect(plain.creationToken == nil)
     }
 }
 

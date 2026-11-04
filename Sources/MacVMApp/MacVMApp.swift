@@ -4,10 +4,13 @@ import SwiftUI
 
 @main
 struct MacVMApp: App {
-    @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    private var model: AppModel { delegate.model }
+    @AppStorage(StatusMenu.visibleKey) private var showsMenuBarExtra = true
 
     var body: some Scene {
-        WindowGroup("MacVM", id: "library") {
+        // 单实例：菜单栏里「打开 MacVM」用 openWindow 把已有的主窗口提到前面，而不是再开一个。
+        Window("MacVM", id: "library") {
             LibraryView()
                 .environment(model)
                 .frame(minWidth: 760, minHeight: 460)
@@ -33,6 +36,13 @@ struct MacVMApp: App {
 
         Settings {
             SettingsView()
+                .environment(model)
+        }
+
+        // 有虚拟机在创建、下载或安装时换个图标，菜单没打开也能看出来。
+        MenuBarExtra("MacVM", systemImage: model.activity.isEmpty ? "desktopcomputer" : "desktopcomputer.and.arrow.down",
+                     isInserted: $showsMenuBarExtra) {
+            StatusMenu()
                 .environment(model)
         }
     }

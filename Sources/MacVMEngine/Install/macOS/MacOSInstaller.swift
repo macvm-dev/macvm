@@ -22,9 +22,12 @@ public enum MacOSInstaller {
         public var password: String?
         public var display: DisplayConfig
         public var showProgress: Bool
+        /// 写进 `VMBundle.creationMarkerURL`。
+        public var creationToken: String?
 
         public init(name: String, source: Source, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
-                    user: String = NSUserName(), password: String? = nil, display: DisplayConfig = .init(), showProgress: Bool = false) {
+                    user: String = NSUserName(), password: String? = nil, display: DisplayConfig = .init(), showProgress: Bool = false,
+                    creationToken: String? = nil) {
             self.name = name
             self.source = source
             self.cpuCount = cpuCount
@@ -34,6 +37,7 @@ public enum MacOSInstaller {
             self.password = password
             self.display = display
             self.showProgress = showProgress
+            self.creationToken = creationToken
         }
     }
 
@@ -59,7 +63,7 @@ public enum MacOSInstaller {
             throw MacVMError.unsupported("主机 macOS 版本过旧，无法安装 \(image.operatingSystemVersion.label)（\(image.buildVersion)）")
         }
 
-        return try await VMFactory.withNewBundle(named: options.name, in: library) { bundle in
+        return try await VMFactory.withNewBundle(named: options.name, in: library, creationToken: options.creationToken) { bundle in
             do {
                 try DiskImage.createSparse(at: bundle.diskURL, size: options.diskSize ?? HostInfo.defaultDiskSize(for: .macOS))
                 _ = try VZMacAuxiliaryStorage(creatingStorageAt: bundle.auxiliaryStorageURL, hardwareModel: requirements.hardwareModel, options: [])
@@ -86,11 +90,17 @@ public enum MacOSInstaller {
                     Task { @MainActor in progress(.installing(fraction)) }
                 }
                 defer { observation.invalidate() }
-                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
-                    installer.install { c.resume(with: $0) }
+                let installProgress = installer.progress
+                try await withTaskCancellationHandler {
+                    try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+                        installer.install { c.resume(with: $0) }
+                    }
+                } onCancel: {
+                    installProgress.cancel()
                 }
                 return bundle
             } catch {
+                if Task.isCancelled { throw CancellationError() }
                 throw MacVMError.engine("安装 macOS 失败：\(describeEngineError(error))")
             }
         }

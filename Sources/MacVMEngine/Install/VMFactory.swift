@@ -25,11 +25,13 @@ public enum VMFactory {
         public var showProgress: Bool
         /// 默认云镜像为 headless（可挂起），安装介质方式带键鼠。
         public var headless: Bool?
+        /// 写进 `VMBundle.creationMarkerURL`。
+        public var creationToken: String?
 
         public init(name: String, os: GuestOS, cpuCount: Int? = nil, memorySize: UInt64? = nil, diskSize: UInt64? = nil,
                     installMedia: [String] = [], network: NetworkConfig = .init(), shares: [ShareConfig] = [],
                     rosetta: Bool = false, serialConsole: Bool = false, image: LinuxImage? = nil, desktop: LinuxDesktop? = nil,
-                    user: String = NSUserName(), showProgress: Bool = false, headless: Bool? = nil) {
+                    user: String = NSUserName(), showProgress: Bool = false, headless: Bool? = nil, creationToken: String? = nil) {
             self.name = name
             self.os = os
             self.cpuCount = cpuCount ?? HostInfo.defaultCPUCount()
@@ -45,6 +47,7 @@ public enum VMFactory {
             self.user = user
             self.showProgress = showProgress
             self.headless = headless
+            self.creationToken = creationToken
         }
     }
 
@@ -73,7 +76,7 @@ public enum VMFactory {
         var network = options.network
         if network.macAddress == nil { network.macAddress = NetworkAttachments.randomMACAddress() }
 
-        return try await withNewBundle(named: options.name, in: library) { bundle in
+        return try await withNewBundle(named: options.name, in: library, creationToken: options.creationToken) { bundle in
             var hasAgent = false
             var disks = [DiskConfig(path: bundle.diskURL.lastPathComponent)]
             if let imageDisk {
@@ -128,10 +131,18 @@ public enum VMFactory {
     }
 
     /// 建一个空包交给 `body` 填充；`body` 抛错时删掉整个包，不留半成品。
-    static func withNewBundle<T>(named name: String, in library: VMLibrary, isolation: isolated (any Actor)? = #isolation,
+    static func withNewBundle<T>(named name: String, in library: VMLibrary, creationToken: String? = nil,
+                                 isolation: isolated (any Actor)? = #isolation,
                                  _ body: (VMBundle) async throws -> T) async throws -> T {
         let bundle = try prepareEmptyBundle(named: name, in: library)
-        do { return try await body(bundle) } catch {
+        do {
+            if let creationToken {
+                do { try Data(creationToken.utf8).write(to: bundle.creationMarkerURL) } catch {
+                    throw MacVMError.io("写入 \(bundle.creationMarkerURL.path) 失败：\(error.localizedDescription)")
+                }
+            }
+            return try await body(bundle)
+        } catch {
             try? FileManager.default.removeItem(at: bundle.url)
             throw error
         }
