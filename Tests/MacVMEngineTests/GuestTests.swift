@@ -4,7 +4,7 @@ import Testing
 
 struct CursorShapeTests {
     @Test func decodesFixtures() throws {
-        let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../protocol/fixtures/cursors.jsonl")
+        let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../guest/agent-protocol/fixtures/cursors.jsonl")
         let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
         let shapes = try lines.map { try JSONDecoder().decode(AgentProtocol.CursorShape.self, from: Data($0.utf8)) }
         #expect(shapes.count == 3)

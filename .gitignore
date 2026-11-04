@@ -1,9 +1,6 @@
 .build/
 .swiftpm/
 /dist/
-guest/agent/target/
-guest/firmware/target/
-guest/firmware/dist/
+guest/target/
 *.xcodeproj/
 .DS_Store
-guest/agent/dist/

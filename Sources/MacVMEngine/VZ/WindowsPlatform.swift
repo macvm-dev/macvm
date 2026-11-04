@@ -40,7 +40,7 @@ public enum WindowsSupport {
         let image = bootImageURL(bundle)
         if !FileManager.default.fileExists(atPath: image.path) {
             guard let loader = GuestFiles.locate("macvm-boot.efi") else {
-                throw MacVMError.io("找不到 macvm-boot.efi，先运行 make firmware")
+                throw MacVMError.io("找不到 macvm-boot.efi，先运行 make boot")
             }
             let staging = FileManager.default.temporaryDirectory.appending(path: "macvm-vzboot-\(UUID().uuidString)", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: staging.appending(path: "EFI/BOOT"), withIntermediateDirectories: true)

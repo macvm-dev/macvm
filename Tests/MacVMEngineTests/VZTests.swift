@@ -9,7 +9,7 @@ struct ConfigBuilderTests {
         let library = VMLibrary(root: FileManager.default.temporaryDirectory.appending(path: "macvm-tests-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: library.root) }
         let repo = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        setenv("MACVM_GUEST_DIR", repo.appending(path: "guest/firmware/dist").path, 1)
+        setenv("MACVM_GUEST_DIR", repo.appending(path: ".build/guest").path, 1)
         let bundle = try await VMFactory.createEFIGuest(.init(name: "w", os: .windows, cpuCount: 2, memorySize: 2 << 30, diskSize: 1 << 30), in: library)
         try await RunnerFactory.prepare(bundle)
         let vz = try ConfigBuilder(bundle: bundle, config: bundle.loadConfig()).build(validate: false)

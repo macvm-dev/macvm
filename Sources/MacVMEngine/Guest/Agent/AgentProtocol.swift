@@ -1,7 +1,7 @@
 import Foundation
 import MacVMModel
 
-/// 与客户机代理通信的消息类型，字段与编码由协议文档 agent.md 定义。
+/// 与客户机代理通信的消息类型，字段与编码由协议文档 agent-protocol.md 定义。
 public enum AgentProtocol {
     public static let port: UInt32 = 6100
     static let maxFrame = 1 << 20

@@ -13,11 +13,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/guest"
 
 cp packaging/Info.plist "$APP/Contents/Info.plist"
-cp packaging/Assets.car packaging/AppIcon.icns "$APP/Contents/Resources/"
+cp packaging/icon/Assets.car packaging/icon/AppIcon.icns "$APP/Contents/Resources/"
 cp "$BIN/MacVMApp" "$APP/Contents/MacOS/MacVM"
 cp "$BIN/macvm" "$APP/Contents/Resources/bin/macvm"
-# 代理与固件是可选产物，缺失时 App 仍可运行，只是相应功能不可用。
-for f in guest/agent/dist/* guest/firmware/dist/*; do
+# 代理与引导程序是可选产物，缺失时 App 仍可运行，只是相应功能不可用。
+for f in .build/guest/*; do
   [ -f "$f" ] && cp "$f" "$APP/Contents/Resources/guest/"
 done
 # 自带的 QEMU 是可选产物（make qemu 编译，首次较久）；缺失时 QEMU 引擎退回用 Homebrew 的 QEMU。

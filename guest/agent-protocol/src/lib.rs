@@ -224,7 +224,7 @@ pub fn write_json_line(w: &mut impl Write, value: &impl Serialize) -> io::Result
 mod tests {
     use super::*;
 
-    const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../protocol/fixtures");
+    const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures");
 
     #[test]
     fn requests_round_trip() {

@@ -4,7 +4,7 @@ ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 
-.PHONY: build sign test lint agent firmware qemu app release clean
+.PHONY: build sign test lint agent boot qemu app release clean
 
 build:
 	swift build -c $(CONFIG)
@@ -16,7 +16,7 @@ sign: build
 
 test:
 	swift test
-	cd guest/agent && cargo test
+	cd guest && cargo test
 
 lint:
 	scripts/check-layers.sh
@@ -24,8 +24,8 @@ lint:
 agent:
 	scripts/build-agent.sh
 
-firmware:
-	scripts/build-firmware.sh
+boot:
+	scripts/build-boot.sh
 
 qemu:
 	scripts/build-qemu.sh
@@ -38,4 +38,4 @@ release:
 	scripts/notarize.sh dist/MacVM.app
 
 clean:
-	rm -rf .build dist guest/agent/target guest/agent/dist guest/firmware/target guest/firmware/dist
+	rm -rf .build dist guest/target

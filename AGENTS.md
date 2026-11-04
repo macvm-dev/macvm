@@ -11,13 +11,13 @@
 | `Sources/MacVMEngine` | 引擎：配置构建、运行、安装、存储、网络、USB、代理客户端 |
 | `Sources/MacVMApp` | SwiftUI 应用 |
 | `Sources/MacVMCLI` | `macvm` 命令，每个子命令一个文件 |
-| `guest/agent` | 客户机代理（Cargo workspace） |
-| `guest/firmware` | UEFI 引导程序 macvm-boot（Rust）：在 VZ 上启动 Windows 用的帧缓冲垫片 |
-| `protocol` | 宿主与代理之间的协议定义与黄金样例 |
+| `guest` | 放进客户机的 Rust 程序（一个 Cargo workspace，`make agent` / `make boot` 编译，产物在 `.build/guest`） |
+| `guest/agent` | 客户机代理 macvm-agent；`agent-platform` 是各系统的实现，`agent-protocol` 是协议类型与黄金样例（`fixtures`） |
+| `guest/boot` | UEFI 引导程序 macvm-boot：在 VZ 上启动 Windows 用的帧缓冲垫片 |
 | `qemu` | App 自带 QEMU 的源码清单、补丁与 SPICE 显示库（`make qemu` 编译，产物在 `.build/qemu`） |
-| `packaging` | Info.plist、entitlements、图标 |
+| `packaging` | Info.plist、entitlements、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物） |
 | `scripts` | Makefile 调用的脚本 |
-| `docs` | 架构与 CLI 契约文档 |
+| `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
 
 `MacVMEngine` 按关注点分子目录：
 

@@ -1,6 +1,6 @@
 # macvm-agent 协议
 
-宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`fixtures/` 中的样例由 Swift（`AgentProtocol`）与 Rust（`macvm-agent-protocol`）两侧测试共同校验。
+宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`macvm-agent-protocol` 的 `fixtures/` 中的样例由 Swift（`AgentProtocol`）与 Rust（`macvm-agent-protocol`）两侧测试共同校验。
 
 ## 传输
 

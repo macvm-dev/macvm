@@ -6,8 +6,8 @@
 
 ```sh
 make sign            # 调试构建并 ad-hoc 签名：.build/debug/macvm、.build/debug/MacVMApp
-make agent           # 交叉编译客户机代理到 guest/agent/dist（Windows 版需 cargo install cargo-xwin）
-make firmware        # 编译 UEFI 引导程序到 guest/firmware/dist
+make agent           # 交叉编译客户机代理到 .build/guest（Windows 版需 cargo install cargo-xwin）
+make boot            # 编译 UEFI 引导程序到 .build/guest
 make app             # 发布构建并组装 dist/MacVM.app
 make test lint
 ```
@@ -27,4 +27,4 @@ macvm snapshot save dev clean && macvm clone dev dev2
 macvm ssh-config --install                           # 之后 ssh dev，runode 也能直接看到
 ```
 
-完整命令、JSON 输出与退出码见 `docs/cli.md`，代理协议见 `protocol/agent.md`。
+完整命令、JSON 输出与退出码见 `docs/cli.md`，代理协议见 `docs/agent-protocol.md`。
