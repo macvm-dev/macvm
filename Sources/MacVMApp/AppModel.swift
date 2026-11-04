@@ -74,6 +74,8 @@ final class AppModel {
     private var runningCreations: [String: CreationRequest] = [:]
     private var creationTasks: [String: Task<Void, Never>] = [:]
     private var resumedAtLaunch = false
+    /// 新建后首次开机装 SSH 公钥的任务，键为虚拟机名；虚拟机停下时取消。
+    @ObservationIgnored private var sshKeyTasks: [String: Task<Void, Never>] = [:]
 
     private(set) var runners: [String: any MachineRunner] = [:]
     /// 经本模型改过配置就加一；`config(of:)` 读它，好让展示配置的视图在改动后重绘。
@@ -225,6 +227,11 @@ final class AppModel {
     }
 
     private func detach(_ name: String) {
+        if let task = sshKeyTasks.removeValue(forKey: name) {
+            task.cancel()
+            // 进行中的那次 ssh 要等它自己超时才返回，提示先撤掉，免得停下的虚拟机一直显示在配置。
+            if activity[name]?.title == Self.sshKeyTitle { setActivity(name, nil) }
+        }
         servers[name]?.close()
         servers[name] = nil
         runners[name] = nil
@@ -413,6 +420,7 @@ final class AppModel {
                 try? FileManager.default.removeItem(at: VMBundle(url: library.bundleURL(named: name)).creationMarkerURL)
                 SSHConfig.refreshIfInstalled(library: library, macvmPath: CLILocation.path)
                 selection = name
+                if request.os == .macOS { installSSHKeyOnFirstBoot(name, openMachineWindow: openMachineWindow) }
             } catch {
                 if Task.isCancelled {
                     cleanUpCancelled(request)
@@ -425,6 +433,32 @@ final class AppModel {
     }
 
     func isCreating(_ name: String) -> Bool { creationTasks[name] != nil }
+
+    /// 新建的 macOS 虚拟机首次开机，等远程登录可用后用密码登录一次装入 macvm 公钥，之后 SSH 都走密钥。
+    /// 不会自动开通时不开机：用户要先在窗口里走完设置助理。失败只报告，不影响虚拟机本身。
+    private func installSSHKeyOnFirstBoot(_ name: String, openMachineWindow: @escaping @MainActor (String) -> Void) {
+        guard let bundle = try? library.bundle(named: name), MacOSProvisioning.willApply(to: bundle),
+              let user = try? bundle.loadConfig().guestUser, let password = GuestCredentials.password(for: bundle) else { return }
+        sshKeyTasks[name] = Task {
+            setActivity(name, Self.sshKeyTitle)
+            defer {
+                if !Task.isCancelled {
+                    sshKeyTasks[name] = nil
+                    if activity[name]?.title == Self.sshKeyTitle { setActivity(name, nil) }
+                }
+            }
+            guard await start(name) != nil else { return }
+            openMachineWindow(name)
+            let proxy = SSHConfig.proxyCommand(macvmPath: CLILocation.path, name: name, flags: ["--tcp"])
+            do {
+                try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: password, proxyCommand: proxy, timeout: 900)
+            } catch where !Task.isCancelled {
+                report(error)
+            } catch {}
+        }
+    }
+
+    private static let sshKeyTitle = "正在首次开机并配置 SSH…"
 
     /// 取消正在进行的新建：终止下载与安装，删掉建了一半的包；已下载的部分留在下载目录里，下次新建接着用。
     func cancelCreation(_ name: String) {

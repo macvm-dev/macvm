@@ -14,6 +14,8 @@ public enum GuestSSH {
         let deadline = Date().addingTimeInterval(timeout)
         var lastError = ""
         while Date() < deadline {
+            // 每次 ssh 都起一个 ProxyCommand，虚拟机没在运行时它会把虚拟机拉起来：取消后不再发起。
+            try Task.checkCancellation()
             let process = Process()
             process.executableURL = URL(filePath: "/usr/bin/ssh")
             process.arguments = ["-o", "ProxyCommand=\(proxyCommand)", "-o", "PubkeyAuthentication=no",
