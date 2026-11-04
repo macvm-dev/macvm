@@ -29,6 +29,17 @@
 | `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU） |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
 
+## 目录
+
+虚拟机目录与下载目录在 App 设置里更改，存在 `~/Library/Application Support/MacVM/settings.json`（字段 `libraryPath`、`downloadPath`，缺省即默认），CLI 读同一个文件。
+
+| 目录 | 默认 | 覆盖顺序 |
+| --- | --- | --- |
+| 虚拟机 | `~/Library/Application Support/MacVM/VMs` | 环境变量 `MACVM_HOME` > `libraryPath` > 默认 |
+| 下载（`ipsw/`、`images/`、`virtio-win.iso`） | `~/Library/Caches/MacVM` | `downloadPath` > 默认 |
+
+`doctor --json` 的结果里有 `libraryPath` 与 `downloadPath`，是当前实际生效的位置。
+
 ## 引擎
 
 | | vz（默认） | qemu |

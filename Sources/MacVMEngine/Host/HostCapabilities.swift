@@ -16,6 +16,7 @@ public struct HostCapabilities: Codable, Sendable {
     public let bridgeInterfaces: [String]
     public let saveRestore: Bool
     public let libraryPath: String
+    public let downloadPath: String
 
     public static func current() -> HostCapabilities {
         let v = ProcessInfo.processInfo.operatingSystemVersion
@@ -31,7 +32,8 @@ public struct HostCapabilities: Codable, Sendable {
             bridgedNetworking: Entitlements.has(Entitlements.bridgedNetworking) && !bridges.isEmpty,
             bridgeInterfaces: bridges,
             saveRestore: true,
-            libraryPath: VMLibrary.default.root.path
+            libraryPath: VMLibrary.default.root.path,
+            downloadPath: DownloadCache.root.path
         )
     }
 }

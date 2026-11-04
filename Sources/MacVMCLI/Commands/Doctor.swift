@@ -23,6 +23,7 @@ struct Doctor: AsyncParsableCommand {
         \(mark(c.bridgedNetworking)) 桥接网络（com.apple.vm.networking）\(c.bridgeInterfaces.isEmpty ? "" : "：" + c.bridgeInterfaces.joined(separator: ", "))
         \(mark(c.saveRestore)) 挂起恢复
         虚拟机目录：\(c.libraryPath)
+        下载目录：\(c.downloadPath)
         """
     }
 }

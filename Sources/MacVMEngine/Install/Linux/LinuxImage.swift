@@ -31,34 +31,31 @@ public struct LinuxImage: Sendable, Equatable {
     }
 }
 
-/// 下载并解包后的镜像缓存，位于 `~/Library/Caches/MacVM/images`。
+/// 下载并解包后的镜像缓存，位于 `DownloadCache.root` 下的 images。
 public enum ImageCache {
     public static var root: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "MacVM/images", directoryHint: .isDirectory)
+        DownloadCache.root.appending(path: "images", directoryHint: .isDirectory)
     }
 
     /// 返回解包好的 raw 磁盘，不在缓存里时先下载；`showProgress` 为 true 时把下载进度写到 stderr。
     public static func disk(for image: LinuxImage, showProgress: Bool) async throws -> URL {
+        // 只取一次：下载期间设置里的目录可能被改，中间文件得留在同一处。
+        let root = root
         let disk = root.appending(path: "\(image.id).raw")
-        if FileManager.default.fileExists(atPath: disk.path) { return disk }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-
         let archive = root.appending(path: image.url.lastPathComponent + ".part")
-        try await Subprocess.download(image.url, to: archive, showProgress: showProgress)
+        return try await Download.cached(disk, from: image.url, via: archive, showProgress: showProgress) { archive in
+            let staging = root.appending(path: "\(image.id).staging", directoryHint: .isDirectory)
+            try? FileManager.default.removeItem(at: staging)
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: staging) }
+            try await Subprocess.run("/usr/bin/tar", ["-xf", archive.path, "-C", staging.path])
 
-        let staging = root.appending(path: "\(image.id).staging", directoryHint: .isDirectory)
-        try? FileManager.default.removeItem(at: staging)
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: staging) }
-        try await Subprocess.run("/usr/bin/tar", ["-xf", archive.path, "-C", staging.path])
-
-        let files = try FileManager.default.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil)
-        guard let extracted = files.first(where: { $0.pathExtension == image.diskExtension }) else {
-            throw MacVMError.io("镜像归档里没有 .\(image.diskExtension) 磁盘")
+            let files = try FileManager.default.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil)
+            guard let extracted = files.first(where: { $0.pathExtension == image.diskExtension }) else {
+                throw MacVMError.io("镜像归档里没有 .\(image.diskExtension) 磁盘")
+            }
+            try FileManager.default.moveItem(at: extracted, to: disk)
+            try? FileManager.default.removeItem(at: archive)
         }
-        try FileManager.default.moveItem(at: extracted, to: disk)
-        try? FileManager.default.removeItem(at: archive)
-        return disk
     }
 }

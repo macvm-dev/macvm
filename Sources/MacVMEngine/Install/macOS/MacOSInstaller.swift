@@ -105,18 +105,15 @@ public enum MacOSInstaller {
     }
 
     static var ipswCache: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "MacVM/ipsw", directoryHint: .isDirectory)
+        DownloadCache.root.appending(path: "ipsw", directoryHint: .isDirectory)
     }
 
     private static func downloadLatest(showProgress: Bool) async throws -> URL {
         let (url, build) = try await latestRestoreImage()
-        try FileManager.default.createDirectory(at: ipswCache, withIntermediateDirectories: true)
+        // 只取一次：下载期间设置里的目录可能被改，中间文件得留在同一处。
+        let ipswCache = ipswCache
         let target = ipswCache.appending(path: "\(build).ipsw")
-        if FileManager.default.fileExists(atPath: target.path) { return target }
-        let partial = ipswCache.appending(path: "\(build).ipsw.part")
-        try await Subprocess.download(url, to: partial, showProgress: showProgress)
-        try FileManager.default.moveItem(at: partial, to: target)
-        return target
+        return try await Download.cached(target, from: url, via: ipswCache.appending(path: "\(build).ipsw.part"), showProgress: showProgress)
     }
 
     private static func loadImage(_ url: URL) async throws -> VZMacOSRestoreImage {

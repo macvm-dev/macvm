@@ -295,3 +295,98 @@ struct MacOSTuningTests {
         #expect(script.split(separator: "\n").count == MacOSTuning.Step.allCases.count + 1)
     }
 }
+
+struct DownloadTests {
+    private func expectContiguous(_ ranges: [ClosedRange<Int64>], length: Int64) {
+        #expect(ranges.first?.lowerBound == 0)
+        #expect(ranges.last?.upperBound == length - 1)
+        for (a, b) in zip(ranges, ranges.dropFirst()) { #expect(b.lowerBound == a.upperBound + 1) }
+    }
+
+    @Test func chunksCoverRange() {
+        let parts = Download.chunks(0...999, size: 300)
+        #expect(parts == [0...299, 300...599, 600...899, 900...999])
+        #expect(Download.chunks(5...5, size: 300) == [5...5])
+    }
+
+    @Test func plannedRangesKeepExistingPrefixAsFirstChunk() {
+        let ranges = Download.plannedRanges(length: 1000, prefix: 600, chunk: 100)
+        #expect(ranges.first == 0...599)
+        #expect(ranges.count == 5)
+        expectContiguous(ranges, length: 1000)
+        expectContiguous(Download.plannedRanges(length: 1000, prefix: 0, chunk: 100), length: 1000)
+    }
+
+    @Test func refineSplitsLargeUnfinishedRanges() {
+        let refined = Download.refine([0...999, 1000...1099], chunk: 100) { $0.lowerBound == 0 ? 150 : 0 }
+        #expect(refined.first == 0...249)
+        #expect(refined.contains(1000...1099))
+        expectContiguous(refined, length: 1100)
+        #expect(Download.refine([0...999], chunk: 100) { _ in 900 } == [0...999])
+    }
+
+    @Test func probeReadsFinalResponseAfterRedirects() throws {
+        let output = """
+        HTTP/1.1 302 Found\r
+        Location: https://mirror.example/f.iso\r
+        Content-Length: 0\r
+        \r
+        HTTP/2 200\r
+        content-length: 4154798080\r
+        accept-ranges: bytes\r
+        \r
+        https://mirror.example/f.iso
+        """
+        let probe = try #require(Download.parseProbe(output))
+        #expect(probe.url.absoluteString == "https://mirror.example/f.iso")
+        #expect(probe.length == 4154798080)
+    }
+
+    @Test func probeWithoutLength() throws {
+        let probe = try #require(Download.parseProbe("HTTP/1.1 200 OK\r\nContent-Type: x\r\n\r\nhttps://e.example/a"))
+        #expect(probe.length == nil)
+    }
+
+    @Test func probeRejectsErrorStatus() {
+        #expect(Download.parseProbe("HTTP/1.1 302 Found\r\n\r\nHTTP/2 404\r\ncontent-length: 9\r\n\r\nhttps://e.example/a") == nil)
+    }
+}
+
+struct SubprocessCancellationTests {
+    @Test func cancellingTerminatesChildProcess() async throws {
+        let started = Date()
+        let task = Task { try await Subprocess.run("/bin/sleep", ["30"]) }
+        try await Task.sleep(for: .milliseconds(200))
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(Date().timeIntervalSince(started) < 5)
+    }
+}
+
+struct SubprocessOutputTests {
+    @Test func outputLargerThanPipeBufferDoesNotHang() async throws {
+        let output = try await Subprocess.run("/bin/sh", ["-c", "head -c 300000 /dev/zero | tr '\\0' a; head -c 300000 /dev/zero >&2"])
+        #expect(output.utf8.count == 300000)
+    }
+}
+
+struct DownloadLockTests {
+    @Test func secondHolderIsRefusedUntilRelease() throws {
+        let target = FileManager.default.temporaryDirectory.appending(path: "macvm-lock-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: target.appendingPathExtension("lock")) }
+        let first = try #require(try DownloadLock(trying: target))
+        #expect(try DownloadLock(trying: target) == nil)
+        first.release()
+        try #require(try DownloadLock(trying: target)).release()
+    }
+
+    @Test func acquireWaitsForRelease() async throws {
+        let target = FileManager.default.temporaryDirectory.appending(path: "macvm-lock-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: target.appendingPathExtension("lock")) }
+        let first = try #require(try DownloadLock(trying: target))
+        let waiter = Task { try await DownloadLock.acquire(target) }
+        try await Task.sleep(for: .milliseconds(700))
+        first.release()
+        try await waiter.value.release()
+    }
+}

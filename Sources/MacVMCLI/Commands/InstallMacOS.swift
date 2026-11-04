@@ -8,7 +8,7 @@ struct InstallMacOS: AsyncParsableCommand {
         commandName: "install-macos",
         abstract: "从 IPSW 创建并安装 macOS 虚拟机。",
         discussion: """
-        不指定 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在 ~/Library/Caches/MacVM/ipsw）。
+        不指定 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下，默认 ~/Library/Caches/MacVM）。
         安装后首次开机自动创建用户、自动登录并开启 SSH，再装入 macvm 专用密钥，之后可直接 macvm ssh / exec。
         开通后接着执行 macvm tune 的全部项，降低客户机空闲时的资源占用；--no-tune 跳过，之后可单独运行。
         """

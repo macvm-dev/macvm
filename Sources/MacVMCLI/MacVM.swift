@@ -31,7 +31,8 @@ private let discussion: String = {
     \(rows.joined(separator: "\n"))
       64  命令行用法错误
 
-    环境变量 MACVM_HOME 可改变虚拟机存放目录。
+    虚拟机目录与下载目录可在 App 设置里更改（存在 ~/Library/Application Support/MacVM/settings.json，CLI 同样遵循）；
+    环境变量 MACVM_HOME 优先于设置里的虚拟机目录。
     """
 }()
 

@@ -4,13 +4,19 @@ public import Foundation
 public struct VMLibrary: Sendable {
     public let root: URL
 
-    /// 环境变量 `MACVM_HOME` 覆盖默认位置。
+    /// 依次取环境变量 `MACVM_HOME`、`MacVMSettings.libraryPath`、`defaultRoot`。
     public static var `default`: VMLibrary {
-        if let custom = ProcessInfo.processInfo.environment["MACVM_HOME"], !custom.isEmpty {
-            return VMLibrary(root: URL(filePath: (custom as NSString).expandingTildeInPath, directoryHint: .isDirectory))
-        }
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return VMLibrary(root: support.appending(path: "MacVM/VMs", directoryHint: .isDirectory))
+        VMLibrary(root: environmentRoot ?? MacVMSettings.directory(MacVMSettings.load().libraryPath) ?? defaultRoot)
+    }
+
+    public static var defaultRoot: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "MacVM/VMs", directoryHint: .isDirectory)
+    }
+
+    /// 设置了 `MACVM_HOME` 时的目录；它优先于设置文件。
+    public static var environmentRoot: URL? {
+        MacVMSettings.directory(ProcessInfo.processInfo.environment["MACVM_HOME"])
     }
 
     public init(root: URL) { self.root = root }

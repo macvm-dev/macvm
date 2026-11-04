@@ -209,13 +209,8 @@ public enum WindowsInstaller {
     }
 
     static func cachedVirtioWin(showProgress: Bool) async throws -> URL {
-        let cache = ImageCache.root.deletingLastPathComponent().appending(path: "virtio-win.iso")
-        if FileManager.default.fileExists(atPath: cache.path) { return cache }
-        try FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let partial = cache.appendingPathExtension("part")
-        try await Subprocess.download(virtioWinURL, to: partial, showProgress: showProgress)
-        try FileManager.default.moveItem(at: partial, to: cache)
-        return cache
+        let cache = DownloadCache.root.appending(path: "virtio-win.iso")
+        return try await Download.cached(cache, from: virtioWinURL, via: cache.appendingPathExtension("part"), showProgress: showProgress)
     }
 }
 
