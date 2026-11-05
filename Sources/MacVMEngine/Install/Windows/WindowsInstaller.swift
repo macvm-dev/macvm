@@ -120,6 +120,8 @@ public enum WindowsInstaller {
                 cpuCount: options.cpuCount ?? HostInfo.defaultCPUCount(),
                 memorySize: options.memorySize ?? HostInfo.defaultMemorySize(),
                 disks: [DiskConfig(path: bundle.diskURL.lastPathComponent, bus: .nvme), DiskConfig(path: dataImageName, bus: .nvme)],
+                // 装了 3D 驱动后分辨率跟随窗口，按点数出图在 Retina 屏上发糊。
+                display: DisplayConfig(retina: unattend.installAgent && unattend.installGPUDriver),
                 networks: [NetworkConfig(macAddress: NetworkAttachments.randomMACAddress())],
                 installMedia: [options.iso.path, setupImageName],
                 guestUser: options.user,

@@ -63,7 +63,7 @@
 | 客户机端口访问 | vsock、客户机 IP | NAT 下只有 22 与代理端口，经 Unix socket 转发；桥接下直连客户机 IP |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 读这块 IOSurface）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Linux 分辨率 | 跟随窗口大小（按点数，最小 800x600，画面放大显示；`--retina on` 时按屏幕像素，有客户机代理时把 GNOME 的缩放倍数调到屏幕倍数，没有代理时 Retina 屏上界面会变小，要在客户机里调缩放） | 自带的 QEMU 下与 Windows 一样跟随窗口，有客户机代理时同样调 GNOME 的缩放倍数；Homebrew 的 QEMU 由客户机设定 |
-| Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600；`--retina on` 时按屏幕像素，并把 Windows 缩放比例调到相同倍数；总像素不超过约 780 万）；否则由客户机设定 |
+| Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600；`--retina on` 时按屏幕像素，并把 Windows 缩放比例调到相同倍数，新装的 Windows 带代理与 viogpu3d 时默认开；总像素不超过约 780 万）；否则由客户机设定 |
 | Windows 光标 | 客户机自绘 | 宿主的 macOS 光标，跟手无延迟：Windows 的系统光标换成 macOS 的同类光标（输入、手形、调整大小等，没有同类的用箭头）。viogpu3d 不支持硬件光标，代理在画面打开期间把客户机的系统光标换成透明的；程序自带的光标仍由客户机画（viogpudo 下按原图显示） |
 | Windows 3D | 无 | 自带的 QEMU 下装 viogpu3d（Direct3D 11.1，桌面合成用 GPU）；装上后只能用自带的 QEMU 运行，不能再改用 vz。驱动要与 App 自带的图形组件配套，每次开机后自动推送，换了驱动就自动重启客户机 |
 

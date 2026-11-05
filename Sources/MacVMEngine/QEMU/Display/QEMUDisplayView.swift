@@ -85,7 +85,7 @@ public final class QEMUDisplayView: NSView {
                 if resized { rebuildGuestCursor() }
                 // 代理上线后客户机自己换回了别的分辨率（Windows 登录时恢复上次保存的显示模式）：再请求一次窗口大小。
                 // 开机过程中固件与引导程序本来就要切几次分辨率，那时插手只会让画面一再重置；次数有限，客户机不接受这个尺寸时不来回切。
-                if resized, agentOnline, let requested = requestedGuestSize, requested != (Int(size.width), Int(size.height)),
+                if resized, agentOnline, let requested = requestedGuestSize, !Self.guestRounded(requested, to: size),
                    scaleTransition == nil, guestReverts < Self.maxGuestReverts {
                     guestReverts += 1
                     requestedGuestSize = nil
@@ -317,6 +317,13 @@ public final class QEMUDisplayView: NSView {
     /// 代理在线：客户机已开机并登录，之后它自己改分辨率才要纠正。
     private var agentOnline = false
     private static let maxGuestReverts = 3
+    /// 客户机把请求的尺寸取整（如宽度按 8 对齐）时差不过这么多像素；再请求一次同样的尺寸只会让它重设一遍模式、黑一下。
+    private static let guestRoundingSlack = 16
+
+    /// `size` 是客户机对 `requested` 取整后的结果，不算改回别的分辨率。
+    private static func guestRounded(_ requested: (Int, Int), to size: CGSize) -> Bool {
+        abs(requested.0 - Int(size.width)) <= guestRoundingSlack && abs(requested.1 - Int(size.height)) <= guestRoundingSlack
+    }
     private var preferenceObserver: (any NSObjectProtocol)?
     /// 拖动窗口时每帧都在变，停下来这么久再请客户机切换。
     private static let guestFitDelay: TimeInterval = 0.4
