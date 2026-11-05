@@ -43,6 +43,24 @@ public enum MacOSProvisioning {
         try? FileManager.default.removeItem(at: pendingURL(bundle))
     }
 
+    /// 经 SSH 把运行中客户机的电脑名设为虚拟机名，主机名与本地主机名设为它能当主机名用的形式。
+    /// 要 sudo，用包内保存的客户机密码；客户机要已装好 macvm 公钥。
+    public static func setHostName(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws {
+        guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 设置主机名") }
+        guard let password = GuestCredentials.password(for: bundle) else {
+            throw MacVMError.invalidConfig("没有 \(config.name) 的客户机密码，无法 sudo 设置主机名")
+        }
+        // 虚拟机名只含 `SSHConfig.isPlainName` 认的字符，放进单引号里不用转义。
+        try SSHConfig.validateLogin(user: user, host: bundle.name)
+        let host = CloudInit.hostname(for: bundle.name, fallback: "mac")
+        let commands = "scutil --set ComputerName \(bundle.name) && scutil --set LocalHostName \(host) && scutil --set HostName \(host)"
+        let stdin = FileManager.default.temporaryDirectory.appending(path: "macvm-sudo-\(UUID().uuidString)")
+        try GuestCredentials.writePrivate(Data((password + "\n").utf8), to: stdin)
+        defer { try? FileManager.default.removeItem(at: stdin) }
+        let ssh = AgentInstaller.sshArguments(bundle: bundle, user: user, macvmPath: macvmPath)
+        try await Subprocess.run("/usr/bin/ssh", ssh + ["sudo -S -p '' /bin/sh -c '\(commands)'"], stdin: stdin)
+    }
+
 }
 
 /// 客户机登录密码，存在包内 `guest-password`（0600），供用密码登录装入 SSH 公钥及用户自行查看。

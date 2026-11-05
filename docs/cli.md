@@ -16,7 +16,7 @@
 | `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--network nat\|bridged[:网卡]] [--display 宽x高] [--retina on\|off] [--disk-size 256G] [--add-share 路径[:名称][:ro]]… [--remove-share 路径或名称]…` | 修改已关机虚拟机的配置，可切换引擎；运行中报 `already_running`，挂起时报 `invalid_config`。只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效）。`--disk-size` 只扩大系统盘镜像、不能缩小，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。共享目录只用于 vz 引擎的 macOS、Linux 客户机，名称缺省取目录名（Linux 只留 ASCII 字母数字与 `._-`，重名加 `-2`…），不超过 36 字节；先执行 `--remove-share` 再执行 `--add-share`，移除后加回即可改只读。有共享目录或开着 Rosetta 时不能切到 qemu（报 `unsupported`） |
 | `screenshot <名> <文件>` | 保存画面为 PNG（用 Homebrew 的 QEMU 时；VZ 引擎与 App 自带的 QEMU 报 `unsupported`） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
-| `install-macos <名> [--ipsw 文件] [--user 用户] [--password 密码] [--no-tune]` | 安装 macOS 虚拟机并开通 SSH 与代理，再执行 `tune` 的全部项；`--user` 的规则与 `create` 相同，`--password` 省略时随机生成，存在包内 `guest-password`；结果里的 `tuning` 是调优报告，跳过或出错时没有该字段，出错原因在 `tuningError`，安装本身仍算成功 |
+| `install-macos <名> [--ipsw 文件] [--user 用户] [--password 密码] [--no-tune]` | 安装 macOS 虚拟机并开通 SSH 与代理，主机名设为虚拟机名，再执行 `tune` 的全部项；`--user` 的规则与 `create` 相同，`--password` 省略时随机生成，存在包内 `guest-password`；结果里的 `tuning` 是调优报告，跳过或出错时没有该字段，出错原因在 `tuningError`，安装本身仍算成功 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
 | `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机 |
 | `wait <名>` | 等到代理（或 SSH）可用，未运行时自动启动 |

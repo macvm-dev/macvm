@@ -595,7 +595,7 @@ final class AppModel {
     func creatingOS(_ name: String) -> GuestOS? { runningCreations[name]?.os }
 
     /// 新建的 macOS 虚拟机首次开机，等远程登录可用后用密码登录一次装入 macvm 公钥，之后 SSH 都走密钥；
-    /// App 带着 macOS 版客户机代理时再经 SSH 装上代理。
+    /// 再把客户机主机名设为虚拟机名，App 带着 macOS 版客户机代理时经 SSH 装上代理。
     /// 不会自动开通时不开机：用户要先在窗口里走完设置助理。失败只报告，不影响虚拟机本身。
     private func setUpGuestOnFirstBoot(_ name: String, openMachineWindow: @escaping @MainActor (String) -> Void) {
         guard let bundle = try? library.bundle(named: name), MacOSProvisioning.willApply(to: bundle),
@@ -613,6 +613,12 @@ final class AppModel {
             let proxy = SSHConfig.proxyCommand(macvmPath: CLILocation.path, name: name, flags: ["--tcp"])
             do {
                 try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: password, proxyCommand: proxy, timeout: 900)
+                // 主机名没设上不影响装代理。
+                do {
+                    try await MacOSProvisioning.setHostName(bundle: bundle, config: bundle.loadConfig(), macvmPath: CLILocation.path)
+                } catch where !Task.isCancelled {
+                    report(error)
+                }
                 if AgentInstaller.binary(for: .macOS) != nil {
                     _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: CLILocation.path)
                     configRevision += 1

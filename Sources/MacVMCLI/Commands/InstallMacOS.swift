@@ -9,7 +9,7 @@ struct InstallMacOS: AsyncParsableCommand {
         abstract: "从 IPSW 创建并安装 macOS 虚拟机。",
         discussion: """
         不指定 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下，默认 ~/Library/Caches/MacVM）。
-        安装后首次开机自动创建用户、自动登录并开启 SSH，再装入 macvm 专用密钥，之后可直接 macvm ssh / exec。
+        安装后首次开机自动创建用户、自动登录并开启 SSH，再装入 macvm 专用密钥、把主机名设为虚拟机名，之后可直接 macvm ssh / exec。
         开通后接着执行 macvm tune 的全部项，降低客户机空闲时的资源占用；--no-tune 跳过，之后可单独运行。
         """
     )
@@ -81,6 +81,11 @@ struct InstallMacOS: AsyncParsableCommand {
                 let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: name, flags: ["--tcp", "--timeout", "600"])
                 try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: pw, proxyCommand: proxy, timeout: 900)
                 sshReady = true
+                do {
+                    try await MacOSProvisioning.setHostName(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
+                } catch {
+                    FileHandle.standardError.write(Data("设置主机名失败：\((error as? MacVMError)?.message ?? error.localizedDescription)\n".utf8))
+                }
                 if AgentInstaller.binary(for: .macOS) != nil {
                     _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
                 }
