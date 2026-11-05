@@ -1,0 +1,265 @@
+Emulate MMIO data aborts that carry no instruction syndrome (ISV=0) under HVF instead
+of asserting: load/store pair, SIMD&FP and write-back load/store instructions are decoded
+from guest memory and performed through the guest page tables, including accesses that
+straddle a page boundary. Windows' Direct3D user-mode driver copies
+into GPU blobs that HVF cannot map directly (so every access traps) with STP of Q registers,
+which used to abort QEMU with `Assertion failed: (isv)`.
+
+diff --git a/target/arm/hvf/hvf.c b/target/arm/hvf/hvf.c
+--- a/target/arm/hvf/hvf.c
++++ b/target/arm/hvf/hvf.c
+@@ -2348,7 +2348,228 @@
+         r = hv_vcpu_set_vtimer_mask(cpu->accel->fd, false);
+         assert_hvf_ok(r);
+         cpu->accel->vtimer_masked = false;
++    }
++}
++
++/* Virtual address bits that take part in translation; the top byte may be a tag. */
++#define HVF_MMIO_VA_MASK ((1ULL << 56) - 1)
++
++/* One physically contiguous piece of an emulated access. */
++typedef struct HVFMMIOChunk {
++    hwaddr pa;
++    MemTxAttrs attrs;
++    int offset;
++    int len;
++} HVFMMIOChunk;
++
++/*
++ * Split [va, va + len) into physically contiguous chunks through the guest
++ * page tables. An access may cross into a page that is not the faulting one.
++ */
++static bool hvf_mmio_translate(CPUState *cpu, uint64_t va, int len, int offset,
++                               HVFMMIOChunk *chunks, int *count, int max)
++{
++    while (len > 0) {
++        TranslateForDebugResult res;
++        uint64_t block_end;
++        int l;
++
++        if (*count == max || !cpu_translate_for_debug(cpu, va, &res)) {
++            return false;
++        }
++        block_end = (va | ((1ULL << res.lg_page_size) - 1)) + 1;
++        l = MIN((uint64_t)len, block_end - va);
++        chunks[*count] = (HVFMMIOChunk) {
++            .pa = res.physaddr, .attrs = res.attrs, .offset = offset, .len = l,
++        };
++        (*count)++;
++        va += l;
++        offset += l;
++        len -= l;
++    }
++    return true;
++}
++
++/*
++ * Emulate an MMIO access whose data abort carries no instruction syndrome
++ * (ISV=0): load/store pair, SIMD&FP and write-back forms of the load/store
++ * instructions. Guests touch device memory with them, for example Windows
++ * copying into a PCI BAR with LDP/STP while it reboots. The instruction is
++ * read and decoded from guest memory, and every accessed byte is translated
++ * through the guest page tables, so accesses that straddle a page boundary
++ * work too. Returns false for anything else, leaving the guest state untouched.
++ */
++static bool hvf_emulate_mmio_without_syndrome(CPUState *cpu, uint64_t fault_va,
++                                              uint32_t *insn_out)
++{
++    ARMCPU *arm_cpu = ARM_CPU(cpu);
++    CPUARMState *env = &arm_cpu->env;
++    HVFMMIOChunk chunks[8];
++    int chunk_count[2] = { 0, 0 };
++    uint32_t insn;
++    int rt, rt2 = 0, rn, size, scale, count = 1, sign_bits = 0;
++    bool load, simd, post = false, writeback = false;
++    int64_t offset;
++    uint64_t base, addr;
++
++    cpu_synchronize_state(cpu);
++    if (cpu_memory_rw_debug(cpu, env->pc, (uint8_t *)&insn, 4, false)) {
++        return false;
++    }
++    insn = le32_to_cpu(insn);
++    *insn_out = insn;
++
++    rt = extract32(insn, 0, 5);
++    rn = extract32(insn, 5, 5);
++    simd = extract32(insn, 26, 1);
++
++    if ((insn & 0x3a000000) == 0x28000000) {
++        /* LDP, STP, LDNP, STNP, LDPSW */
++        int opc = extract32(insn, 30, 2);
++        int index = extract32(insn, 23, 2);
++
++        load = extract32(insn, 22, 1);
++        rt2 = extract32(insn, 10, 5);
++        count = 2;
++        if (simd) {
++            if (opc == 3) {
++                return false;
++            }
++            scale = 2 + opc;
++        } else if (opc == 0) {
++            scale = 2;
++        } else if (opc == 1 && load) {
++            scale = 2;
++            sign_bits = 64;
++        } else if (opc == 2) {
++            scale = 3;
++        } else {
++            return false;
++        }
++        offset = (int64_t)sextract32(insn, 15, 7) << scale;
++        post = index == 1;
++        writeback = index == 1 || index == 3;
++    } else if ((insn & 0x3b000000) == 0x38000000 ||
++               (insn & 0x3b000000) == 0x39000000) {
++        /* LDR, STR, LDUR, STUR, LDTR, STTR and their sized variants */
++        int size_field = extract32(insn, 30, 2);
++        int opc = extract32(insn, 22, 2);
++
++        if (simd) {
++            if (opc & 2) {
++                if (size_field) {
++                    return false;
++                }
++                scale = 4;
++            } else {
++                scale = size_field;
++            }
++            load = opc & 1;
++        } else {
++            scale = size_field;
++            load = opc != 0;
++            if (opc == 2) {
++                if (size_field == 3) {
++                    /* PRFM: nothing to do for device memory. */
++                    return true;
++                }
++                sign_bits = 64;
++            } else if (opc == 3) {
++                if (size_field >= 2) {
++                    return false;
++                }
++                sign_bits = 32;
++            }
++        }
++        if (extract32(insn, 24, 1)) {
++            offset = (int64_t)extract32(insn, 10, 12) << scale;
++        } else if (!extract32(insn, 21, 1)) {
++            int index = extract32(insn, 10, 2);
++
++            offset = sextract32(insn, 12, 9);
++            post = index == 1;
++            writeback = index == 1 || index == 3;
++        } else if (extract32(insn, 10, 2) == 2) {
++            int rm = extract32(insn, 16, 5);
++            int option = extract32(insn, 13, 3);
++            uint64_t index_reg = rm == 31 ? 0 : env->xregs[rm];
++
++            switch (option) {
++            case 2: /* UXTW */
++                index_reg = (uint32_t)index_reg;
++                break;
++            case 3: /* LSL / UXTX */
++            case 7: /* SXTX */
++                break;
++            case 6: /* SXTW */
++                index_reg = (int64_t)(int32_t)index_reg;
++                break;
++            default:
++                return false;
++            }
++            offset = index_reg << (extract32(insn, 12, 1) ? scale : 0);
++        } else {
++            return false;
++        }
++    } else {
++        return false;
+     }
++
++    size = 1 << scale;
++    base = env->xregs[rn];  /* xregs[31] holds the current SP */
++    addr = post ? base : base + offset;
++    if (((fault_va - addr) & HVF_MMIO_VA_MASK) >= (uint64_t)count * size) {
++        /* The decoded access does not cover the fault: not the instruction we think. */
++        return false;
++    }
++    for (int i = 0; i < count; i++) {
++        if (!hvf_mmio_translate(cpu, addr + i * size, size, 0, chunks + i * 4,
++                                &chunk_count[i], 4)) {
++            return false;
++        }
++    }
++
++    for (int i = 0; i < count; i++) {
++        int reg = i ? rt2 : rt;
++        uint8_t buf[16] = { 0 };
++
++        if (!load) {
++            if (simd) {
++                memcpy(buf, &env->vfp.zregs[reg], size);
++            } else {
++                stq_le_p(buf, reg == 31 ? 0 : env->xregs[reg]);
++            }
++        }
++        for (int c = 0; c < chunk_count[i]; c++) {
++            HVFMMIOChunk *chunk = &chunks[i * 4 + c];
++            AddressSpace *as = cpu_get_address_space(cpu,
++                                   cpu_asidx_from_attrs(cpu, chunk->attrs));
++
++            address_space_rw(as, chunk->pa, chunk->attrs, buf + chunk->offset,
++                             chunk->len, !load);
++        }
++        if (!load) {
++            continue;
++        }
++        if (simd) {
++            memset(&env->vfp.zregs[reg], 0, 16);
++            memcpy(&env->vfp.zregs[reg], buf, size);
++        } else if (reg != 31) {
++            uint64_t val = ldq_le_p(buf);
++
++            if (sign_bits) {
++                val = sextract64(val, 0, size * 8);
++                if (sign_bits == 32) {
++                    val = (uint32_t)val;
++                }
++            }
++            env->xregs[reg] = val;
++        }
++    }
++    if (writeback) {
++        env->xregs[rn] = base + offset;
++    }
++    return true;
+ }
+ 
+ static int hvf_handle_exception(CPUState *cpu, hv_vcpu_exit_exception_t *excp)
+@@ -2457,11 +2678,20 @@
+          */
+         assert(!s1ptw);
+ 
+-        /*
+-         * TODO: ISV will be 0 for SIMD or SVE accesses.
+-         * Inject the exception into the guest.
+-         */
+-        assert(isv);
++        if (!isv) {
++            uint32_t insn = 0;
++
++            if (hvf_emulate_mmio_without_syndrome(cpu, excp->virtual_address,
++                                                  &insn)) {
++                advance_pc = true;
++                break;
++            }
++            error_report("hvf: cannot emulate MMIO access without syndrome: "
++                         "pc=0x%" PRIx64 " va=0x%" PRIx64 " ipa=0x%" PRIx64
++                         " insn=0x%08" PRIx32,
++                         env->pc, (uint64_t)excp->virtual_address, ipa, insn);
++            abort();
++        }
+ 
+         /*
+          * Emulate MMIO.
