@@ -10,6 +10,7 @@ struct Set: AsyncParsableCommand {
         --engine 切换虚拟化引擎，磁盘与系统保持不变。例如 Windows：日常编译测试用 vz（占用最低），需要声音或挂起时切到 qemu。
         macOS 客户机只能用 vz。
         --retina 只影响应用窗口里 QEMU 虚拟机与 VZ 下 Linux 的分辨率，运行中也可修改，打开的窗口下次调整大小时生效。
+        --clipboard 在应用窗口与客户机之间同步文本剪贴板（默认开）。macOS、Windows 客户机经代理同步，运行中也可修改；Linux 客户机经 spice-vdagent 同步，要关机后修改。
         --disk-size 只扩大系统盘镜像，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。
         --network bridged 让客户机直接接入主机所在的局域网，需要先在 App 的设置里启用网络辅助程序；不写网卡名时开机桥接到第一块可桥接的网卡。
         --remove-share 先于 --add-share 执行，先移除再加回即可改只读。共享目录只用于 VZ 引擎的 macOS、Linux 客户机。
@@ -23,6 +24,7 @@ struct Set: AsyncParsableCommand {
     @Option(help: "内存，如 8G。") var memory: String?
     @Option(help: "开机时的显示尺寸，宽x高，如 2560x1600。") var display: String?
     @Option(help: "应用窗口里按屏幕像素请求分辨率（QEMU 引擎与 VZ 下的 Linux）：on 或 off。") var retina: Toggle?
+    @Option(help: "同步文本剪贴板：on 或 off。") var clipboard: Toggle?
     @Option(help: "扩大系统盘到此容量，如 256G；只能扩大。") var diskSize: String?
     @Option(help: "网络：nat 或 bridged[:网卡名]。") var network: String?
     @Option(help: "添加共享目录：主机路径[:名称][:ro]，可重复。") var addShare: [String] = []
@@ -37,11 +39,13 @@ struct Set: AsyncParsableCommand {
     func run() async throws {
         try await Output.run(json: global.json, human: { (s: VMSummary) in "已更新 \(s.name)" }) {
             let bundle = try VMLibrary.default.bundle(named: name)
-            let onlyRetina = engine == nil && cpuCount == nil && memory == nil && display == nil
-                && diskSize == nil && network == nil && addShare.isEmpty && removeShare.isEmpty
-            if !onlyRetina { try bundle.requireStopped() }
             var config = try bundle.loadConfig()
+            let onlyLive = engine == nil && cpuCount == nil && memory == nil && display == nil
+                && diskSize == nil && network == nil && addShare.isEmpty && removeShare.isEmpty
+                && (clipboard == nil || !config.clipboardChangeNeedsStop)
+            if !onlyLive { try bundle.requireStopped() }
             if let retina { config.display.retina = retina == .on }
+            if let clipboard { config.clipboard = clipboard == .on }
             for share in removeShare {
                 // 先于换引擎：移除最后的共享目录后才能换到 qemu。名称原样匹配，路径要与添加时一样标准化；都不匹配时按原样报错。
                 let path = Create.standardizedPath(share)

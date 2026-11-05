@@ -22,6 +22,77 @@ static BOOL debug_enabled(void) {
     } \
 } while (0)
 
+/// 宿主剪贴板与各 SPICE 会话之间只传文本。CocoaSpice 在 glib 线程上调用这些方法，NSPasteboard 可在任意线程使用。
+@interface MacVMPasteboard : NSObject <CSPasteboardDelegate>
++ (instancetype)shared;
+/// 宿主剪贴板里有文本、且自上次同步后变过（`force` 时不论变没变）时，通知各会话交给客户机。
+- (void)offer:(BOOL)force;
+@end
+
+@implementation MacVMPasteboard {
+    /// 上次交给客户机或从客户机写入时宿主剪贴板的 changeCount。
+    NSInteger _syncedChangeCount;
+}
+
++ (instancetype)shared {
+    static MacVMPasteboard *shared;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ shared = [[MacVMPasteboard alloc] init]; });
+    return shared;
+}
+
+- (instancetype)init {
+    if ((self = [super init])) {
+        _syncedChangeCount = -1;
+    }
+    return self;
+}
+
+- (void)offer:(BOOL)force {
+    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+    @synchronized (self) {
+        if (!force && pasteboard.changeCount == _syncedChangeCount) {
+            return;
+        }
+        _syncedChangeCount = pasteboard.changeCount;
+    }
+    if ([pasteboard stringForType:NSPasteboardTypeString]) {
+        [NSNotificationCenter.defaultCenter postNotificationName:kCSPasteboardChangedNotification object:nil];
+    }
+}
+
+- (BOOL)canReadItemForType:(CSPasteboardType)type {
+    return type == kCSPasteboardTypeString && [self string] != nil;
+}
+
+- (NSData *)dataForType:(CSPasteboardType)type {
+    return type == kCSPasteboardTypeString ? [[self string] dataUsingEncoding:NSUTF8StringEncoding] : nil;
+}
+
+- (void)setData:(NSData *)data forType:(CSPasteboardType)type {}
+
+- (NSString *)string {
+    return [NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString];
+}
+
+- (void)setString:(NSString *)string {
+    // 客户机清空剪贴板时宿主的内容留着。
+    if (string.length == 0) {
+        return;
+    }
+    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+    @synchronized (self) {
+        [pasteboard clearContents];
+        [pasteboard setString:string forType:NSPasteboardTypeString];
+        _syncedChangeCount = pasteboard.changeCount;
+    }
+}
+
+// 客户机放弃剪贴板（如复制内容的程序退出）时宿主的内容留着。
+- (void)clearContents {}
+
+@end
+
 @interface MacVMSpiceView : MTKView <CSConnectionDelegate, MTKViewDelegate>
 @property (nonatomic) MacVMDisplayHandler handler;
 @property (nonatomic) MacVMDisplayCursorHandler cursorHandler;
@@ -72,6 +143,7 @@ static BOOL debug_enabled(void) {
     _connection = [[CSConnection alloc] initWithUnixSocketFile:socket];
     _connection.delegate = self;
     _connection.audioEnabled = NO;
+    _connection.session.pasteboardDelegate = MacVMPasteboard.shared;
     // spice-gtk 只在有 EGL 时默认声明能收 GL scanout；不声明，服务端会改走视频编码（这里没有编码器）而不共享 IOSurface。
     SpiceSession *session = ((SpiceSession *(*)(id, SEL))objc_msgSend)(_connection, NSSelectorFromString(@"spiceSession"));
     g_object_set(session, "gl-scanout", TRUE, NULL);
@@ -143,11 +215,18 @@ static BOOL debug_enabled(void) {
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center removeObserver:self name:NSWindowDidEnterFullScreenNotification object:nil];
     [center removeObserver:self name:NSWindowDidExitFullScreenNotification object:nil];
+    [center removeObserver:self name:NSWindowDidBecomeKeyNotification object:nil];
     if (self.window) {
+        // 宿主剪贴板在窗口成为主窗口时交给客户机；客户机的剪贴板一变，SPICE 就送回宿主。
+        [center addObserver:self selector:@selector(offerPasteboard) name:NSWindowDidBecomeKeyNotification object:self.window];
         [center addObserver:self selector:@selector(updateDisplaySync) name:NSWindowDidEnterFullScreenNotification object:self.window];
         [center addObserver:self selector:@selector(updateDisplaySync) name:NSWindowDidExitFullScreenNotification object:self.window];
     }
     [self updateDisplaySync];
+}
+
+- (void)offerPasteboard {
+    [MacVMPasteboard.shared offer:NO];
 }
 
 // 全屏时系统可能让画面跳过合成器直接上屏，不等垂直同步就会撕裂。
@@ -332,7 +411,10 @@ static BOOL debug_enabled(void) {
     });
 }
 
-- (void)spiceAgentConnected:(CSConnection *)connection supportingFeatures:(CSConnectionAgentFeature)features {}
+// 客户机代理（重新）连上时它的剪贴板是空的，宿主剪贴板没变也要给一次。
+- (void)spiceAgentConnected:(CSConnection *)connection supportingFeatures:(CSConnectionAgentFeature)features {
+    dispatch_async(dispatch_get_main_queue(), ^{ [MacVMPasteboard.shared offer:YES]; });
+}
 - (void)spiceAgentDisconnected:(CSConnection *)connection {}
 - (void)spiceForwardedPortOpened:(CSConnection *)connection port:(CSPort *)port {}
 - (void)spiceForwardedPortClosed:(CSConnection *)connection port:(CSPort *)port {}

@@ -161,6 +161,11 @@ struct QEMUCommand {
         if usesSpice {
             // GL 画面不能同时给 VNC；自带的 QEMU 也不带 Cocoa 窗口，`display` 不起作用。
             a += ["-display", "none", "-spice", "unix=on,addr=\(Self.optionValue(Self.spiceSocket(bundle).path)),disable-ticketing=on,gl=on"]
+            // Linux 客户机里的 spice-vdagent 经这个端口与 App 的画面（SPICE 客户端）共享剪贴板。
+            if config.os == .linux, config.clipboard {
+                a += ["-device", "virtio-serial-pci", "-chardev", "spicevmc,id=vdagent,name=vdagent",
+                      "-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0"]
+            }
         } else {
             a += ["-display", display ? "cocoa" : "none", "-vnc", "unix:\(Self.optionValue(Self.vncSocket(bundle).path))"]
         }

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct MachineWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.controlActiveState) private var activeState
     let name: String
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
@@ -24,9 +25,15 @@ struct MachineWindow: View {
     @State private var awaitingFirstFrame = false
     /// 启动提示的文字，挂起的虚拟机是从存档恢复。
     @State private var startingTitle = "正在启动…"
+    /// 窗口显示客户机画面期间经代理同步剪贴板；没有画面或客户机不经代理同步时为 nil。
+    @State private var clipboard: ClipboardSync?
 
     private var isRunning: Bool { model.summary(name)?.state == .running }
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
+    /// 窗口里显示着客户机画面：VZ 的画面只在本进程运行时有，QEMU 的在别的进程运行时也能接上。
+    private var showsDisplay: Bool {
+        runner is VZRunner || (model.config(of: name)?.engine == .qemu && (runner != nil || runningElsewhere))
+    }
     /// 等客户机自己关机期间关机按钮换成转圈；挂起仍可点，客户机不理会关机时还能挂起。
     private var stopping: Bool { model.isStopping(name) }
     /// 进行中的挂起、关机或首次开机配置，在画面顶部一直显示到结束。
@@ -103,6 +110,17 @@ struct MachineWindow: View {
         }
         .onChange(of: model.isRunningHere(name)) { _, running in
             if !running { runner = nil }
+        }
+        .onChange(of: showsDisplay && config.map(GuestClipboard.enabled) == true, initial: true) { _, syncing in
+            if syncing, let bundle {
+                clipboard = ClipboardSync(bundle: bundle)
+                if activeState == .key { clipboard?.push() }
+            } else {
+                clipboard = nil
+            }
+        }
+        .onChange(of: activeState) { old, new in
+            if new == .key { clipboard?.push() } else if old == .key { clipboard?.pull() }
         }
         // 工具栏从窗口打开起就在，虚拟机跑起来之前按钮不可点：按钮晚出现会把标题栏撑高，画面跟着往下跳。
         .toolbar {

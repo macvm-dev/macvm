@@ -63,6 +63,13 @@ struct MachineDetailView: View {
                         .disabled(!editable)
                         .help("把主机麦克风接给客户机，开机时主机会请求麦克风权限")
                 }
+                if let config {
+                    Toggle("同步剪贴板", isOn: Binding(get: { config.clipboard }, set: { model.setClipboard(vm.name, $0) }))
+                        .disabled(config.clipboardChangeNeedsStop && !editable)
+                        .help(config.os == .linux
+                              ? "宿主与客户机互通文本剪贴板，客户机里要有 spice-vdagent；关机后才能修改。客户机里的程序都能读到宿主上复制的内容"
+                              : "宿主与客户机互通文本剪贴板：点进虚拟机窗口时把宿主剪贴板交给客户机，离开时取回客户机的。客户机里的程序都能读到宿主上复制的内容")
+                }
                 if let diskSize {
                     LabeledContent("磁盘") {
                         HStack(spacing: 10) {

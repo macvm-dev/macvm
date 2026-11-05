@@ -326,6 +326,12 @@ final class AppModel {
         updateConfig(name, requiresStopped: !isRunning(name)) { $0.microphone = on }
     }
 
+    /// macOS、Windows 客户机运行中改了立即生效；Linux 客户机要关机后改。返回是否已保存。
+    @discardableResult
+    func setClipboard(_ name: String, _ on: Bool) -> Bool {
+        updateConfig(name, requiresStopped: config(of: name)?.clipboardChangeNeedsStop ?? true) { $0.clipboard = on }
+    }
+
     private func isRunning(_ name: String) -> Bool { runners[name] != nil || summary(name)?.state == .running }
 
     func setCPUCount(_ name: String, _ count: Int) {

@@ -36,6 +36,9 @@ public struct VMConfig: Codable, Sendable, Equatable {
     /// 客户机已拿到 3D 显卡驱动（Windows 的 viogpu3d），只能用带图形加速的 QEMU 运行：
     /// VZ 与不带 virglrenderer 的 QEMU 下它没有 3D 可用，Windows 开机即崩溃。
     public var graphicsAcceleration: Bool
+    /// 在宿主与客户机之间同步文本剪贴板。macOS、Windows 客户机经代理同步，随时可改；
+    /// Linux 客户机经开机时接上的 SPICE 通道同步，改了要下次开机生效（`clipboardChangeNeedsStop`）。
+    public var clipboard: Bool
 
     public init(
         name: String,
@@ -55,7 +58,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
         guestUser: String? = nil,
         guestAgent: Bool = false,
         serialConsole: Bool = false,
-        graphicsAcceleration: Bool = false
+        graphicsAcceleration: Bool = false,
+        clipboard: Bool = true
     ) {
         self.version = Self.currentVersion
         self.name = name
@@ -76,6 +80,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.guestAgent = guestAgent
         self.serialConsole = serialConsole
         self.graphicsAcceleration = graphicsAcceleration
+        self.clipboard = clipboard
     }
 
     public init(from decoder: any Decoder) throws {
@@ -99,7 +104,11 @@ public struct VMConfig: Codable, Sendable, Equatable {
         guestAgent = try c.decodeIfPresent(Bool.self, forKey: .guestAgent) ?? false
         serialConsole = try c.decodeIfPresent(Bool.self, forKey: .serialConsole) ?? false
         graphicsAcceleration = try c.decodeIfPresent(Bool.self, forKey: .graphicsAcceleration) ?? false
+        clipboard = try c.decodeIfPresent(Bool.self, forKey: .clipboard) ?? true
     }
+
+    /// 改剪贴板同步是否要先关机：Linux 客户机的 SPICE 通道是开机时接上的设备，挂起的存档也认这套设备。
+    public var clipboardChangeNeedsStop: Bool { os == .linux }
 
     /// 能否挂声音设备。VZ 只有 virtio-sound，Windows 没有它的驱动。
     public var supportsAudio: Bool { engine == .qemu || os != .windows }

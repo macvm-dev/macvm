@@ -43,6 +43,7 @@ public struct ConfigBuilder {
         configureAudio(vz)
         try configureDirectorySharing(vz)
         configureConsole(vz)
+        configureClipboard(vz)
 
         vz.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
         vz.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
@@ -248,6 +249,22 @@ public struct ConfigBuilder {
         let port = VZVirtioConsoleDeviceSerialPortConfiguration()
         port.attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: read, fileHandleForWriting: write)
         vz.serialPorts = [port]
+    }
+
+    // MARK: - 剪贴板
+
+    /// Linux 客户机里的 spice-vdagent 经这个端口与宿主共享文本剪贴板。headless 时不挂：没有画面就用不上剪贴板，
+    /// 而 headless 的 Linux 虚拟机要能挂起，多一个设备的配置恢复不了已有的存档。
+    private func configureClipboard(_ vz: VZVirtualMachineConfiguration) {
+        guard config.os == .linux, config.clipboard, !config.headless else { return }
+        let attachment = VZSpiceAgentPortAttachment()
+        attachment.sharesClipboard = true
+        let port = VZVirtioConsolePortConfiguration()
+        port.name = VZSpiceAgentPortAttachment.spiceAgentPortName
+        port.attachment = attachment
+        let console = VZVirtioConsoleDeviceConfiguration()
+        console.ports[0] = port
+        vz.consoleDevices = [console]
     }
 }
 
