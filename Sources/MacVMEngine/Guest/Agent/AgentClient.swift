@@ -163,9 +163,13 @@ final class ExecSession: @unchecked Sendable {
     }
 
     static func frame(_ kind: AgentProtocol.FrameKind, _ payload: Data) -> Data {
-        var frame = Data([kind.rawValue])
+        frame(kind.rawValue, payload)
+    }
+
+    static func frame(_ kind: UInt8, _ payload: some DataProtocol) -> Data {
+        var frame = Data([kind])
         withUnsafeBytes(of: UInt32(payload.count).littleEndian) { frame.append(contentsOf: $0) }
-        frame.append(payload)
+        frame.append(contentsOf: payload)
         return frame
     }
 }

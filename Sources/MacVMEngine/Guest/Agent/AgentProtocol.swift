@@ -9,6 +9,48 @@ public enum AgentProtocol {
     static let maxBody = 64 << 20
     /// `Info.features` 里表示支持 `ui-*` 请求的项。
     static let featureUI = "ui"
+    /// `Info.features` 里表示支持 `files-put`、`files-get` 与剪贴板里的文件的项。
+    static let featureFiles = "files"
+    /// `Info.features` 里表示支持 `drag-files` 的项。
+    static let featureDrag = "drag"
+
+    /// `files-put` 把文件放到哪里。
+    public enum PutTarget: Sendable, Equatable {
+        /// 客户机上已有的目录。
+        case dir(String)
+        /// 投放点下的文件夹窗口或桌面；点是主屏宽、高的比例（0–1）。
+        case drop(x: Double, y: Double)
+        /// 客户机的桌面。
+        case desktop
+        /// 新的暂存目录，收完后客户机剪贴板换成这些文件。
+        case clipboard
+    }
+
+    /// 客户机上的一个文件或目录。
+    public struct GuestFile: Codable, Sendable, Equatable, Hashable {
+        /// 客户机上的绝对路径。
+        public let path: String
+        public let dir: Bool
+
+        public init(path: String, dir: Bool) {
+            self.path = path
+            self.dir = dir
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            path = try c.decode(String.self, forKey: .path)
+            dir = try c.decodeIfPresent(Bool.self, forKey: .dir) ?? false
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(path, forKey: .path)
+            if dir { try c.encode(dir, forKey: .dir) }
+        }
+
+        private enum CodingKeys: String, CodingKey { case path, dir }
+    }
 
     public struct ExecRequest: Codable, Sendable, Equatable {
         public var argv: [String]
@@ -52,10 +94,15 @@ public enum AgentProtocol {
         case uiInput([InputEvent])
         /// 成功响应带 `size`，正文是主屏 PNG。
         case uiScreenshot
+        /// 成功响应后宿主发文件流，代理收完再回一行，`files` 是各顶层项的存放路径。
+        case filesPut(PutTarget)
+        /// 成功响应带 `total`，随后代理发这些路径的文件流。
+        case filesGet(paths: [String])
+        case dragFiles
 
         private enum Keys: String, CodingKey {
             case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size, keep
-            case app, max_depth, max_nodes, element, action, value, events
+            case app, max_depth, max_nodes, element, action, value, events, to, x, y, paths
         }
 
         public func encode(to encoder: any Encoder) throws {
@@ -93,6 +140,16 @@ public enum AgentProtocol {
                 try c.encodeIfPresent(value, forKey: .value)
             case .uiInput(let events): try c.encode("ui-input", forKey: .op); try c.encode(events, forKey: .events)
             case .uiScreenshot: try c.encode("ui-screenshot", forKey: .op)
+            case .filesPut(let target):
+                try c.encode("files-put", forKey: .op)
+                switch target {
+                case .dir(let path): try c.encode("dir", forKey: .to); try c.encode(path, forKey: .path)
+                case .drop(let x, let y): try c.encode("drop", forKey: .to); try c.encode(x, forKey: .x); try c.encode(y, forKey: .y)
+                case .desktop: try c.encode("drop", forKey: .to)
+                case .clipboard: try c.encode("clipboard", forKey: .to)
+                }
+            case .filesGet(let paths): try c.encode("files-get", forKey: .op); try c.encode(paths, forKey: .paths)
+            case .dragFiles: try c.encode("drag-files", forKey: .op)
             }
         }
 
@@ -122,6 +179,20 @@ public enum AgentProtocol {
                                  value: try c.decodeIfPresent(String.self, forKey: .value))
             case "ui-input": self = .uiInput(try c.decode([InputEvent].self, forKey: .events))
             case "ui-screenshot": self = .uiScreenshot
+            case "files-put":
+                switch try c.decode(String.self, forKey: .to) {
+                case "dir": self = .filesPut(.dir(try c.decode(String.self, forKey: .path)))
+                case "drop":
+                    if let x = try c.decodeIfPresent(Double.self, forKey: .x), let y = try c.decodeIfPresent(Double.self, forKey: .y) {
+                        self = .filesPut(.drop(x: x, y: y))
+                    } else {
+                        self = .filesPut(.desktop)
+                    }
+                case "clipboard": self = .filesPut(.clipboard)
+                case let to: throw DecodingError.dataCorruptedError(forKey: .to, in: c, debugDescription: "未知目标 \(to)")
+                }
+            case "files-get": self = .filesGet(paths: try c.decode([String].self, forKey: .paths))
+            case "drag-files": self = .dragFiles
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }
@@ -155,6 +226,12 @@ public enum AgentProtocol {
         public let code: String?
         /// 响应行之后紧跟的正文字节数。
         public let size: Int?
+        /// `clipboard-get`、`drag-files` 里的文件，`files-put` 收完后各顶层项的存放路径。
+        public let files: [GuestFile]?
+        /// `files-get` 随后文件流里普通文件的总字节数。
+        public let total: Int64?
+        /// `drag-files`：拖放剪贴板的变更计数，按下鼠标时与拖出窗口时不同才说明这次按下开始了拖动；没有时代理只在拖动进行中返回文件。
+        public let serial: Int64?
 
         /// 失败的响应转成错误：缺权限时为 `permissionDenied`，代理随即重启时为 `Restarting`，其余为 `engine`；代理没给原因时用 `fallback`。
         func checked(_ fallback: String = "未知错误") throws -> Response {
@@ -203,6 +280,56 @@ public enum AgentProtocol {
 
     enum FrameKind: UInt8 {
         case stdin = 0, stdout, stderr, resize, exit, stdinEOF
+    }
+
+    /// `files-put`、`files-get` 之后文件流的帧类型；帧格式与 exec 帧相同。
+    enum FileFrame: UInt8 {
+        /// 载荷是 `FileEntry` 的 JSON。
+        case entry = 0
+        /// 上一个 `file` 条目的内容，合计正好 `size` 字节。
+        case data
+        case end
+        /// 发送方中止，载荷是 UTF-8 的原因。
+        case error
+    }
+
+    /// 文件流里的一项，先序排列。`path` 以 `/` 分隔，第一段是顶层项的名字。
+    struct FileEntry: Codable, Equatable {
+        enum Kind: String, Codable { case dir, file, link }
+
+        var path: String
+        var kind: Kind
+        var size: Int64 = 0
+        /// Unix 权限位。
+        var mode: UInt16?
+        var mtime_ms: Int64?
+        var target: String?
+
+        init(path: String, kind: Kind, size: Int64 = 0, mode: UInt16? = nil, mtime_ms: Int64? = nil, target: String? = nil) {
+            self.path = path
+            self.kind = kind
+            self.size = size
+            self.mode = mode
+            self.mtime_ms = mtime_ms
+            self.target = target
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            path = try c.decode(String.self, forKey: .path)
+            kind = try c.decode(Kind.self, forKey: .kind)
+            size = try c.decodeIfPresent(Int64.self, forKey: .size) ?? 0
+            mode = try c.decodeIfPresent(UInt16.self, forKey: .mode)
+            mtime_ms = try c.decodeIfPresent(Int64.self, forKey: .mtime_ms)
+            target = try c.decodeIfPresent(String.self, forKey: .target)
+        }
+
+        /// 拆开路径；空段、`.`、`..`、含 `\` 或 NUL 的段都不合法，返回 nil。
+        static func split(_ path: String) -> [String]? {
+            let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            let valid = parts.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("\\") && !$0.contains("\0") }
+            return valid ? parts : nil
+        }
     }
 
     struct ExitStatus: Codable {

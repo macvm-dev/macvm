@@ -11,7 +11,18 @@ macvm exec dev --user root -- apt-get update  # --user 要经客户机代理（L
 
 - 虚拟机没运行时 `exec` 会自动在后台启动。
 - `--cwd` 原样交给客户机，不做路径换算：宿主的 `$PWD` 在客户机里不存在，要换成共享目录在客户机里的路径（Linux `/mnt/<名称>`，macOS `/Volumes/My Shared Files/<名称>`）。
-- 要把宿主文件给客户机，优先用建机时的 `--share`；没有共享目录时可经 `exec` 的标准输入传：`macvm exec dev -- sh -c 'cat > /tmp/f' < 本地文件`。
+- 要把宿主文件给客户机，优先用建机时的 `--share`；没有共享目录时用 `macvm cp`（见下）。
+
+## 复制文件
+
+```bash
+macvm cp report.pdf src dev:/home/me            # 宿主 → 客户机，目标是客户机上已有的目录
+macvm cp 'win:C:\Users\me\Desktop\a.txt' .    # 客户机 → 宿主，客户机路径写绝对路径
+```
+
+- 经客户机代理，三种客户机都支持；保留目录结构、修改时间，非 Windows 之间还保留权限位与符号链接（Windows 上跳过符号链接）。
+- 与目标里已有项重名时编号改名（`a.txt` → `a 2.txt`，Windows 客户机里是 `a (2).txt`），不覆盖；`--json` 的 `result.files` 是各项实际复制到的位置。
+- 含冒号的本地路径写成 `./a:b`，否则冒号前的部分会被当成虚拟机名。
 
 ## SSH 与端口
 
@@ -22,7 +33,7 @@ macvm exec dev --user root -- apt-get update  # --user 要经客户机代理（L
 
 ## 客户机代理
 
-`exec --user`、剪贴板、UI 自动化、显示尺寸等经客户机里的 macvm-agent。代理没装或版本过旧时报 `unsupported`，运行 `macvm agent install <名>` 安装或更新（代理在线时经代理自身更新、不需要 SSH，代理会重启一次）；`macvm agent info <名> --json` 看版本与 `features`。`macvm update <名> --check` 列出代理与客户机设置有没有要更新的，`macvm update <名>` 经代理一并更新（不需要 SSH，代理会重启一次；`rebootRequired` 为 true 时客户机要重启才完全生效，可加 `--reboot`）。
+`exec --user`、`cp`、剪贴板、UI 自动化、显示尺寸等经客户机里的 macvm-agent。代理没装或版本过旧时报 `unsupported`，运行 `macvm agent install <名>` 安装或更新（代理在线时经代理自身更新、不需要 SSH，代理会重启一次）；`macvm agent info <名> --json` 看版本与 `features`。`macvm update <名> --check` 列出代理与客户机设置有没有要更新的，`macvm update <名>` 经代理一并更新（不需要 SSH，代理会重启一次；`rebootRequired` 为 true 时客户机要重启才完全生效，可加 `--reboot`）。
 
 ## 状态与快照
 

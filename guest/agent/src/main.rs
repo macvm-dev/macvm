@@ -3,6 +3,8 @@
 // Windows 上由登录时的计划任务启动，不需要也不应弹出控制台窗口。
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod files;
+
 use macvm_agent_platform::{self as platform, Conn, ExecOptions, GuestCursor, Origin, SnapshotOptions, SpawnedIo};
 use macvm_agent_protocol::{self as proto, ExecRequest, ExitStatus, FrameKind, Info, Request, Response, WindowSize};
 use std::fs::File;
@@ -207,7 +209,7 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
             platform::shutdown(reboot)
         }
         Request::SetTime { unix_ms } => reply(&mut conn, platform::set_time(unix_ms).map(|_| Response::ok())),
-        Request::ClipboardGet => reply(&mut conn, platform::clipboard_get().map(|text| Response { text: Some(text), ..Response::ok() })),
+        Request::ClipboardGet => reply(&mut conn, clipboard_get()),
         Request::ClipboardSet { text } => reply(&mut conn, platform::clipboard_set(&text).map(|_| Response::ok())),
         Request::Mount { tag, path, read_only } => reply(&mut conn, platform::mount_virtiofs(&tag, &path, read_only).map(|_| Response::ok())),
         Request::Display { width, height } => reply(&mut conn, platform::set_display(width, height).map(|_| Response::ok())),
@@ -227,7 +229,60 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
         #[cfg(windows)]
         ui if platform::ui_request_for_desktop_helper(&ui) => forward_to_desktop_helper(&mut conn, &ui),
         ui @ (Request::UiSnapshot { .. } | Request::UiAction { .. } | Request::UiInput { .. } | Request::UiScreenshot) => serve_ui(&mut conn, ui),
+        Request::FilesPut { to, path, x, y } => put_files(conn, to, path, x.zip(y), config),
+        Request::FilesGet { paths } => get_files(conn, paths),
+        Request::DragFiles => reply(&mut conn, platform::drag_files().map(|(paths, serial)| Response {
+            files: (!paths.is_empty()).then(|| files::describe(&paths)),
+            serial,
+            ..Response::ok()
+        })),
     }
+}
+
+/// 剪贴板里的文本，有文件时连同文件；读文件失败不影响文本。
+fn clipboard_get() -> io::Result<Response> {
+    let text = platform::clipboard_get()?;
+    let paths = platform::clipboard_files().unwrap_or_default();
+    Ok(Response { text: Some(text), files: (!paths.is_empty()).then(|| files::describe(&paths)), ..Response::ok() })
+}
+
+/// 先确定目标目录并回 ok，再收文件流，收完回一行带各顶层项路径的响应。
+fn put_files(mut conn: Conn, to: proto::PutTarget, path: Option<String>, point: Option<(f64, f64)>, config: &Config) -> io::Result<()> {
+    let dir = match to {
+        proto::PutTarget::Dir => path.map(std::path::PathBuf::from).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "缺少 path")),
+        proto::PutTarget::Drop => platform::drop_dir(point, config.default_user.as_deref()),
+        proto::PutTarget::Clipboard if !platform::CLIPBOARD_FILES => Err(io::Error::new(io::ErrorKind::Unsupported, "这个客户机的剪贴板不经代理同步")),
+        proto::PutTarget::Clipboard => files::clipboard_staging(),
+    };
+    let dir = match dir {
+        Ok(dir) if dir.is_dir() => dir,
+        Ok(dir) => return proto::write_json_line(&mut conn, &Response::error(format!("{} 不是目录", dir.display()))),
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(e.to_string())),
+    };
+    proto::write_json_line(&mut conn, &Response::ok())?;
+    let result = files::receive(&mut conn, &dir).and_then(|top| {
+        if to == proto::PutTarget::Clipboard {
+            let paths: Vec<_> = top.iter().map(|f| std::path::PathBuf::from(&f.path)).collect();
+            platform::clipboard_set_files(&paths)?;
+        }
+        Ok(top)
+    });
+    let response = match result {
+        Ok(top) => Response { files: Some(top), ..Response::ok() },
+        Err(e) => Response::error(e.to_string()),
+    };
+    proto::write_json_line(&mut conn, &response)
+}
+
+/// 先回带总字节数的 ok，再发文件流。
+fn get_files(mut conn: Conn, paths: Vec<String>) -> io::Result<()> {
+    let paths: Vec<std::path::PathBuf> = paths.into_iter().map(Into::into).collect();
+    let total = match files::total_size(&paths) {
+        Ok(total) => total,
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(e.to_string())),
+    };
+    proto::write_json_line(&mut conn, &Response { total: Some(total), ..Response::ok() })?;
+    files::send(&mut conn, &paths)
 }
 
 /// 处理 `ui-*` 请求；其他请求回失败。
@@ -350,7 +405,7 @@ fn info() -> Info {
         mem_total,
         mem_available,
         uptime_ms: platform::uptime_ms(),
-        features: vec![proto::FEATURE_UI.to_string()],
+        features: [proto::FEATURE_UI, proto::FEATURE_FILES].into_iter().chain(platform::DRAG_FILES.then_some(proto::FEATURE_DRAG)).map(str::to_string).collect(),
         exe_sha256: exe_sha256(),
     }
 }

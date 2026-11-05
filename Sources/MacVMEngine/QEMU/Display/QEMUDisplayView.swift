@@ -26,12 +26,18 @@ public final class QEMUDisplayView: NSView {
     private var scrollAccumulator: CGFloat = 0
     /// 已发给客户机按下、还没发抬起的键（macOS 虚拟键码）。
     private var pressedKeys: Set<UInt16> = []
+    private let fileDrag: GuestFileDrag
+    /// 最近一次发给客户机的左键拖动，取消客户机里的拖动时在同一位置抬起左键。
+    private var lastDrag: NSEvent?
 
     public init(bundle: VMBundle) {
         self.bundle = bundle
         vncPath = QEMUCommand.vncSocket(bundle).path
         spicePath = QEMUCommand.spiceSocket(bundle).path
+        let config = try? bundle.loadConfig()
+        fileDrag = GuestFileDrag(bundle: bundle, os: config?.os ?? .linux, hasAgent: config?.guestAgent == true)
         super.init(frame: .zero)
+        registerForDraggedTypes(GuestFileDrag.draggedTypes)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.contentsGravity = .resizeAspect
@@ -473,13 +479,35 @@ public final class QEMUDisplayView: NSView {
 
     /// 视图坐标换算为帧缓冲坐标，与 `.resizeAspect` 的留边一致。
     private func framebufferPoint(_ event: NSEvent) -> (UInt16, UInt16)? {
+        guard let f = framebufferFraction(convert(event.locationInWindow, from: nil)) else { return nil }
+        let x = min(f.x * framebufferSize.width, framebufferSize.width - 1)
+        let y = min(f.y * framebufferSize.height, framebufferSize.height - 1)
+        return (UInt16(x), UInt16(y))
+    }
+
+    /// 视图坐标在画面里的位置（宽、高的比例，夹在 0–1）。
+    private func framebufferFraction(_ p: CGPoint) -> CGPoint? {
         guard framebufferSize.width > 0, framebufferSize.height > 0, bounds.width > 0, bounds.height > 0 else { return nil }
-        let p = convert(event.locationInWindow, from: nil)
         let scale = min(bounds.width / framebufferSize.width, bounds.height / framebufferSize.height)
         let origin = CGPoint(x: (bounds.width - framebufferSize.width * scale) / 2, y: (bounds.height - framebufferSize.height * scale) / 2)
-        let x = min(max((p.x - origin.x) / scale, 0), framebufferSize.width - 1)
-        let y = min(max((p.y - origin.y) / scale, 0), framebufferSize.height - 1)
-        return (UInt16(x), UInt16(y))
+        return CGPoint(x: min(max((p.x - origin.x) / (framebufferSize.width * scale), 0), 1),
+                       y: min(max((p.y - origin.y) / (framebufferSize.height * scale), 0), 1))
+    }
+
+    // MARK: - 文件拖放
+
+    public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { fileDrag.draggingOperation(sender) }
+    public override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { fileDrag.draggingOperation(sender) }
+
+    public override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        fileDrag.performDrop(sender, at: framebufferFraction(convert(sender.draggingLocation, from: nil)))
+    }
+
+    /// 宿主接手拖动后视图收不到抬起：给客户机按一下 Esc 取消它那边的拖动，再在原处抬起左键。
+    private func cancelGuestDrag() {
+        sendKey(0x35, down: true)
+        sendKey(0x35, down: false)
+        if let lastDrag { setButton(1, down: false, lastDrag) }
     }
 
     private func sendPointer(_ event: NSEvent) {
@@ -496,14 +524,28 @@ public final class QEMUDisplayView: NSView {
         updateCursor()
         sendPointer(event)
     }
-    public override func mouseDragged(with event: NSEvent) { sendPointer(event) }
+    public override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        if let items = fileDrag.mouseDragged(outside: !bounds.contains(p), at: p) {
+            beginDraggingSession(with: items, event: event, source: fileDrag)
+            cancelGuestDrag()
+            return
+        }
+        lastDrag = event
+        sendPointer(event)
+    }
     public override func rightMouseDragged(with event: NSEvent) { sendPointer(event) }
     public override func otherMouseDragged(with event: NSEvent) { sendPointer(event) }
     public override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        fileDrag.mouseDown()
+        lastDrag = event
         setButton(1, down: true, event)
     }
-    public override func mouseUp(with event: NSEvent) { setButton(1, down: false, event) }
+    public override func mouseUp(with event: NSEvent) {
+        fileDrag.mouseUp()
+        setButton(1, down: false, event)
+    }
     public override func rightMouseDown(with event: NSEvent) { setButton(4, down: true, event) }
     public override func rightMouseUp(with event: NSEvent) { setButton(4, down: false, event) }
     public override func otherMouseDown(with event: NSEvent) { setButton(2, down: true, event) }

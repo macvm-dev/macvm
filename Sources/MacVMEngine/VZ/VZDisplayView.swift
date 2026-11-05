@@ -6,7 +6,7 @@ extension VZRunner {
     /// 显示本虚拟机画面并接收键鼠的视图。窗口缩放时客户机跟着改分辨率，而不是缩放画面；
     /// VZ 下的 Windows 分辨率固定（`WindowsSupport.displaySize`），画面按比例缩放。
     public func makeDisplayView() -> NSView {
-        let view = config.os == .linux ? LinuxDisplayView(bundle: bundle) : VZVirtualMachineView()
+        let view = config.os == .linux ? LinuxDisplayView(bundle: bundle, config: config) : GuestDisplayView(bundle: bundle, config: config)
         view.capturesSystemKeys = true
         view.automaticallyReconfiguresDisplay = config.os == .macOS
         view.virtualMachine = virtualMachine
@@ -40,10 +40,74 @@ extension VZRunner {
     }
 }
 
+/// 客户机画面，并与客户机互相拖放文件（`GuestFileDrag`）。
+class GuestDisplayView: VZVirtualMachineView {
+    private let fileDrag: GuestFileDrag
+    /// 最近一次交给 VZ 的鼠标事件，取消客户机里的拖动时在同一位置抬起左键。
+    private var lastMouseEvent: NSEvent?
+
+    init(bundle: VMBundle, config: VMConfig) {
+        fileDrag = GuestFileDrag(bundle: bundle, os: config.os, hasAgent: config.guestAgent)
+        super.init(frame: .zero)
+        registerForDraggedTypes(GuestFileDrag.draggedTypes)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { fileDrag.draggingOperation(sender) }
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { fileDrag.draggingOperation(sender) }
+
+    /// 投放点换算成视图宽、高的比例；画面按比例缩放留边时略有偏差，只影响落到哪个文件夹窗口。
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let p = convert(sender.draggingLocation, from: nil)
+        let fraction = bounds.width > 0 && bounds.height > 0 ? CGPoint(x: p.x / bounds.width, y: 1 - p.y / bounds.height) : nil
+        return fileDrag.performDrop(sender, at: fraction)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        fileDrag.mouseDown()
+        lastMouseEvent = event
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        fileDrag.mouseUp()
+        super.mouseUp(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        if let items = fileDrag.mouseDragged(outside: !bounds.contains(p), at: p) {
+            beginDraggingSession(with: items, event: event, source: fileDrag)
+            cancelGuestDrag()
+            return
+        }
+        lastMouseEvent = event
+        super.mouseDragged(with: event)
+    }
+
+    /// 宿主接手拖动后 VZ 收不到抬起：给客户机按一下 Esc 取消它那边的拖动，再在原处抬起左键。
+    private func cancelGuestDrag() {
+        guard let window, let last = lastMouseEvent else { return }
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let esc = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                          windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                                          isARepeat: false, keyCode: 53) {
+                type == .keyDown ? super.keyDown(with: esc) : super.keyUp(with: esc)
+            }
+        }
+        if let up = NSEvent.mouseEvent(with: .leftMouseUp, location: last.locationInWindow, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0) {
+            super.mouseUp(with: up)
+        }
+    }
+}
+
 /// Linux 客户机的画面。VZ 自动调整时按屏幕像素设分辨率，客户机不知道宿主是 Retina，界面在 Retina 屏上只有一半大；
 /// 没开 `DisplayConfig.retina` 时改为按窗口点数设分辨率，画面放大显示，两种屏上界面一样大；
 /// 开了时经代理把客户机的缩放比例调到屏幕倍数，界面大小相同而更清晰。
-final class LinuxDisplayView: VZVirtualMachineView {
+final class LinuxDisplayView: GuestDisplayView {
     private let bundle: VMBundle
     private var fit: Timer?
     private var preferenceObserver: (any NSObjectProtocol)?
@@ -58,13 +122,10 @@ final class LinuxDisplayView: VZVirtualMachineView {
     /// 客户机分辨率的下限（点数），再小桌面就排不开了。
     private static let minimumSize = CGSize(width: 800, height: 600)
 
-    init(bundle: VMBundle) {
+    override init(bundle: VMBundle, config: VMConfig) {
         self.bundle = bundle
-        super.init(frame: .zero)
+        super.init(bundle: bundle, config: config)
     }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
 
     /// 按当前设置选择由 VZ 按像素自动调整，还是自己按点数调整。
     func applyPreference() {

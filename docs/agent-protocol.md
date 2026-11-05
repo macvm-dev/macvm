@@ -34,7 +34,7 @@
 | `forward` | `port`（客户机本地 TCP 端口） | `{"ok":true}`，随后为原始字节双向转发 |
 | `shutdown` | `reboot`（布尔，默认 false） | `{"ok":true}` |
 | `set-time` | `unix_ms`（整数） | `{"ok":true}` |
-| `clipboard-get` | — | `{"ok":true,"text":"…"}` |
+| `clipboard-get` | — | `{"ok":true,"text":"…"}`；剪贴板里有文件时带 `files`（macOS、Windows） |
 | `clipboard-set` | `text` | `{"ok":true}` |
 | `mount` | `tag`，`path`，`read_only`（布尔） | `{"ok":true}`（仅 Linux：挂载 virtio-fs） |
 | `display` | `width`，`height`（像素） | `{"ok":true}`（仅 Windows：设定主显示器与分辨率） |
@@ -46,6 +46,9 @@
 | `ui-action` | `element`（快照里的元素编号），`action`，`value`（`set-value` 时必填） | `{"ok":true}` |
 | `ui-input` | `events`（输入事件数组，按顺序注入） | `{"ok":true}` |
 | `ui-screenshot` | — | `{"ok":true,"size":N}`，正文是主屏 PNG |
+| `files-put` | `to`（`dir`、`drop`、`clipboard`），`path`（`to` 为 `dir` 时必填），`x`、`y`（`to` 为 `drop` 时可选） | `{"ok":true}`，随后宿主发文件流，代理收完再回 `{"ok":true,"files":[…]}`，见「复制文件」 |
+| `files-get` | `paths`（客户机上的绝对路径数组） | `{"ok":true,"total":N}`，随后代理发这些路径的文件流 |
+| `drag-files` | — | `{"ok":true,"files":[…],"serial":N}`，见「复制文件」（macOS、Windows） |
 
 `info` 的内容：
 
@@ -55,7 +58,7 @@
 
 `os` 取值 `linux`、`macos`、`windows`。内存单位为字节。`exe_sha256` 是代理可执行文件的指纹（SHA-256 的小写十六进制，macOS 版是代理 App 包里的可执行文件），读不到自身时省略：带代码签名的 64 位 Mach-O 取 `LC_CODE_SIGNATURE` 指向的签名 SuperBlob 里 0 号槽 CodeDirectory 的 SHA-256（签名时间不在其中，同样的代码重签后不变），其余取整个文件的 SHA-256；宿主拿它比对随 App 分发的代理，不同或省略即为可更新。
 
-更新经 `exec` 完成，不另设请求，旧代理也能这样更新：宿主执行更新脚本，标准输入送新代理（macOS 版是代理 App 包的 tar），脚本换掉文件后交给客户机的服务管理器重启代理（Linux 以 root 执行、`systemctl restart --no-block`；macOS 以登录用户执行、重新加载 LaunchAgent；Windows 交给以 SYSTEM 运行的一次性计划任务 `macvm-agent-update` 停下代理、重新注册并启动）。代理可能在发出 `exit` 帧之前就被重启，宿主据 `exe_sha256` 变成新值判断更新完成。`features` 列出可选能力，没有时省略；`ui` 表示支持 `ui-*` 请求。代理对不认识的 `op` 回失败响应，宿主按 `features` 判断代理是否支持某项能力。
+更新经 `exec` 完成，不另设请求，旧代理也能这样更新：宿主执行更新脚本，标准输入送新代理（macOS 版是代理 App 包的 tar），脚本换掉文件后交给客户机的服务管理器重启代理（Linux 以 root 执行、`systemctl restart --no-block`；macOS 以登录用户执行、重新加载 LaunchAgent；Windows 交给以 SYSTEM 运行的一次性计划任务 `macvm-agent-update` 停下代理、重新注册并启动）。代理可能在发出 `exit` 帧之前就被重启，宿主据 `exe_sha256` 变成新值判断更新完成。`features` 列出可选能力，没有时省略；`ui` 表示支持 `ui-*` 请求，`files` 表示支持 `files-put`、`files-get` 与 `clipboard-get` 里的文件，`drag` 表示支持 `drag-files`。代理对不认识的 `op` 回失败响应，宿主按 `features` 判断代理是否支持某项能力。
 
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
 
@@ -117,6 +120,33 @@ Windows 3D 显卡驱动：宿主把 viogpu3d 驱动包平铺放在 `C:\ProgramDa
 - Linux：要有已登录的图形会话。代理以会话用户身份读 AT-SPI，并打开会话的无障碍支持，在此之前就已运行的部分应用要重启后才导出无障碍树；元素编号是 AT-SPI 对象的总线名加路径，跨快照有效，直到应用销毁该对象。输入经 uinput 虚拟设备（代理启动时建好），截屏经 DRM 读取扫描输出的帧缓冲，QEMU 开了 3D 加速时可能读不到画面。Wayland 下应用不知道自己窗口在屏幕上的位置，除 GNOME Shell 自己的界面外，元素都没有 `bounds`，按 `element` 点击回失败。
 
 `exec` 经目标用户的登录 shell 执行 `argv`，环境与 SSH 登录一致；`user` 省略时为代理启动参数 `--user` 指定的用户，代理不是 root 时只能以自身身份执行。
+
+## 复制文件
+
+`files` 是文件与目录的数组，每项 `{"path":"C:\\Users\\me\\a.txt"}`，目录带 `"dir":true`；`path` 是客户机上的绝对路径。
+
+`files-put` 的 `to`：
+
+- `dir`：放进 `path` 指定的已有目录，不是目录时直接回失败。
+- `drop`：放到投放点下的文件夹窗口里。`x`、`y` 是投放点占主屏宽、高的比例（0–1）。macOS 上点在访达窗口上时取该窗口的文件夹（读 AX 的 `AXDocument`，代理要有辅助功能权限），Windows 上点在资源管理器窗口上时取它当前标签页的文件夹；其他情况（点在桌面或别的程序上、省略 `x`、`y`、认不出、Linux）放到登录用户的桌面目录，没有桌面目录时放到用户目录。
+- `clipboard`：放进新的暂存目录（客户机临时目录下的 `macvm-clipboard`，以前的暂存一并删掉），收完把剪贴板换成这些文件，在访达或资源管理器里粘贴即复制（Windows 上是 CF_HDROP，粘贴效果为复制）。Linux 回失败。
+
+与目标目录里已有项重名的顶层项编号改名：`a.txt` → `a 2.txt`，Windows 上为 `a (2).txt`，目录与以点开头、没有其他点的名字不拆扩展名。Windows 上文件名里的 `<>:"|?*` 与控制字符换成 `_`，去掉末尾的点与空格，`CON`、`NUL` 一类设备名前加 `_`。Linux 上代理以 root 运行，新建的项归目标目录的所有者。收的过程中出错时代理删掉这次已建的顶层项，回失败响应并关闭连接。
+
+`drag-files`：客户机里正在拖动的文件。macOS 版读拖放剪贴板，带 `serial`（拖放剪贴板的变更计数）与其中的文件，不判断拖动是否仍在进行：拖放结束后内容仍留着，宿主在按下鼠标时取一次 `serial`、拖出画面时再取，变了才说明这次按下开始了拖动。Windows 版在虚拟屏幕上临时铺一层几乎透明的投放窗口并把光标左右挪一个像素，让系统的拖放循环把数据交给它，读出 CF_HDROP 后总是拒绝投放，等不到时 `files` 省略；不带 `serial`。宿主接手后在客户机里按 Esc 取消原来的拖动。
+
+### 文件流
+
+帧格式与下文 exec 帧相同（`u8 类型 | u32 小端长度 | 载荷`，载荷不超过 1 MiB）：
+
+| 类型 | 载荷 |
+| --- | --- |
+| 0 `entry` | JSON 条目，见下 |
+| 1 `data` | 上一个 `file` 条目的内容，各帧合计正好 `size` 字节 |
+| 2 `end` | 空，流正常结束 |
+| 3 `error` | UTF-8 的原因，发送方中止 |
+
+条目：`{"path":"目录/sub/a.txt","kind":"file","size":6,"mode":420,"mtime_ms":1793660000000}`。`path` 以 `/` 分隔，第一段是顶层项的名字，各段不能为空、`.`、`..`，不能含 `\` 或 NUL；`kind` 取 `dir`、`file`、`link`；`size` 是 `file` 的字节数，0 时省略；`mode` 是 Unix 权限位（`0o777` 以内），Windows 发送时省略、接收时忽略；`mtime_ms` 是修改时间（Unix 毫秒）；`link` 带 `target`，原样保存。条目先序排列，除顶层项外每项的上级必须是这次流里已收到的 `dir`，链接不能当上级，接收方据此保证写不到目标目录之外。发送方不跟随链接，Windows 上跳过链接，其余特殊文件都跳过；接收方是 Windows 时跳过 `link`。
 
 ## exec 帧模式
 

@@ -50,6 +50,12 @@ impl Identity {
     }
 }
 
+/// 用户的主目录。
+#[cfg(target_os = "linux")]
+pub(crate) fn home_dir(name: &str) -> io::Result<String> {
+    Identity::lookup(name).map(|i| i.home)
+}
+
 /// SAFETY: p 必须为空或指向 NUL 结尾的字符串。
 unsafe fn cstr(p: *const libc::c_char) -> String {
     if p.is_null() {

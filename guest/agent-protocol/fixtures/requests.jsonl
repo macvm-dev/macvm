@@ -23,3 +23,8 @@
 {"op":"ui-input","events":[{"type":"scroll","x":500,"y":400,"dx":0,"dy":3}]}
 {"op":"ui-input","events":[{"type":"key","keys":"cmd+shift+t"},{"type":"text","text":"hello 世界"}]}
 {"op":"ui-screenshot"}
+{"op":"files-put","to":"dir","path":"/Users/ethan/Downloads"}
+{"op":"files-put","to":"drop","x":0.25,"y":0.75}
+{"op":"files-put","to":"clipboard"}
+{"op":"files-get","paths":["C:\\Users\\ethan\\报告.docx","/home/ethan/src"]}
+{"op":"drag-files"}

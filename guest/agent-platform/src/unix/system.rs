@@ -271,6 +271,53 @@ pub fn clipboard_set(text: &str) -> io::Result<()> {
     }
 }
 
+/// 剪贴板里的文件经代理同步（`clipboard_files`、`clipboard_set_files`）。Linux 客户机的剪贴板经 SPICE 代理同步。
+pub const CLIPBOARD_FILES: bool = cfg!(target_os = "macos");
+/// 支持 `drag_files`。
+pub const DRAG_FILES: bool = cfg!(target_os = "macos");
+
+#[cfg(target_os = "linux")]
+pub fn clipboard_files() -> io::Result<Vec<std::path::PathBuf>> {
+    Ok(Vec::new())
+}
+
+#[cfg(target_os = "linux")]
+pub fn clipboard_set_files(_paths: &[std::path::PathBuf]) -> io::Result<()> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机的剪贴板经 SPICE 代理同步"))
+}
+
+#[cfg(target_os = "linux")]
+pub fn drag_files() -> io::Result<(Vec<std::path::PathBuf>, Option<i64>)> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机不支持从客户机里拖出文件"))
+}
+
+/// Linux：`user`（没有时为前台图形会话的用户）的 XDG 桌面目录，没有桌面目录时为其用户目录；不看投放点。
+#[cfg(target_os = "linux")]
+pub fn drop_dir(_point: Option<(f64, f64)>, user: Option<&str>) -> io::Result<std::path::PathBuf> {
+    let user = match user {
+        Some(user) => user.to_string(),
+        None => super::session::graphical_sessions()
+            .into_iter()
+            .max_by_key(|s| s.active)
+            .map(|s| s.user)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "没有登录的用户"))?,
+    };
+    let home = std::path::PathBuf::from(super::exec::home_dir(&user)?);
+    let dirs = std::fs::read_to_string(home.join(".config/user-dirs.dirs")).unwrap_or_default();
+    let desktop = xdg_desktop(&dirs, &home).unwrap_or_else(|| home.join("Desktop"));
+    Ok(if desktop.is_dir() { desktop } else { home })
+}
+
+/// `user-dirs.dirs` 里的 `XDG_DESKTOP_DIR="$HOME/桌面"`。
+#[cfg(any(target_os = "linux", test))]
+fn xdg_desktop(dirs: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
+    let value = dirs.lines().find_map(|l| l.trim().strip_prefix("XDG_DESKTOP_DIR="))?.trim_matches('"');
+    Some(match value.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None => value.into(),
+    })
+}
+
 /// 只有 Windows 客户机需要由代理提供光标形状。
 pub fn watch_cursor(_alive: impl Fn() -> bool, _on_change: impl FnMut(crate::GuestCursor) -> io::Result<()>) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机提供光标形状"))
@@ -423,5 +470,13 @@ mod tests {
         assert_eq!(meminfo_bytes(text, "MemTotal:"), 4014320 * 1024);
         assert_eq!(meminfo_bytes(text, "Active(file):"), 102400 * 1024);
         assert_eq!(meminfo_bytes(text, "Inactive(file):"), 0);
+    }
+
+    #[test]
+    fn xdg_desktop_dir() {
+        let home = std::path::Path::new("/home/ethan");
+        assert_eq!(xdg_desktop("# x\nXDG_DESKTOP_DIR=\"$HOME/桌面\"\n", home), Some(home.join("桌面")));
+        assert_eq!(xdg_desktop("XDG_DESKTOP_DIR=\"/data/desk\"", home), Some("/data/desk".into()));
+        assert_eq!(xdg_desktop("XDG_DOWNLOAD_DIR=\"$HOME/dl\"", home), None);
     }
 }

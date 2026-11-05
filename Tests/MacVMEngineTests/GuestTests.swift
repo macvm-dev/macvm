@@ -68,6 +68,29 @@ struct GuestConnectionPumpTests {
     }
 }
 
+struct GuestFileTransferTests {
+    @Test func conflictingNamesAreNumbered() {
+        let taken: Set = ["a.txt", "a 2.txt", "dir.d", ".profile"]
+        let name = { (n: String, dir: Bool) in GuestFileTransfer.uniqueName(n, isDirectory: dir) { taken.contains($0) } }
+        #expect(name("b.txt", false) == "b.txt")
+        #expect(name("a.txt", false) == "a 3.txt")
+        #expect(name("dir.d", true) == "dir.d 2")
+        #expect(name(".profile", false) == ".profile 2")
+    }
+
+    @Test func entryPathsCannotEscape() {
+        #expect(AgentProtocol.FileEntry.split("a/b c/d") == ["a", "b c", "d"])
+        for bad in ["", "/a", "a/", "a//b", "../a", "a/./b", "a\\b"] {
+            #expect(AgentProtocol.FileEntry.split(bad) == nil, "\(bad)")
+        }
+    }
+
+    @Test func guestPathNames() {
+        #expect(GuestFileDrag.name(of: #"C:\Users\me\报告.docx"#) == "报告.docx")
+        #expect(GuestFileDrag.name(of: "/Users/me/src") == "src")
+    }
+}
+
 struct AgentRequestTests {
     @Test func requestFixturesRoundTrip() throws {
         let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../guest/agent-protocol/fixtures/requests.jsonl")
@@ -88,6 +111,9 @@ struct AgentRequestTests {
         #expect(responses.contains { $0.size == 48213 })
         #expect(responses.contains { $0.info?.features == [AgentProtocol.featureUI] })
         #expect(responses.contains { $0.info?.exeSHA256?.count == 64 })
+        #expect(responses.contains { $0.files == [.init(path: "/Users/ethan/a.txt", dir: false), .init(path: "/Users/ethan/src", dir: true)] })
+        #expect(responses.contains { $0.total == 1_048_576 })
+        #expect(responses.contains { $0.serial == 42 })
         let denied = try #require(responses.first { $0.code == "permission" })
         #expect(throws: MacVMError.permissionDenied(denied.error ?? "")) { try denied.checked() }
         let restarting = try #require(responses.first { $0.code == "restarting" })

@@ -1,8 +1,10 @@
 //! 宿主与 macvm-agent 之间的消息类型与 exec 帧编解码。
 
 pub mod auth;
+mod files;
 mod ui;
 
+pub use files::*;
 pub use ui::*;
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +19,10 @@ pub const MAX_FRAME: usize = 1 << 20;
 pub const MAX_BODY: u64 = 64 << 20;
 /// `Info::features` 里表示支持 `ui-*` 请求的项。
 pub const FEATURE_UI: &str = "ui";
+/// `Info::features` 里表示支持 `files-put`、`files-get` 与剪贴板里的文件的项。
+pub const FEATURE_FILES: &str = "files";
+/// `Info::features` 里表示支持 `drag-files` 的项。
+pub const FEATURE_DRAG: &str = "drag";
 /// `Response::code`：代理缺少客户机系统授予的权限（如 macOS 的辅助功能、屏幕录制）。
 pub const CODE_PERMISSION: &str = "permission";
 /// `Response::code`：代理回完这个响应就退出，由客户机的服务管理器重新拉起；宿主等新代理上线后重试同一请求。
@@ -84,6 +90,22 @@ pub enum Request {
     UiInput { events: Vec<InputEvent> },
     /// 主屏截图。成功响应带 `size`，正文是 PNG。
     UiScreenshot,
+    /// 成功响应后宿主发文件流，代理收完再回一行，`files` 是各顶层项实际存放的路径。
+    FilesPut {
+        to: PutTarget,
+        /// `to` 为 `dir` 时的目标目录。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        /// `to` 为 `drop` 时的投放点，是主屏宽、高的比例（0–1）。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        x: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        y: Option<f64>,
+    },
+    /// 成功响应带 `total`，随后代理发这些路径的文件流。
+    FilesGet { paths: Vec<String> },
+    /// 客户机里正在拖动的文件。
+    DragFiles,
 }
 
 /// 客户机当前光标：`bgra` 为逐像素 B G R A（非预乘）的 Base64，自上而下；`hidden` 时其余字段无意义；
@@ -178,6 +200,15 @@ pub struct Response {
     /// 响应行之后紧跟这么多字节的正文，不超过 `MAX_BODY`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    /// `clipboard-get`、`drag-files` 里的文件，`files-put` 收完后各顶层项的存放路径。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<Vec<GuestFile>>,
+    /// `files-get` 随后文件流里普通文件的总字节数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+    /// `drag-files`：拖放剪贴板的变更计数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<i64>,
 }
 
 impl Response {
@@ -249,31 +280,40 @@ pub struct ExitStatus {
     pub signal: Option<i32>,
 }
 
-/// 帧头与载荷一次写出：连接开了 TCP_NODELAY 时，分两次写会把 5 字节的帧头单独发成一个包。
 pub fn write_frame(w: &mut impl Write, kind: FrameKind, payload: &[u8]) -> io::Result<()> {
+    write_raw_frame(w, kind as u8, payload)
+}
+
+/// 对端正常关闭时返回 `Ok(None)`。
+pub fn read_frame(r: &mut impl Read) -> io::Result<Option<(FrameKind, Vec<u8>)>> {
+    let Some((kind, payload)) = read_raw_frame(r)? else { return Ok(None) };
+    let kind = FrameKind::from_u8(kind).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "未知帧类型"))?;
+    Ok(Some((kind, payload)))
+}
+
+/// 帧头与载荷一次写出：连接开了 TCP_NODELAY 时，分两次写会把 5 字节的帧头单独发成一个包。
+fn write_raw_frame(w: &mut impl Write, kind: u8, payload: &[u8]) -> io::Result<()> {
     let mut frame = Vec::with_capacity(5 + payload.len());
-    frame.push(kind as u8);
+    frame.push(kind);
     frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     frame.extend_from_slice(payload);
     w.write_all(&frame)
 }
 
-/// 对端正常关闭时返回 `Ok(None)`。
-pub fn read_frame(r: &mut impl Read) -> io::Result<Option<(FrameKind, Vec<u8>)>> {
+fn read_raw_frame(r: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
     let mut header = [0u8; 5];
     match r.read_exact(&mut header) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(e),
     }
-    let kind = FrameKind::from_u8(header[0]).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "未知帧类型"))?;
     let len = u32::from_le_bytes(header[1..].try_into().unwrap()) as usize;
     if len > MAX_FRAME {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "帧过大"));
     }
     let mut payload = vec![0u8; len];
     r.read_exact(&mut payload)?;
-    Ok(Some((kind, payload)))
+    Ok(Some((header[0], payload)))
 }
 
 /// 读一行请求（不含换行），长度上限 `MAX_FRAME`。

@@ -93,6 +93,7 @@ unsafe extern "C" {
     fn AXUIElementSetAttributeValue(element: CFTypeRef, attribute: CFTypeRef, value: CFTypeRef) -> AXError;
     fn AXUIElementSetMessagingTimeout(element: CFTypeRef, seconds: f32) -> AXError;
     fn AXUIElementGetPid(element: CFTypeRef, pid: *mut i32) -> AXError;
+    fn AXUIElementCopyElementAtPosition(application: CFTypeRef, x: f32, y: f32, element: *mut CFTypeRef) -> AXError;
     fn AXValueGetTypeID() -> CFTypeID;
     fn AXValueGetType(value: CFTypeRef) -> u32;
     fn AXValueGetValue(value: CFTypeRef, kind: u32, out: *mut c_void) -> u8;
@@ -479,6 +480,45 @@ impl Screen {
         let px = |v: f64| (v * self.scale).round() as i32;
         [px(origin.x), px(origin.y), px(size.width), px(size.height)]
     }
+}
+
+/// 投放点（主屏宽、高的比例）下访达窗口显示的文件夹；点在桌面或别的应用上、认不出文件夹或代理没有辅助功能授权时为桌面。
+pub fn drop_dir(point: Option<(f64, f64)>, _user: Option<&str>) -> io::Result<std::path::PathBuf> {
+    let desktop = super::pasteboard_macos::desktop()?;
+    // SAFETY: 只查询授权，不弹提示。
+    let trusted = unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) } != 0;
+    let Some((fx, fy)) = point.filter(|_| trusted) else { return Ok(desktop) };
+    limit_messaging();
+    Ok(finder_folder_at(fx, fy).filter(|p| p.is_dir()).unwrap_or(desktop))
+}
+
+fn finder_folder_at(fx: f64, fy: f64) -> Option<std::path::PathBuf> {
+    let screen = Screen::main().points;
+    let x = screen.origin.x + fx.clamp(0.0, 1.0) * screen.size.width;
+    let y = screen.origin.y + fy.clamp(0.0, 1.0) * screen.size.height;
+    // SAFETY: 系统级元素按 Create 规则归我们持有。
+    let system = Cf::own(unsafe { AXUIElementCreateSystemWide() })?;
+    let mut hit: CFTypeRef = std::ptr::null();
+    // SAFETY: system 是 AXUIElement，成功时 hit 按 Copy 规则归我们持有。
+    if unsafe { AXUIElementCopyElementAtPosition(system.0, x as f32, y as f32, &mut hit) } != 0 {
+        return None;
+    }
+    let mut element = Cf::own(hit)?;
+    let mut pid = 0;
+    // SAFETY: element 是 AXUIElement。
+    unsafe { AXUIElementGetPid(element.0, &mut pid) };
+    if bundle_id(pid as u32).as_deref() != Some("com.apple.finder") {
+        return None;
+    }
+    // 访达窗口的 AXDocument 是它显示的文件夹的 file URL；桌面不在任何 AXWindow 里。
+    for _ in 0..64 {
+        if copy_attribute(&element, "AXRole").and_then(|r| string(r.0)).as_deref() == Some("AXWindow") {
+            let url = copy_attribute(&element, "AXDocument").and_then(|d| string(d.0))?;
+            return super::pasteboard_macos::file_url_to_path(&url);
+        }
+        element = copy_attribute(&element, "AXParent")?;
+    }
+    None
 }
 
 /// 最近一次快照的元素，下标即编号里 `.` 之后的部分。

@@ -27,6 +27,8 @@ struct MachineWindow: View {
     @State private var startingTitle = "正在启动…"
     /// 窗口显示客户机画面期间经代理同步剪贴板；没有画面或客户机不经代理同步时为 nil。
     @State private var clipboard: ClipboardSync?
+    /// 进行中的文件复制（拖放、剪贴板里的文件），在画面顶部显示进度。
+    @State private var transfers: [GuestTransferActivity] = []
 
     private var isRunning: Bool { model.summary(name)?.state == .running }
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
@@ -76,19 +78,34 @@ struct MachineWindow: View {
         }
         .frame(minWidth: 640, minHeight: 400)
         .overlay(alignment: .top) {
-            if let progress {
-                banner {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text(progress)
+            VStack(spacing: 0) {
+                if let progress {
+                    banner {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(progress)
+                        }
                     }
+                } else if let notice {
+                    banner { Label(notice, systemImage: "info.circle") }
+                        .onTapGesture { withAnimation { self.notice = nil } }
                 }
-            } else if let notice {
-                banner { Label(notice, systemImage: "info.circle") }
-                    .onTapGesture { withAnimation { self.notice = nil } }
+                ForEach(transfers, id: \.self) { transfer in
+                    banner { transferRow(transfer) }
+                }
             }
         }
         .animation(.default, value: progress)
+        .animation(.default, value: transfers)
+        .onReceive(NotificationCenter.default.publisher(for: GuestTransferActivity.began)) { note in
+            guard let activity = note.object as? GuestTransferActivity, activity.vmName == name else { return }
+            transfers.append(activity)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: GuestTransferActivity.ended)) { note in
+            guard let activity = note.object as? GuestTransferActivity, activity.vmName == name else { return }
+            transfers.removeAll { $0 === activity }
+            if let failure = activity.failure { withAnimation { notice = failure } }
+        }
         .task(id: notice) {
             guard notice != nil else { return }
             try? await Task.sleep(for: .seconds(4))
@@ -217,6 +234,18 @@ extension MachineWindow {
             .shadow(radius: 6, y: 2)
             .padding(.top, 10)
             .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    /// 一次文件复制的进度与取消按钮。
+    fileprivate func transferRow(_ transfer: GuestTransferActivity) -> some View {
+        HStack(spacing: 10) {
+            ProgressView(transfer.progress)
+                .frame(width: 300)
+            Button { transfer.progress.cancel() } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.borderless)
+                .help("取消复制")
+                .accessibilityLabel("取消复制")
+        }
     }
 
     /// 工具栏里代替按钮的转圈，占着按钮的位置，其他按钮不跟着挪。

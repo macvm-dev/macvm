@@ -12,7 +12,7 @@ struct MacVM: AsyncParsableCommand {
         subcommands: [
             Create.self, Set.self, List.self, Run.self, Start.self, Stop.self, Suspend.self,
             Status.self, IP.self, Wait.self, Screenshot.self, Display.self, CloneCommand.self, SnapshotCommand.self, TemplateCommand.self,
-            Exec.self, SSH.self, Proxy.self, SSHConfigCommand.self, Agent.self, Update.self, UICommand.self, Tune.self,
+            Exec.self, Copy.self, SSH.self, Proxy.self, SSHConfigCommand.self, Agent.self, Update.self, UICommand.self, Tune.self,
             Delete.self, Doctor.self,
         ]
     )
