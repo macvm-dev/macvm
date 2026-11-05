@@ -78,7 +78,7 @@ final class AppModel {
     private var runningCreations: [String: CreationRequest] = [:]
     private var creationTasks: [String: Task<Void, Never>] = [:]
     private var resumedAtLaunch = false
-    /// 新建后首次开机装 SSH 公钥的任务，键为虚拟机名；虚拟机停下时取消。
+    /// 新建后首次开机装 SSH 公钥与客户机代理的任务，键为虚拟机名；虚拟机停下时取消。
     @ObservationIgnored private var sshKeyTasks: [String: Task<Void, Never>] = [:]
 
     private(set) var runners: [String: any MachineRunner] = [:]
@@ -571,7 +571,7 @@ final class AppModel {
                 try? FileManager.default.removeItem(at: VMBundle(url: library.bundleURL(named: name)).creationMarkerURL)
                 SSHConfig.refreshIfInstalled(library: library, macvmPath: CLILocation.path)
                 selection = name
-                if request.os == .macOS, request.source.template == nil { installSSHKeyOnFirstBoot(name, openMachineWindow: openMachineWindow) }
+                if request.os == .macOS, request.source.template == nil { setUpGuestOnFirstBoot(name, openMachineWindow: openMachineWindow) }
             } catch {
                 if Task.isCancelled {
                     cleanUpCancelled(request)
@@ -591,9 +591,10 @@ final class AppModel {
     /// 本进程里正在新建的虚拟机的客户机系统。
     func creatingOS(_ name: String) -> GuestOS? { runningCreations[name]?.os }
 
-    /// 新建的 macOS 虚拟机首次开机，等远程登录可用后用密码登录一次装入 macvm 公钥，之后 SSH 都走密钥。
+    /// 新建的 macOS 虚拟机首次开机，等远程登录可用后用密码登录一次装入 macvm 公钥，之后 SSH 都走密钥；
+    /// App 带着 macOS 版客户机代理时再经 SSH 装上代理。
     /// 不会自动开通时不开机：用户要先在窗口里走完设置助理。失败只报告，不影响虚拟机本身。
-    private func installSSHKeyOnFirstBoot(_ name: String, openMachineWindow: @escaping @MainActor (String) -> Void) {
+    private func setUpGuestOnFirstBoot(_ name: String, openMachineWindow: @escaping @MainActor (String) -> Void) {
         guard let bundle = try? library.bundle(named: name), MacOSProvisioning.willApply(to: bundle),
               let user = try? bundle.loadConfig().guestUser, let password = GuestCredentials.password(for: bundle) else { return }
         sshKeyTasks[name] = Task {
@@ -609,13 +610,17 @@ final class AppModel {
             let proxy = SSHConfig.proxyCommand(macvmPath: CLILocation.path, name: name, flags: ["--tcp"])
             do {
                 try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: password, proxyCommand: proxy, timeout: 900)
+                if AgentInstaller.binary(for: .macOS) != nil {
+                    _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: CLILocation.path)
+                    configRevision += 1
+                }
             } catch where !Task.isCancelled {
                 report(error)
             } catch {}
         }
     }
 
-    private static let sshKeyTitle = "正在首次开机并配置 SSH…"
+    private static let sshKeyTitle = "正在首次开机并配置 SSH 与客户机代理…"
 
     /// 安装用的虚拟机在安装结束后还要一会儿才放开辅助储存，这期间开机会失败：隔 `firstBootRetryInterval` 重试，
     /// 共 `firstBootAttempts` 次，只报告最后一次的错误。

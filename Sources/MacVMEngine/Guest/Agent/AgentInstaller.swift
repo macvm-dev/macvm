@@ -9,6 +9,9 @@ public enum AgentInstaller {
     static let windowsPath = windowsDirectory + #"\macvm-agent.exe"#
     static let windowsTaskName = "macvm-agent"
     static let launchAgentLabel = "cn.barey.macvm.agent"
+    /// macOS 客户机首次开机时 SSH 先于图形登录就绪，登录会话建好前 `launchctl bootstrap gui/<uid>` 会失败；
+    /// 安装脚本最多等这么多秒。登录过程会自行加载 `~/Library/LaunchAgents` 里的代理，加载上了也算装好。
+    static let macOSLoginWait = 120
 
     public static func binary(for os: GuestOS) -> URL? {
         switch os {
@@ -152,7 +155,15 @@ public enum AgentInstaller {
             \(plist)
             PLIST
             launchctl bootout gui/$(id -u)/\(launchAgentLabel) 2>/dev/null || true
-            launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist
+            deadline=$(( $(date +%s) + \(macOSLoginWait) ))
+            until launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist 2>/dev/null; do
+              launchctl print gui/$(id -u)/\(launchAgentLabel) >/dev/null 2>&1 && break
+              if [ $(date +%s) -ge $deadline ]; then
+                launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist
+                exit 1
+              fi
+              sleep 2
+            done
             """
         case .windows:
             // Windows 的 sshd 把命令交给 PowerShell 执行，经标准输入传二进制不可靠，改用 scp 传到用户目录。
@@ -191,11 +202,11 @@ public enum AgentInstaller {
     }
 
     /// `installOverSSH` 之后等代理上线，上线了才把 `guestAgent` 写回配置；放了显卡驱动包时同时写 `graphicsAcceleration`，
-    /// 客户机里有了这个驱动就只能用带 3D 的 QEMU 运行。
+    /// 客户机里有了这个驱动就只能用带 3D 的 QEMU 运行。写回前重读配置：安装期间配置可能被别处改过。
     public static func installAndEnable(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> (online: Bool, gpuDriver: Bool) {
         let gpuDriver = try await installOverSSH(bundle: bundle, config: config, macvmPath: macvmPath)
         guard try await VMStatus.poll(timeout: 30, interval: 0.3, { AgentClient.isReachable(bundle) }) else { return (false, gpuDriver) }
-        var config = config
+        var config = try bundle.loadConfig()
         config.guestAgent = true
         if gpuDriver { config.graphicsAcceleration = true }
         try bundle.saveConfig(config)
