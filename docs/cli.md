@@ -28,7 +28,12 @@
 | `template save <虚拟机> [<模板>]` / `template ls` / `template rm <模板>` | 把已关机的虚拟机存为模板（模板名缺省与虚拟机同名；运行中报 `already_running`，挂起时报 `invalid_config`；不含快照）/ 列出模板，结果为 `TemplateSummary` 数组（`name`、`os`、`engine`、`cpuCount`、`memorySize`、`diskSize`、`path`）/ 删除模板。找不到模板报 `template_not_found` |
 | `create <名> --template <模板> [--os 系统] [--cpus N] [--memory 8G] [--disk 128G] [--network nat\|bridged[:网卡]] [--engine vz\|qemu]` | 从模板新建任何系统的虚拟机（含 macOS）：复制模板的磁盘、配置、客户机密码与代理令牌，换新的机器标识与 MAC，云镜像建的 Linux 以新主机名重新初始化；`--disk` 只能比模板的大；给了 `--os` 而与模板不符时报 `invalid_config`；不能与 `--image`、`--desktop`、`--iso`、`--user`、`--password` 等决定系统与账户的选项同用 |
 | `tune <名> [--skip 项]… [--revert] [--password 密码]` | 经 SSH 调整 macOS 客户机设置以降低空闲占用，项为 `spotlight`、`sleep`、`screensaver`、`updates`、`animations`、`transparency`；其中 `spotlight`、`sleep`、`updates` 要 root，用包内的客户机密码 sudo。结果为 `{applied, failed, reverted}`，单项失败只记进 `failed`，sudo 认证失败才整体报错；`--revert` 恢复系统默认 |
-| `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU） |
+| `agent install\|info <名>` | 安装 / 查询客户机代理；用 qemu 引擎的 Windows 一并放进 3D 显卡驱动（需自带的 QEMU）。`info` 的 `features` 列出代理的可选能力（如 `ui`），旧代理没有这个字段 |
+| `ui snapshot <名> [--app 应用] [--depth N] [--limit N]` | 读客户机桌面的无障碍树，见下文「UI 自动化」；结果为 `UISnapshot`（`screen`、`apps`、`app`、`nodes`、`truncated`），格式见代理协议的 `ui-snapshot` |
+| `ui act <名> <元素> <动作> [--value 文本]` | 对快照里的元素执行动作：`press`、`focus`、`set-value`、`toggle`、`expand`、`collapse`、`select`、`scroll-into-view`、`show-menu`、`raise`；编号已失效或元素不支持该动作时报 `engine` |
+| `ui click <名> (<x> <y> \| --element 元素) [--button left\|right\|middle] [--count N]` / `ui move <名> <x> <y>` / `ui drag <名> <x1> <y1> <x2> <y2> [--button …]` / `ui scroll <名> <x> <y> [--dx N] [--dy N]` | 注入鼠标；`--element` 点元素当前位置的中心，滚动单位是滚轮格，正值向右、向下 |
+| `ui type <名> <文本>` / `ui key <名> <组合键>` | 输入文本（Linux 客户机只支持 ASCII）/ 按组合键，如 `cmd+shift+t`、`enter` |
+| `ui screenshot <名> <文件>` | 在客户机里截主屏存为 PNG，结果为 `{path, width, height}`；任何引擎都可用 |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
 
 ## 目录
@@ -71,6 +76,17 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 | 桥接 | `bridged[:网卡]` | 客户机直接接入主机网卡（BSD 名，如 `en0`，可用的见 `doctor`）所在的局域网，从局域网的路由器取得地址；不写网卡时开机桥接到第一块可桥接的网卡。两种引擎都支持 |
 
 桥接要用到随 App 安装的网络辅助程序 macvm-netd：在 App 的设置里启用，再到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM；`doctor` 的 `bridgedNetworking` 为 true 时可用。没启用就开机报 `unsupported`。macvm-netd 只接受同一个 App 包里的 App 与自带的 `macvm`（App 里 `Contents/Resources/bin/macvm`，或指向它的链接），另行构建的 `macvm` 连不上它，用不了桥接。桥接下宿主不是客户机的默认网关，Linux（QEMU 引擎）与 Windows 的客户机代理要靠共享令牌认证宿主：新建的虚拟机自带令牌，之前建的要先运行一次 `macvm agent install <名>` 更新代理并写入令牌，否则桥接下 `exec` 等经代理的操作会被拒绝（SSH 不受影响）。客户机里有令牌后，代理经 TCP 的连接不论哪种网络都要认证。桥接下 IP 是从客户机发出的 ARP 里认出来的，客户机开机拿到地址前 `ip` 查不到。改网络只能在关机时；MAC 地址保持不变。
+
+## UI 自动化
+
+`ui` 子命令经客户机代理操作客户机桌面，三种客户机系统、两种引擎都可用，适合给 computer-use 一类的代理程序调用：先 `ui snapshot` 拿到元素编号与位置，再用 `ui act` 或 `ui click --element` 操作，`ui screenshot` 核对结果。
+
+- 坐标一律是 `ui screenshot` 截图的像素，原点在主屏左上角；`snapshot` 里的 `bounds` 用同一套坐标，`screen.scale` 是客户机坐标单位到像素的倍数。
+- 元素编号至少在下一次 `snapshot` 之前有效；失效后操作报 `engine`，要重新快照。
+- 虚拟机要在运行，不会自动开机；没装代理或代理版本过旧（`agent info` 里的 `features` 没有 `ui`）时报 `unsupported`，运行 `macvm agent install <名>` 更新。
+- macOS 客户机要在「系统设置 › 隐私与安全性」里给 MacVM Agent「辅助功能」（快照、动作、输入）与「屏幕录制」（截屏）权限；没给时报 `permission_denied`（退出码 22），客户机里同时弹出系统的授权提示。权限跟着代理的代码签名，ad-hoc 签名的开发版每次重编后要重新授权。
+- Linux 客户机要有已登录的图形会话；第一次快照时代理打开会话的无障碍支持，之前已在运行的部分应用要重启后才看得到。`type` 只支持 ASCII。Wayland 下除 GNOME Shell 自己的界面（顶栏、程序坞）外元素没有 `bounds`，`click --element` 报 `engine`，要用 `act` 或按截图坐标点击。QEMU 开了 3D 加速时客户机里可能截不到画面。
+- Windows 客户机：UAC 等安全桌面上的窗口收不到输入。
 
 ## 与 runode 配合
 

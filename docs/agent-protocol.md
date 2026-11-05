@@ -1,6 +1,6 @@
 # macvm-agent 协议
 
-宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`macvm-agent-protocol` 的 `fixtures/` 中的样例由 Rust（`macvm-agent-protocol`）测试全部校验；Swift（`AgentProtocol`）测试只校验其中的请求（`requests.jsonl`）、光标（`cursors.jsonl`）与认证（`auth.jsonl`）样例，响应样例（`responses.jsonl`）只有 Rust 侧读。
+宿主连接客户机里的 `macvm-agent`。本文件是协议的唯一定义；`macvm-agent-protocol` 的 `fixtures/` 中的样例由 Rust（`macvm-agent-protocol`）测试全部校验；Swift（`AgentProtocol`）测试同样读取请求（`requests.jsonl`）、响应（`responses.jsonl`）、光标（`cursors.jsonl`）、UI 快照（`ui.jsonl`）与认证（`auth.jsonl`）样例，其中响应与快照只校验能否解码。
 
 ## 传输
 
@@ -9,7 +9,8 @@
 - 客户机里有共享令牌时，所有 TCP 连接（包括经 QEMU 用户态网络转发进来的）都先过下面的「认证」：桥接网络下默认网关是局域网路由器，它的地址也可能被局域网里的机器冒用，不能凭来源认出宿主。vsock 连接不认证。
 - 客户机里没有令牌时，只受理源地址是客户机默认网关的 TCP 连接（VZ 的 NAT 网关、QEMU 用户态网络的网关都是宿主），其他来源直接关闭。
 - 每个连接只承载一个请求。宿主先发一行 UTF-8 JSON（以 `\n` 结尾），代理回一行 JSON 响应。
-- 响应 `{"ok":false,"error":"…"}` 表示失败，代理随后关闭连接。
+- 响应 `{"ok":false,"error":"…"}` 表示失败，代理随后关闭连接。失败响应可以带机器可读的 `code`：`permission` 表示客户机系统没给代理所需的权限（如 macOS 的辅助功能、屏幕录制），要在客户机里授权。
+- 成功响应带 `size` 时，响应行之后紧跟 `size` 字节的正文，正文不超过 64 MiB。
 - `exec` 与 `forward` 的成功响应之后，连接切换为下述各自的数据格式。
 
 ## 认证
@@ -41,6 +42,10 @@
 | `gpu-driver` | `sha256`（驱动包 zip 的 SHA-256，十六进制），`size`（字节数） | 已有同一个包时 `{"ok":true,"text":"current"}`；否则 `{"ok":true,"text":"send"}`，收下随后的 `size` 字节并安装后再回 `{"ok":true,"text":"installed"}` 或 `"unchanged"`（仅 Windows） |
 | `trim-cache` | `keep`（字节数） | `{"ok":true}`（仅 Linux：把文件页缓存回收到约 `keep`） |
 | `cursor-watch` | — | `{"ok":true}`，随后每当客户机光标变化发一行光标形状，直到连接关闭（仅 Windows） |
+| `ui-snapshot` | `app`（pid、进程名，macOS 上也可以是 bundle id；省略时为前台应用），`max_depth`（默认 40），`max_nodes`（默认 2000） | `{"ok":true,"size":N}`，正文是 UI 快照的 JSON，见「UI 自动化」 |
+| `ui-action` | `element`（快照里的元素编号），`action`，`value`（`set-value` 时必填） | `{"ok":true}` |
+| `ui-input` | `events`（输入事件数组，按顺序注入） | `{"ok":true}` |
+| `ui-screenshot` | — | `{"ok":true,"size":N}`，正文是主屏 PNG |
 
 `info` 的内容：
 
@@ -48,7 +53,7 @@
 {"version":"0.1.0","os":"linux","hostname":"dev","ipv4":["192.168.64.3"],"mem_total":2073000000,"mem_available":1800000000,"uptime_ms":123456}
 ```
 
-`os` 取值 `linux`、`macos`、`windows`。内存单位为字节。
+`os` 取值 `linux`、`macos`、`windows`。内存单位为字节。`features` 列出可选能力，没有时省略；`ui` 表示支持 `ui-*` 请求。代理对不认识的 `op` 回失败响应，宿主按 `features` 判断代理是否支持某项能力。
 
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
 
@@ -67,6 +72,47 @@
 `bgra` 为逐像素 B G R A（非预乘 alpha）、自上而下的 Base64；`hidden` 为 true 时其余字段无意义，省略时为 false。`system` 取值：`arrow`、`ibeam`、`wait`、`crosshair`、`uparrow`、`sizenwse`、`sizenesw`、`sizewe`、`sizens`、`sizeall`、`no`、`hand`、`appstarting`、`help`、`pin`，宿主不认识的种类按箭头显示。VZ 下回错误响应；用硬件光标时运行中换上 viogpu3d，连接随即关闭，宿主重连后按 viogpu3d 的方式推送。
 
 Windows 3D 显卡驱动：宿主把 viogpu3d 驱动包平铺放在 `C:\ProgramData\macvm\viogpu3d`（含 `viogpu3d.inf`）。代理在非 VZ 下启动时，若在场 virtio-gpu 当前驱动的 INF 与包里的不同，就把包里的强制装上（驱动要与宿主的图形组件配套，降级也装）。开了 3D 加速的虚拟机每次开机后，宿主经 `gpu-driver` 把自带的驱动包推过来，代理替换该目录并立即安装，目录里的 `.macvm-package` 记着包的 SHA-256；换了驱动时宿主随即请代理重启客户机，桌面合成重启后才用上新驱动。
+
+## UI 自动化
+
+`ui-*` 请求读客户机桌面的无障碍树（macOS 的 AX、Windows 的 UI Automation、Linux 的 AT-SPI）、对元素执行动作、注入鼠标键盘与截屏。坐标一律是 `ui-screenshot` 截图的像素，原点在主屏左上角，客户机坐标与像素之间的换算由代理负责。
+
+`ui-snapshot` 的正文（样例在 `fixtures/ui.jsonl`）：
+
+```json
+{"screen":{"width":3840,"height":2400,"scale":2.0},
+ "apps":[{"pid":412,"name":"Finder","bundle":"com.apple.finder","frontmost":true}],
+ "app":{"pid":412,"name":"Finder","bundle":"com.apple.finder","frontmost":true},
+ "nodes":[{"id":"3.0","depth":0,"role":"AXApplication","name":"Finder"},
+          {"id":"3.2","depth":1,"role":"AXButton","subrole":"AXCloseButton","bounds":[220,120,28,28],"actions":["press"]}],
+ "truncated":true}
+```
+
+- `screen.scale` 是每个客户机坐标单位（macOS 的点、Windows 的 96 DPI 像素）对应的截图像素数。
+- `apps` 是有窗口的应用；`app` 是本次快照的应用，没有前台应用时省略，`nodes` 为空。
+- `nodes` 按先序排列，父子关系由 `depth` 表达；Windows 上应用的每个顶层窗口（含任务栏、桌面与对话框）各是一个 `depth` 为 0 的元素。遍历到 `max_depth` 或 `max_nodes` 时 `truncated` 为 true，否则省略。
+- `id` 对宿主不透明，至少在同一代理的下一次快照之前有效；失效时 `ui-action` 回失败，要重新快照。
+- `role` 是客户机系统的原名（AXButton、UIA 的 ControlType 名、AT-SPI 的 role 名），`subrole` 在 macOS 上是 AXSubrole、在 Windows 上是窗口类名。`name`、`value`、`description`、`bounds`（`[x,y,宽,高]`）没有时省略，`value` 最多 2000 个字符。
+- `states` 取值 `focused`、`disabled`、`selected`、`checked`、`expanded`、`offscreen`，`actions` 是元素支持的动作，都没有时省略。
+
+`ui-action` 的 `action` 取值：`press`、`focus`、`set-value`、`toggle`、`expand`、`collapse`、`select`、`scroll-into-view`、`show-menu`、`raise`。快照里没列出的动作也可以请求，元素不支持时回失败。
+
+`ui-input` 的事件按 `type` 区分：
+
+| `type` | 字段 |
+| --- | --- |
+| `move` | `x`，`y` |
+| `click` | `x`、`y`，或 `element`（点元素当前位置的中心）；`button`（`left`、`right`、`middle`，默认 `left`），`count`（默认 1） |
+| `drag` | `from`、`to`（`[x,y]`），`button` |
+| `scroll` | `x`，`y`，`dx`、`dy`（滚轮格数，正值向右、向下，默认 0） |
+| `key` | `keys`：组合键，如 `cmd+shift+t`、`enter`。修饰键 `cmd`（Windows 为 Win 键，Linux 为 Super）、`ctrl`、`alt`（`option`）、`shift` 在前，最后是主键：`enter`、`tab`、`esc`、`space`、`backspace`、`delete`、`up`、`down`、`left`、`right`、`home`、`end`、`pageup`、`pagedown`、`f1`–`f12`，或美式键盘上不按 Shift 时的字符 |
+| `text` | `text`：逐字输入；Linux 上只支持 ASCII |
+
+各系统的前提：
+
+- macOS：代理要有「辅助功能」权限才能读树、执行动作与注入输入，要有「屏幕录制」权限才能截屏；缺权限时代理让客户机弹出系统的授权提示，并回 `code` 为 `permission` 的失败响应。权限跟着代理 App 的代码签名，换了签名要重新授权。
+- Windows：输入经 `SendInput`，UAC 等安全桌面上的窗口收不到。
+- Linux：要有已登录的图形会话。代理以会话用户身份读 AT-SPI，并打开会话的无障碍支持，在此之前就已运行的部分应用要重启后才导出无障碍树；元素编号是 AT-SPI 对象的总线名加路径，跨快照有效，直到应用销毁该对象。输入经 uinput 虚拟设备（代理启动时建好），截屏经 DRM 读取扫描输出的帧缓冲，QEMU 开了 3D 加速时可能读不到画面。Wayland 下应用不知道自己窗口在屏幕上的位置，除 GNOME Shell 自己的界面外，元素都没有 `bounds`，按 `element` 点击回失败。
 
 `exec` 经目标用户的登录 shell 执行 `argv`，环境与 SSH 登录一致；`user` 省略时为代理启动参数 `--user` 指定的用户，代理不是 root 时只能以自身身份执行。
 

@@ -3,11 +3,25 @@ name = "macvm-agent-platform"
 version.workspace = true
 edition.workspace = true
 
+[dependencies]
+macvm-agent-protocol.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+[target.'cfg(any(target_os = "linux", windows))'.dependencies]
+png.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+windows.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

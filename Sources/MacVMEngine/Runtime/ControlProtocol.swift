@@ -100,6 +100,7 @@ public struct ControlResponse: Codable, Sendable, Equatable {
         case .engine: .engine(payload)
         case .snapshotNotFound: .snapshotNotFound(payload)
         case .templateNotFound: .templateNotFound(payload)
+        case .permissionDenied: .permissionDenied(payload)
         }
     }
 }

@@ -28,7 +28,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits, GetObjectW, HBITMAP, MONITOR_DEFAULTTOPRIMARY,
     MonitorFromPoint, ReleaseDC,
 };
-use windows_sys::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SetThreadDpiAwarenessContext};
+use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CURSOR_SHOWING, CURSORINFO, CreateCursor, GetCursorInfo, GetIconInfo, HCURSOR, ICONINFO, LoadCursorW, OCR_APPSTARTING, OCR_CROSS, OCR_HAND,
     OCR_HELP, OCR_IBEAM, OCR_NO, OCR_NORMAL, OCR_SIZEALL, OCR_SIZENESW, OCR_SIZENS, OCR_SIZENWSE, OCR_SIZEWE, OCR_UP, OCR_WAIT, SPI_SETCURSORS,
@@ -114,9 +114,8 @@ fn watch_hardware_cursor(alive: impl Fn() -> bool, mut on_change: impl FnMut(Gue
 }
 
 fn watch_hidden_cursors(alive: impl Fn() -> bool, mut on_change: impl FnMut(GuestCursor) -> io::Result<()>) -> io::Result<()> {
-    // 让 GetDpiForMonitor 报实际缩放，用于发现缩放变化。
-    // SAFETY: 只影响本线程，推送线程专用。
-    unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+    // 让 GetDpiForMonitor 报实际缩放，用于发现缩放变化；推送线程专用。
+    super::dpi::per_monitor_thread();
     let _hidden = HiddenCursors::acquire();
     let mut last: Option<(HCURSOR, bool, u64)> = None;
     while alive() {

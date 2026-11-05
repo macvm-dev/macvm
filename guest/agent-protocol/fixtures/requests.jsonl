@@ -13,3 +13,13 @@
 {"op":"display-scale","percent":200}
 {"op":"gpu-driver","sha256":"155695ab7820f71e75c369aeae7b8c060691ba43646ac37edef72aa2428506d5","size":6272667}
 {"op":"trim-cache","keep":268435456}
+{"op":"ui-snapshot"}
+{"op":"ui-snapshot","app":"com.apple.finder","max_depth":10,"max_nodes":500}
+{"op":"ui-action","element":"3.17","action":"press"}
+{"op":"ui-action","element":"3.20","action":"set-value","value":"你好"}
+{"op":"ui-input","events":[{"type":"move","x":10,"y":20}]}
+{"op":"ui-input","events":[{"type":"click","x":100,"y":200},{"type":"click","element":"3.17","button":"right","count":2}]}
+{"op":"ui-input","events":[{"type":"drag","from":[1,2],"to":[300,400],"button":"middle"}]}
+{"op":"ui-input","events":[{"type":"scroll","x":500,"y":400,"dx":0,"dy":3}]}
+{"op":"ui-input","events":[{"type":"key","keys":"cmd+shift+t"},{"type":"text","text":"hello 世界"}]}
+{"op":"ui-screenshot"}

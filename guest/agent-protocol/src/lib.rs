@@ -1,6 +1,9 @@
 //! 宿主与 macvm-agent 之间的消息类型与 exec 帧编解码。
 
 pub mod auth;
+mod ui;
+
+pub use ui::*;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -10,6 +13,12 @@ use std::io::{self, Read, Write};
 pub const PORT: u32 = 6100;
 /// 单帧载荷上限。
 pub const MAX_FRAME: usize = 1 << 20;
+/// 响应行之后正文（`Response::size`）的字节数上限。
+pub const MAX_BODY: u64 = 64 << 20;
+/// `Info::features` 里表示支持 `ui-*` 请求的项。
+pub const FEATURE_UI: &str = "ui";
+/// `Response::code`：代理缺少客户机系统授予的权限（如 macOS 的辅助功能、屏幕录制）。
+pub const CODE_PERMISSION: &str = "permission";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "kebab-case")]
@@ -41,6 +50,26 @@ pub enum Request {
     GpuDriver { sha256: String, size: u64 },
     /// 把客户机的文件页缓存回收到约 `keep` 字节（仅 Linux）。
     TrimCache { keep: u64 },
+    /// 一个应用的无障碍树；`app`（pid、进程名或 bundle id）省略时取前台应用。成功响应带 `size`，正文是 `UiSnapshot` 的 JSON。
+    UiSnapshot {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_depth: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_nodes: Option<u32>,
+    },
+    /// 对最近一次快照里的元素执行动作。
+    UiAction {
+        element: String,
+        action: ElementAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<String>,
+    },
+    /// 依次注入鼠标与键盘事件。
+    UiInput { events: Vec<InputEvent> },
+    /// 主屏截图。成功响应带 `size`，正文是 PNG。
+    UiScreenshot,
 }
 
 /// 客户机当前光标：`bgra` 为逐像素 B G R A（非预乘）的 Base64，自上而下；`hidden` 时其余字段无意义；
@@ -112,6 +141,9 @@ pub struct Info {
     pub mem_total: u64,
     pub mem_available: u64,
     pub uptime_ms: u64,
+    /// 本代理在这个客户机上支持的可选能力，如 `FEATURE_UI`。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -123,6 +155,12 @@ pub struct Response {
     pub info: Option<Info>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// 失败时机器可读的原因，如 `CODE_PERMISSION`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// 响应行之后紧跟这么多字节的正文，不超过 `MAX_BODY`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
 }
 
 impl Response {
@@ -133,6 +171,21 @@ impl Response {
     pub fn error(message: impl Into<String>) -> Self {
         Self { ok: false, error: Some(message.into()), ..Default::default() }
     }
+
+    /// 失败响应；`PermissionDenied` 带上 `CODE_PERMISSION`。
+    pub fn from_error(e: &io::Error) -> Self {
+        let code = (e.kind() == io::ErrorKind::PermissionDenied).then(|| CODE_PERMISSION.to_string());
+        Self { code, ..Self::error(e.to_string()) }
+    }
+}
+
+/// 写成功响应行（带 `size`）和紧随其后的正文；超过 `MAX_BODY` 时改写失败响应。
+pub fn write_body(w: &mut impl Write, body: &[u8]) -> io::Result<()> {
+    if body.len() as u64 > MAX_BODY {
+        return write_json_line(w, &Response::error(format!("正文过大：{} 字节", body.len())));
+    }
+    write_json_line(w, &Response { size: Some(body.len() as u64), ..Response::ok() })?;
+    w.write_all(body)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,6 +311,33 @@ mod tests {
             let value: serde_json::Value = serde_json::from_str(line).unwrap();
             assert_eq!(serde_json::to_value(&shape).unwrap(), value, "{line}");
         }
+    }
+
+    #[test]
+    fn ui_snapshots_round_trip() {
+        let text = std::fs::read_to_string(format!("{FIXTURES}/ui.jsonl")).unwrap();
+        for line in text.lines().filter(|l| !l.is_empty()) {
+            let snapshot: UiSnapshot = serde_json::from_str(line).unwrap_or_else(|e| panic!("{line}: {e}"));
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(serde_json::to_value(&snapshot).unwrap(), value, "{line}");
+        }
+    }
+
+    #[test]
+    fn body_follows_response_line() {
+        let mut buf = Vec::new();
+        write_body(&mut buf, b"\x89PNG").unwrap();
+        let mut r = &buf[..];
+        let resp: Response = serde_json::from_slice(&read_line(&mut r).unwrap()).unwrap();
+        assert_eq!(resp.size, Some(4));
+        assert_eq!(r, b"\x89PNG");
+    }
+
+    #[test]
+    fn permission_errors_carry_code() {
+        let resp = Response::from_error(&io::Error::new(io::ErrorKind::PermissionDenied, "x"));
+        assert_eq!(resp.code.as_deref(), Some(CODE_PERMISSION));
+        assert_eq!(Response::from_error(&io::Error::other("x")).code, None);
     }
 
     #[test]

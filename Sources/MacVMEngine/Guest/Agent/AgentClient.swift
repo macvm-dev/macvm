@@ -19,6 +19,20 @@ public enum AgentClient {
         try open(request, bundle: bundle, timeout: timeout).0.checked()
     }
 
+    /// 发出请求，返回成功响应之后的正文（`Response.size` 字节）。
+    static func fetch(_ request: AgentProtocol.Request, bundle: VMBundle, timeout: Int = 30) throws -> Data {
+        let (response, socket) = try open(request, bundle: bundle, timeout: timeout)
+        return try body(after: response, from: socket)
+    }
+
+    /// `response` 之后的正文；响应失败时抛出它的错误。
+    static func body(after response: AgentProtocol.Response, from socket: UnixSocket) throws -> Data {
+        let size = try response.checked().size ?? 0
+        guard (0...AgentProtocol.maxBody).contains(size) else { throw MacVMError.io("客户机代理的正文过大：\(size) 字节") }
+        guard let body = try socket.readExact(size) else { throw MacVMError.io("客户机代理在正文结束前断开") }
+        return body
+    }
+
     /// 在已连到代理的 `socket` 上发一个请求，返回代理是否接受；任何失败都算不接受。
     static func call(_ request: AgentProtocol.Request, over socket: UnixSocket, timeout: Int) -> Bool {
         socket.setTimeout(seconds: timeout)

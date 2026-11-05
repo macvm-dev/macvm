@@ -15,6 +15,8 @@ public enum MacVMError: Error, Sendable, Equatable {
     case engine(String)
     case snapshotNotFound(String)
     case templateNotFound(String)
+    /// 客户机系统没给代理所需的权限（如 macOS 的辅助功能、屏幕录制），要在客户机里授权。
+    case permissionDenied(String)
 
     public var code: String {
         switch self {
@@ -30,6 +32,7 @@ public enum MacVMError: Error, Sendable, Equatable {
         case .engine: "engine"
         case .snapshotNotFound: "snapshot_not_found"
         case .templateNotFound: "template_not_found"
+        case .permissionDenied: "permission_denied"
         }
     }
 
@@ -47,6 +50,7 @@ public enum MacVMError: Error, Sendable, Equatable {
         case .engine: 19
         case .snapshotNotFound: 20
         case .templateNotFound: 21
+        case .permissionDenied: 22
         }
     }
 
@@ -59,7 +63,7 @@ public enum MacVMError: Error, Sendable, Equatable {
         case .snapshotNotFound(let what): "快照不存在：\(what)"
         case .templateNotFound(let name): "模板不存在：\(name)"
         case .invalidConfig(let m), .unsupported(let m), .entitlementMissing(let m),
-             .timeout(let m), .io(let m), .engine(let m): m
+             .timeout(let m), .io(let m), .engine(let m), .permissionDenied(let m): m
         }
     }
 }
@@ -69,7 +73,7 @@ extension MacVMError {
     public static let catalog: [MacVMError] = [
         .vmNotFound(""), .alreadyExists(""), .alreadyRunning(""), .notRunning(""), .invalidConfig(""),
         .unsupported(""), .entitlementMissing(""), .timeout(""), .io(""), .engine(""), .snapshotNotFound(""),
-        .templateNotFound(""),
+        .templateNotFound(""), .permissionDenied(""),
     ]
 
     public var summary: String {
@@ -86,6 +90,7 @@ extension MacVMError {
         case .engine: "Virtualization.framework 报错"
         case .snapshotNotFound: "快照不存在"
         case .templateNotFound: "模板不存在"
+        case .permissionDenied: "客户机未授予代理所需的权限"
         }
     }
 }

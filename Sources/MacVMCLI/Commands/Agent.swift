@@ -6,7 +6,7 @@ import MacVMModel
 struct Agent: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "管理客户机代理（macvm-agent）。",
-        discussion: "代理提供 exec、端口转发、关机、对时与剪贴板。VZ 下的 Linux、macOS 经 vsock，不依赖客户机网络；Windows 与 QEMU 下的 Linux 经 TCP。云镜像、install-macos 与 Windows 安装创建的虚拟机自动安装。",
+        discussion: "代理提供 exec、端口转发、关机、对时、剪贴板与 UI 自动化（macvm ui）。VZ 下的 Linux、macOS 经 vsock，不依赖客户机网络；Windows 与 QEMU 下的 Linux 经 TCP。云镜像、install-macos 与 Windows 安装创建的虚拟机自动安装。",
         subcommands: [Install.self, Info.self]
     )
 

@@ -6,6 +6,10 @@ use std::io;
 use std::mem::{size_of, zeroed};
 
 use windows_sys::Win32::Devices::Display::{DISPLAYCONFIG_DEVICE_INFO_HEADER, DisplayConfigGetDeviceInfo, DisplayConfigSetDeviceInfo};
+use windows_sys::Win32::Foundation::POINT;
+use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
+use windows_sys::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SetThreadDpiAwarenessContext};
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
 use super::display::{active_config, win32};
 
@@ -27,6 +31,24 @@ struct DpiScaleGet {
 struct DpiScaleSet {
     header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
     relative: i32,
+}
+
+/// 让本线程按每显示器 DPI 感知运行：坐标与尺寸都是物理像素，`GetDpiForMonitor` 报实际缩放。只影响调用线程。
+pub(super) fn per_monitor_thread() {
+    // SAFETY: 只改本线程的 DPI 感知方式。
+    unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+}
+
+/// 主屏的像素宽高与缩放（每 96 DPI 为 1）；调用线程要先 `per_monitor_thread`。
+pub(super) fn primary_screen() -> (u32, u32, f64) {
+    // SAFETY: 只查询系统度量与主屏 DPI。
+    unsafe {
+        let (width, height) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+        let monitor = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+        let dpi = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) == 0 && dpi_x > 0 { dpi_x } else { 96 };
+        (width.max(0) as u32, height.max(0) as u32, f64::from(dpi) / 96.0)
+    }
 }
 
 /// 把所有在用的显示器设为不超过 `percent` 的最接近档位；超出该显示器允许的范围时取边界。

@@ -3,7 +3,7 @@
 // Windows 上由登录时的计划任务启动，不需要也不应弹出控制台窗口。
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use macvm_agent_platform::{self as platform, Conn, ExecOptions, GuestCursor, Origin, SpawnedIo};
+use macvm_agent_platform::{self as platform, Conn, ExecOptions, GuestCursor, Origin, SnapshotOptions, SpawnedIo};
 use macvm_agent_protocol::{self as proto, ExecRequest, ExitStatus, FrameKind, Info, Request, Response, WindowSize};
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -28,6 +28,12 @@ fn main() {
             std::process::exit(1);
         }
     };
+    #[cfg(target_os = "linux")]
+    std::thread::spawn(|| {
+        if let Err(e) = platform::prepare_ui_input() {
+            eprintln!("macvm-agent: 创建虚拟输入设备失败：{e}");
+        }
+    });
     #[cfg(windows)]
     {
         platform::configure_hardware_cursor();
@@ -79,6 +85,9 @@ fn parse_args() -> Config {
                     std::process::exit(1);
                 }
             },
+            // 代理以图形会话用户身份运行的无障碍查询：标准输入一行请求，标准输出一行结果。
+            #[cfg(target_os = "linux")]
+            "--ui-helper" => std::process::exit(platform::run_ui_helper()),
             "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
@@ -205,7 +214,49 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
             Err(e) => reply(&mut conn, Err(io::Error::new(e.kind(), format!("连接 127.0.0.1:{port} 失败：{e}")))),
         },
         Request::Exec(req) => run_exec(conn, req, config),
+        Request::UiSnapshot { app, max_depth, max_nodes } => {
+            let options = SnapshotOptions {
+                app: app.as_deref(),
+                max_depth: max_depth.unwrap_or(proto::DEFAULT_UI_DEPTH),
+                max_nodes: max_nodes.unwrap_or(proto::DEFAULT_UI_NODES),
+            };
+            let body = platform::ui_snapshot(&options).and_then(|s| serde_json::to_vec(&s).map_err(io::Error::other));
+            reply_body(&mut conn, body)
+        }
+        Request::UiAction { element, action, value } => {
+            let result = platform::ui_action(&element, action, value.as_deref()).map(|_| Response::ok());
+            reply_ui(&mut conn, result)
+        }
+        Request::UiInput { mut events } => {
+            let result = resolve_clicks(&mut events).and_then(|_| platform::ui_input(&events)).map(|_| Response::ok());
+            reply_ui(&mut conn, result)
+        }
+        Request::UiScreenshot => reply_body(&mut conn, platform::ui_screenshot()),
     }
+}
+
+/// UI 请求的响应：权限不足时带上 `code`，宿主据此提示授权。
+fn reply_ui(conn: &mut Conn, result: io::Result<Response>) -> io::Result<()> {
+    proto::write_json_line(conn, &result.unwrap_or_else(|e| Response::from_error(&e)))
+}
+
+fn reply_body(conn: &mut Conn, body: io::Result<Vec<u8>>) -> io::Result<()> {
+    match body {
+        Ok(body) => proto::write_body(conn, &body),
+        Err(e) => reply_ui(conn, Err(e)),
+    }
+}
+
+/// 把按元素给出的点击换成元素中心的坐标。
+fn resolve_clicks(events: &mut [proto::InputEvent]) -> io::Result<()> {
+    for event in events {
+        if let proto::InputEvent::Click { x, y, element: Some(id), .. } = event {
+            let [left, top, width, height] = platform::ui_element_bounds(id)?;
+            *x = Some(left + width / 2);
+            *y = Some(top + height / 2);
+        }
+    }
+    Ok(())
 }
 
 fn info() -> Info {
@@ -218,6 +269,7 @@ fn info() -> Info {
         mem_total,
         mem_available,
         uptime_ms: platform::uptime_ms(),
+        features: vec![proto::FEATURE_UI.to_string()],
     }
 }
 

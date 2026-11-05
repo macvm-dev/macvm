@@ -11,6 +11,7 @@ pub use unix::*;
 
 #[cfg(any(windows, test))]
 mod cmdline;
+mod input;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
@@ -66,6 +67,21 @@ pub enum SpawnedIo {
 pub struct Spawned {
     pub io: SpawnedIo,
     pub child: Box<dyn ChildProcess>,
+}
+
+/// `ui_snapshot` 的范围：`app` 是 pid、进程名或 bundle id，省略时取前台应用。
+pub struct SnapshotOptions<'a> {
+    pub app: Option<&'a str>,
+    pub max_depth: u32,
+    pub max_nodes: u32,
+}
+
+/// 一次快照遍历的最长时间：应用卡住时每次查询都要等到超时，到时就交出已遍历的部分并标为不完整。
+pub(crate) const SNAPSHOT_BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// 元素编号不在最近一次快照里。
+pub(crate) fn stale_element(id: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, format!("元素 {id} 不在最近一次快照里，重新快照后再试"))
 }
 
 /// 推给宿主的客户机光标。

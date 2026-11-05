@@ -5,6 +5,10 @@ import MacVMModel
 public enum AgentProtocol {
     public static let port: UInt32 = 6100
     static let maxFrame = 1 << 20
+    /// 响应行之后正文（`Response.size`）的字节数上限。
+    static let maxBody = 64 << 20
+    /// `Info.features` 里表示支持 `ui-*` 请求的项。
+    static let featureUI = "ui"
 
     public struct ExecRequest: Codable, Sendable, Equatable {
         public var argv: [String]
@@ -42,8 +46,17 @@ public enum AgentProtocol {
         case gpuDriver(sha256: String, size: Int)
         /// 把 Linux 客户机的文件页缓存回收到约 `keep` 字节。
         case trimCache(keep: UInt64)
+        /// 应用的无障碍树；成功响应带 `size`，正文是 `UISnapshot`。
+        case uiSnapshot(app: String?, maxDepth: Int?, maxNodes: Int?)
+        case uiAction(element: String, action: ElementAction, value: String?)
+        case uiInput([InputEvent])
+        /// 成功响应带 `size`，正文是主屏 PNG。
+        case uiScreenshot
 
-        private enum Keys: String, CodingKey { case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size, keep }
+        private enum Keys: String, CodingKey {
+            case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size, keep
+            case app, max_depth, max_nodes, element, action, value, events
+        }
 
         public func encode(to encoder: any Encoder) throws {
             if case .exec(let req) = self {
@@ -70,6 +83,16 @@ public enum AgentProtocol {
             case .trimCache(let keep): try c.encode("trim-cache", forKey: .op); try c.encode(keep, forKey: .keep)
             case .display(let width, let height):
                 try c.encode("display", forKey: .op); try c.encode(width, forKey: .width); try c.encode(height, forKey: .height)
+            case .uiSnapshot(let app, let maxDepth, let maxNodes):
+                try c.encode("ui-snapshot", forKey: .op)
+                try c.encodeIfPresent(app, forKey: .app)
+                try c.encodeIfPresent(maxDepth, forKey: .max_depth)
+                try c.encodeIfPresent(maxNodes, forKey: .max_nodes)
+            case .uiAction(let element, let action, let value):
+                try c.encode("ui-action", forKey: .op); try c.encode(element, forKey: .element); try c.encode(action, forKey: .action)
+                try c.encodeIfPresent(value, forKey: .value)
+            case .uiInput(let events): try c.encode("ui-input", forKey: .op); try c.encode(events, forKey: .events)
+            case .uiScreenshot: try c.encode("ui-screenshot", forKey: .op)
             }
         }
 
@@ -91,6 +114,14 @@ public enum AgentProtocol {
             case "display-scale": self = .displayScale(percent: try c.decode(Int.self, forKey: .percent))
             case "gpu-driver": self = .gpuDriver(sha256: try c.decode(String.self, forKey: .sha256), size: try c.decode(Int.self, forKey: .size))
             case "trim-cache": self = .trimCache(keep: try c.decode(UInt64.self, forKey: .keep))
+            case "ui-snapshot":
+                self = .uiSnapshot(app: try c.decodeIfPresent(String.self, forKey: .app), maxDepth: try c.decodeIfPresent(Int.self, forKey: .max_depth),
+                                   maxNodes: try c.decodeIfPresent(Int.self, forKey: .max_nodes))
+            case "ui-action":
+                self = .uiAction(element: try c.decode(String.self, forKey: .element), action: try c.decode(ElementAction.self, forKey: .action),
+                                 value: try c.decodeIfPresent(String.self, forKey: .value))
+            case "ui-input": self = .uiInput(try c.decode([InputEvent].self, forKey: .events))
+            case "ui-screenshot": self = .uiScreenshot
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
             }
         }
@@ -104,9 +135,11 @@ public enum AgentProtocol {
         public let memTotal: UInt64
         public let memAvailable: UInt64
         public let uptimeMs: UInt64
+        /// 代理在这个客户机上支持的可选能力，如 `featureUI`；缺省时没有任何可选能力。
+        public let features: [String]?
 
         enum CodingKeys: String, CodingKey {
-            case version, os, hostname, ipv4
+            case version, os, hostname, ipv4, features
             case memTotal = "mem_total", memAvailable = "mem_available", uptimeMs = "uptime_ms"
         }
     }
@@ -116,10 +149,17 @@ public enum AgentProtocol {
         public let error: String?
         public let info: Info?
         public let text: String?
+        /// 失败时机器可读的原因，`permission` 表示客户机没给代理所需的权限。
+        public let code: String?
+        /// 响应行之后紧跟的正文字节数。
+        public let size: Int?
 
-        /// 失败的响应转成 `MacVMError.engine`；代理没给原因时用 `fallback`。
+        /// 失败的响应转成 `MacVMError`：缺权限时为 `permissionDenied`，其余为 `engine`；代理没给原因时用 `fallback`。
         func checked(_ fallback: String = "未知错误") throws -> Response {
-            guard ok else { throw MacVMError.engine("客户机代理：\(error ?? fallback)") }
+            guard ok else {
+                let message = error ?? fallback
+                throw code == "permission" ? MacVMError.permissionDenied(message) : MacVMError.engine("客户机代理：\(message)")
+            }
             return self
         }
     }

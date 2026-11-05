@@ -2,3 +2,6 @@
 {"ok":false,"error":"no such file"}
 {"ok":true,"info":{"version":"0.1.0","os":"linux","hostname":"dev","ipv4":["192.168.64.3"],"mem_total":2073000000,"mem_available":1800000000,"uptime_ms":123456}}
 {"ok":true,"text":"hello"}
+{"ok":true,"size":48213}
+{"ok":false,"error":"在客户机「系统设置 › 隐私与安全性 › 辅助功能」里允许 MacVM Agent","code":"permission"}
+{"ok":true,"info":{"version":"0.1.0","os":"macos","hostname":"mac","ipv4":["192.168.64.4"],"mem_total":8589934592,"mem_available":4294967296,"uptime_ms":60000,"features":["ui"]}}

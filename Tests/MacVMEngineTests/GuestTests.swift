@@ -79,4 +79,63 @@ struct AgentRequestTests {
             #expect(actual == expected, "\(line)")
         }
     }
+
+    @Test func responseFixturesDecode() throws {
+        let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../guest/agent-protocol/fixtures/responses.jsonl")
+        let responses = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map {
+            try JSONDecoder().decode(AgentProtocol.Response.self, from: Data($0.utf8))
+        }
+        #expect(responses.contains { $0.size == 48213 })
+        #expect(responses.contains { $0.info?.features == [AgentProtocol.featureUI] })
+        let denied = try #require(responses.first { $0.code == "permission" })
+        #expect(throws: MacVMError.permissionDenied(denied.error ?? "")) { try denied.checked() }
+    }
+
+    @Test func uiSnapshotFixturesDecode() throws {
+        let url = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../guest/agent-protocol/fixtures/ui.jsonl")
+        let snapshots = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map {
+            try JSONDecoder().decode(AgentProtocol.UISnapshot.self, from: Data($0.utf8))
+        }
+        let full = try #require(snapshots.first)
+        #expect(full.truncated && full.screen.scale == 2 && full.app?.frontmost == true)
+        #expect(full.nodes.map(\.depth) == [0, 1, 2, 2, 2])
+        #expect(full.nodes[4].states == ["checked", "disabled"] && full.nodes[3].actions == ["focus", "set-value"])
+        #expect(snapshots.last?.app == nil && snapshots.last?.truncated == false)
+    }
+
+    /// 宿主端与代理端各一个 `UnixSocket`。
+    private func connected() throws -> (host: UnixSocket, agent: UnixSocket) {
+        var fds: [Int32] = [-1, -1]
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        return (UnixSocket(fd: fds[0]), UnixSocket(fd: fds[1]))
+    }
+
+    @Test func bodyFollowsResponseLine() throws {
+        let (host, agent) = try connected()
+        // 响应行与正文一次写出，宿主读响应行时会把正文开头一并读进缓冲。
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0A])
+        try agent.writeAll(Data(#"{"ok":true,"size":5}"#.utf8) + [0x0A] + png)
+        let response = try #require(try host.readLine()).decoded()
+        #expect(try AgentClient.body(after: response, from: host) == png)
+    }
+
+    @Test func bodyRejectsOversizeAndTruncation() throws {
+        let (host, agent) = try connected()
+        let oversize = try Data(#"{"ok":true,"size":\#(AgentProtocol.maxBody + 1)}"#.utf8).decoded()
+        #expect(throws: MacVMError.self) { try AgentClient.body(after: oversize, from: host) }
+        try agent.writeAll(Data("abc".utf8))
+        shutdown(agent.fd, SHUT_WR)
+        let short = try Data(#"{"ok":true,"size":10}"#.utf8).decoded()
+        #expect(throws: MacVMError.self) { try AgentClient.body(after: short, from: host) }
+    }
+
+    @Test func inputEventsOmitDefaults() throws {
+        let click = AgentProtocol.InputEvent.click(x: 1, y: 2, element: nil, button: .left, count: 1)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(click)) as? NSDictionary
+        #expect(object == ["type": "click", "x": 1, "y": 2])
+    }
+}
+
+private extension Data {
+    func decoded() throws -> AgentProtocol.Response { try JSONDecoder().decode(AgentProtocol.Response.self, from: self) }
 }

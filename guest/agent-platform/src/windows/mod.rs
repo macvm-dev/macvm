@@ -1,11 +1,14 @@
 mod exec;
 mod listener;
+mod capture;
 mod clipboard;
 mod cursor;
 mod display;
 mod dpi;
 mod gpu;
+mod sendinput;
 mod system;
+mod ui;
 
 pub use cursor::{configure_hardware_cursor, restore_system_cursors, watch_cursor};
 pub use display::set_display;
@@ -14,6 +17,7 @@ pub use gpu::{gpu_driver_package_is, install_gpu_driver, replace_gpu_driver};
 pub use exec::spawn;
 pub use listener::{Conn, Listener, agent_token, peer_closed, set_read_timeout, shutdown_write};
 pub use system::*;
+pub use ui::{ui_action, ui_element_bounds, ui_input, ui_screenshot, ui_snapshot};
 
 /// virtio-gpu 的 PCI 厂商与设备号，出现在适配器的 PnP ID 与硬件号里。
 const VIRTIO_GPU: &str = "VEN_1AF4&DEV_1050";

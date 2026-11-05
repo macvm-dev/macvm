@@ -295,6 +295,7 @@ pub fn set_display_scale(percent: u32) -> io::Result<()> {
 
 #[cfg(target_os = "linux")]
 mod gnome_scale {
+    use crate::unix::session::{Session, graphical_sessions};
     use std::collections::HashSet;
     use std::sync::{Mutex, Once};
     use std::time::Duration;
@@ -341,41 +342,11 @@ mod gnome_scale {
         }
     }
 
-    struct Session {
-        id: String,
-        user: String,
-        uid: String,
-    }
-
-    /// systemd-logind 在 `/run/systemd/sessions/<ID>` 里记录每个会话，格式为 KEY=VALUE 行。
-    fn graphical_sessions() -> Vec<Session> {
-        let Ok(entries) = std::fs::read_dir("/run/systemd/sessions") else { return Vec::new() };
-        entries
-            .flatten()
-            .filter_map(|entry| {
-                let id = entry.file_name().into_string().ok()?;
-                if id.contains('.') {
-                    return None;
-                }
-                let text = std::fs::read_to_string(entry.path()).ok()?;
-                let field = |key: &str| text.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix('=')).map(str::to_owned);
-                let graphical = matches!(field("TYPE").as_deref(), Some("wayland" | "x11"));
-                let user_class = field("CLASS").as_deref() == Some("user");
-                let closing = field("STATE").as_deref() == Some("closing");
-                if !graphical || !user_class || closing {
-                    return None;
-                }
-                Some(Session { id, user: field("USER")?, uid: field("UID")? })
-            })
-            .collect()
-    }
-
     /// 以会话用户身份接上它的会话总线执行命令；成功时返回标准输出。
     fn as_user(session: &Session, args: &[&str]) -> Option<String> {
-        let bus = format!("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{}/bus", session.uid);
-        let runtime = format!("XDG_RUNTIME_DIR=/run/user/{}", session.uid);
         let output = std::process::Command::new("runuser")
-            .args(["-u", &session.user, "--", "env", &bus, &runtime])
+            .args(["-u", &session.user, "--", "env"])
+            .args(session.bus_env())
             .args(args)
             .output()
             .ok()?;
