@@ -1,0 +1,17 @@
+virtio-gpu-virgl: ignore SET_SCANOUT with resource 0 when the scanout is already
+disabled, as the 2D virtio-gpu does. While Windows boots, the guest sends it every
+few tens of milliseconds, and each one replaced the console surface with the
+placeholder, which virtio-ramfb then swapped back for the ramfb: the boot screen
+flickered between the two.
+
+--- a/hw/display/virtio-gpu-virgl.c
++++ b/hw/display/virtio-gpu-virgl.c
+@@ -626,7 +626,7 @@
+             info.width, info.height,
+             ss.r.x, ss.r.y, ss.r.width, ss.r.height,
+             native, NULL);
+-    } else {
++    } else if (g->parent_obj.scanout[ss.scanout_id].resource_id) {
+         qemu_console_set_surface(g->parent_obj.scanout[ss.scanout_id].con, NULL);
+         qemu_console_gl_scanout_disable(g->parent_obj.scanout[ss.scanout_id].con);
+     }
