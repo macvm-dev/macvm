@@ -10,6 +10,8 @@ TOOLCHAIN_BIN=$(dirname "$(rustup which rustc --toolchain stable)")
 export RUSTC="$TOOLCHAIN_BIN/rustc"
 CARGO="$TOOLCHAIN_BIN/cargo"
 rustup target add --toolchain stable aarch64-unknown-linux-musl aarch64-pc-windows-msvc >/dev/null
+# 发布配置要 strip，macOS 目标由 rustc 自带的 rust-objcopy 做，它链接的 libLLVM 在 llvm-tools 组件里，没装时只告警、产物不 strip。
+rustup component add --toolchain stable llvm-tools >/dev/null
 
 $CARGO build --release -p macvm-agent --target aarch64-apple-darwin
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \

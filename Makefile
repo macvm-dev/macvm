@@ -25,9 +25,10 @@ sign: build
 	codesign -f -s "$$id" --entitlements $(ENTITLEMENTS) $(BIN)/macvm; \
 	codesign -f -s "$$id" --entitlements $(ENTITLEMENTS) $(BIN)/MacVMApp
 
-# 按 CONFIG（默认 debug）组装 App 并在前台运行，日志打在终端，Ctrl-C 退出。
+# 先编译客户机代理与引导程序，再按 CONFIG（默认 debug）组装 App 并在前台运行，日志打在终端，Ctrl-C 退出。
+# 自带的 QEMU 编译太久，不在其中，要用时先 make qemu。
 # 组装进 .build 而不是 dist，不覆盖发布产物；直接运行可执行文件而不用 open，免得 LaunchServices 转去激活已在运行的同 bundle ID 的 App。
-run:
+run: agent boot
 	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 	.build/MacVM.app/Contents/MacOS/MacVM
 

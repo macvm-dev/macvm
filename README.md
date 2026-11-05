@@ -173,7 +173,7 @@ make sign            # 调试构建并签名：.build/debug/macvm、.build/debug
 make agent           # 交叉编译客户机代理（Windows 版需 cargo install cargo-xwin）
 make boot            # 编译 UEFI 引导程序
 make qemu            # 编译 App 自带的 QEMU（可选，首次较久）
-make run             # 调试构建，组装 .build/MacVM.app 并在前台运行（有 Developer ID 证书时用它签名）
+make run             # 编译客户机代理与引导程序，调试构建，组装 .build/MacVM.app 并在前台运行（有 Developer ID 证书时用它签名）
 make app             # 发布构建并组装 dist/MacVM.app
 make test lint       # 运行测试与检查
 ```
