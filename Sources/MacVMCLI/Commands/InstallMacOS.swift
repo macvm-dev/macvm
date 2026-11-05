@@ -82,9 +82,9 @@ struct InstallMacOS: AsyncParsableCommand {
                 try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: pw, proxyCommand: proxy, timeout: 900)
                 sshReady = true
                 do {
-                    try await MacOSProvisioning.setHostName(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
+                    try await MacOSProvisioning.setHostNameAndTimeZone(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
                 } catch {
-                    FileHandle.standardError.write(Data("设置主机名失败：\((error as? MacVMError)?.message ?? error.localizedDescription)\n".utf8))
+                    FileHandle.standardError.write(Data("设置主机名与时区失败：\((error as? MacVMError)?.message ?? error.localizedDescription)\n".utf8))
                 }
                 if AgentInstaller.binary(for: .macOS) != nil {
                     _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)

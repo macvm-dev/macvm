@@ -22,11 +22,11 @@ public enum VMClone {
 
             // 新 instance-id 让 cloud-init 当作新机器重跑：改主机名、重新生成主机密钥、按新 MAC 配网。
             if config.disks.contains(where: { $0.path == CloudInit.seedFileName }), let user = config.guestUser {
-                // 代理已装在磁盘上，种子盘不再携带。
+                // 代理已装在磁盘上，种子盘不再携带；时区沿用源机磁盘上的设置。
                 // 换了 instance-id，cloud-init 会按种子盘重新设置用户，密码要与源机一致。
                 let seed = CloudInit.Options(hostname: name, user: user, password: password, sshPublicKey: try await SSHKeys.ensurePublicKey(),
                                              macAddress: config.networks.first?.macAddress ?? "", shares: config.shares, rosetta: config.rosetta,
-                                             agentBinary: nil)
+                                             timezone: nil, agentBinary: nil)
                 try await CloudInit.writeSeed(seed, instanceID: UUID().uuidString, in: target)
             }
             try customize(&config, target)

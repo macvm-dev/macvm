@@ -19,13 +19,16 @@ public enum CloudInit {
         public var shares: [ShareConfig]
         public var rosetta: Bool
         public var macAddress: String
+        /// tz 数据库里的时区名；nil 时不动客户机的时区。
+        public var timezone: String?
         /// 放进种子盘并在首启时安装为 systemd 服务的代理二进制。
         public var agentBinary: URL?
         /// 写进客户机的 `AgentToken`。
         public var agentToken: String?
 
         public init(hostname: String, user: String, password: String? = nil, sshPublicKey: String, macAddress: String, shares: [ShareConfig] = [],
-                    rosetta: Bool = false, agentBinary: URL? = AgentInstaller.binary(for: .linux), agentToken: String? = nil) {
+                    rosetta: Bool = false, timezone: String? = TimeZone.current.identifier,
+                    agentBinary: URL? = AgentInstaller.binary(for: .linux), agentToken: String? = nil) {
             self.hostname = CloudInit.hostname(for: hostname, fallback: "linux")
             self.user = user
             self.password = password
@@ -33,6 +36,7 @@ public enum CloudInit {
             self.shares = shares
             self.rosetta = rosetta
             self.macAddress = macAddress
+            self.timezone = timezone
             self.agentBinary = agentBinary
             self.agentToken = agentToken
         }
@@ -121,6 +125,7 @@ public enum CloudInit {
             ssh_authorized_keys:
               - \(yaml(o.sshPublicKey))
         ssh_pwauth: false
+        \(o.timezone.map { "timezone: \(yaml($0))" } ?? "")
         \(o.password.map { "chpasswd:\n  expire: false\n  users:\n    - name: \(yaml(o.user))\n      password: \(yaml($0))\n      type: text" } ?? "")
         growpart:
           mode: auto

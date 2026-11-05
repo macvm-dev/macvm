@@ -402,12 +402,36 @@ struct WindowsUnattendTests {
         _ = try XMLDocument(xmlString: xml)
         _ = try XMLDocument(xmlString: WindowsUnattend.autounattend())
     }
+
+    @Test func unattendSetsTimeZoneWhenKnown() throws {
+        var o = options
+        o.timeZone = "China Standard Time"
+        let xml = WindowsUnattend.unattend(o)
+        #expect(xml.contains("<TimeZone>China Standard Time</TimeZone>"))
+        _ = try XMLDocument(xmlString: xml)
+        o.timeZone = nil
+        #expect(!WindowsUnattend.unattend(o).contains("<TimeZone>"))
+    }
+
+    @Test func mapsTZDatabaseNamesToWindowsTimeZones() {
+        #expect(WindowsUnattend.windowsTimeZone(for: "Asia/Shanghai") == "China Standard Time")
+        #expect(WindowsUnattend.windowsTimeZone(for: "America/New_York") == "Eastern Standard Time")
+        #expect(WindowsUnattend.windowsTimeZone(for: "Etc/UTC") == "UTC")
+        #expect(WindowsUnattend.windowsTimeZone(for: "Nowhere/City") == nil)
+    }
 }
 
 struct CloudInitTests {
     private func options(password: String?) -> CloudInit.Options {
         CloudInit.Options(hostname: "dev", user: "ethan", password: password, sshPublicKey: "ssh-ed25519 AAAA test",
-                          macAddress: "02:00:00:00:00:01", agentBinary: nil)
+                          macAddress: "02:00:00:00:00:01", timezone: "Asia/Shanghai", agentBinary: nil)
+    }
+
+    @Test func setsTimezone() {
+        #expect(CloudInit.userData(options(password: nil)).contains("\ntimezone: \"Asia/Shanghai\"\n"))
+        var o = options(password: nil)
+        o.timezone = nil
+        #expect(!CloudInit.userData(o).contains("timezone:"))
     }
 
     @Test func writesAgentTokenRootOnly() {

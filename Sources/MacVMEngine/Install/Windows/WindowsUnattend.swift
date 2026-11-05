@@ -17,6 +17,8 @@ enum WindowsUnattend {
         var installGPUDriver = false
         /// 首次登录联网后用它激活；省略时系统保持未激活。
         var productKey: String?
+        /// Windows 时区名，如 China Standard Time；nil 时用 Windows 的默认时区。
+        var timeZone: String? = windowsTimeZone(for: TimeZone.current.identifier)
     }
 
     static let agentFileName = "macvm-agent.exe"
@@ -63,7 +65,7 @@ enum WindowsUnattend {
           <settings pass="specialize">
             <component name="Microsoft-Windows-Shell-Setup" \(attributes)>
               <ComputerName>\(xml(o.computerName))</ComputerName>
-              <ProductKey>\(genericProKey)</ProductKey>
+              <ProductKey>\(genericProKey)</ProductKey>\(o.timeZone.map { "\n      <TimeZone>\(xml($0))</TimeZone>" } ?? "")
             </component>
             <component name="Microsoft-Windows-Deployment" \(attributes)>
               <RunSynchronous>
@@ -97,6 +99,25 @@ enum WindowsUnattend {
         </unattend>
 
         """
+    }
+
+    private typealias GetWindowsTimeZoneID = @convention(c) (UnsafePointer<UInt16>, Int32, UnsafeMutablePointer<UInt16>, Int32, UnsafeMutablePointer<Int32>) -> Int32
+    /// ICU 的 `ucal_getWindowsTimeZoneID`。
+    private static let getWindowsTimeZoneID: GetWindowsTimeZoneID? = {
+        guard let icu = dlopen("/usr/lib/libicucore.dylib", RTLD_LAZY), let symbol = dlsym(icu, "ucal_getWindowsTimeZoneID") else { return nil }
+        return unsafeBitCast(symbol, to: GetWindowsTimeZoneID.self)
+    }()
+
+    /// tz 数据库时区名对应的 Windows 时区名，用系统 ICU 的映射表；没有对应时返回 nil。
+    static func windowsTimeZone(for identifier: String) -> String? {
+        guard let convert = getWindowsTimeZoneID else { return nil }
+        let id = Array(identifier.utf16)
+        var buffer = [UInt16](repeating: 0, count: 128)
+        var status: Int32 = 0
+        let length = convert(id, Int32(id.count), &buffer, Int32(buffer.count), &status)
+        // ICU 的 UErrorCode 大于 0 才是错误，负数是警告。
+        guard status <= 0, length > 0, length <= buffer.count else { return nil }
+        return String(utf16CodeUnits: buffer, count: Int(length))
     }
 
     /// WinPE 里运行的部署脚本：找出系统盘并分区，用 DISM 从数据盘应用专业版映像，离线注入 virtio 驱动，
