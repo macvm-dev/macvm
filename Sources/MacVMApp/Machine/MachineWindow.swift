@@ -122,6 +122,10 @@ struct MachineWindow: View {
         .onChange(of: activeState) { old, new in
             if new == .key { clipboard?.push() } else if old == .key { clipboard?.pull() }
         }
+        // 窗口在主窗口状态下关掉时 activeState 不再变化；虚拟机可能仍在后台运行，照样取回客户机剪贴板。
+        .onDisappear {
+            if activeState == .key { clipboard?.pull() }
+        }
         // 工具栏从窗口打开起就在，虚拟机跑起来之前按钮不可点：按钮晚出现会把标题栏撑高，画面跟着往下跳。
         .toolbar {
             Group {
