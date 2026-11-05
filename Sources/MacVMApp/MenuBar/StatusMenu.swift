@@ -36,7 +36,7 @@ struct StatusMenu: View {
             separator
             footer
         }
-        .frame(width: 360)
+        .frame(width: 400)
         .onAppear { model.refreshSSHIncluded() }
     }
 
@@ -404,16 +404,14 @@ private struct ProgressBar: View {
     }
 }
 
-/// 一排可点击拷贝的小标签；放不下时先舍弃前面的。
+/// 一排可点击拷贝的小标签；第一个总是完整显示，放不下时后面的从中间截断。
 private struct ChipLine: View {
     let chips: [String]
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            ForEach(0..<chips.count, id: \.self) { start in
-                HStack(spacing: 4) {
-                    ForEach(chips[start...], id: \.self) { CopyChip(text: $0) }
-                }
+        HStack(spacing: 4) {
+            ForEach(Array(chips.enumerated()), id: \.offset) { index, text in
+                CopyChip(text: text).layoutPriority(index == 0 ? 1 : 0)
             }
         }
     }
