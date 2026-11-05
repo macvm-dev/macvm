@@ -1,5 +1,5 @@
 //! 经 `SendInput` 注入鼠标与键盘。坐标是主屏物理像素，调用线程要先 `dpi::per_monitor_thread`。
-//! shortcut: UAC 等安全桌面上的窗口收不到注入，要支持时改由宿主注入。
+//! 调用线程要在输入桌面上：安全桌面上的注入由 SYSTEM 身份的桌面助手做。
 
 use crate::input::{self, Injector, Key};
 use macvm_agent_protocol::{InputEvent, MouseButton};

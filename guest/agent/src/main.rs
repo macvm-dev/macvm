@@ -88,6 +88,12 @@ fn parse_args() -> Config {
             // 代理以图形会话用户身份运行的无障碍查询：标准输入一行请求，标准输出一行结果。
             #[cfg(target_os = "linux")]
             "--ui-helper" => std::process::exit(platform::run_ui_helper()),
+            // 开机时以 SYSTEM 运行，在控制台会话里保持安全桌面助手。
+            #[cfg(windows)]
+            platform::DESKTOP_SUPERVISOR_ARG => std::process::exit(platform::run_desktop_supervisor()),
+            // 安全桌面助手，参数是守护进程的 pid。
+            #[cfg(windows)]
+            platform::DESKTOP_HELPER_ARG => std::process::exit(serve_desktop_helper(args.next().and_then(|v| v.parse().ok()))),
             // 在新进程里查一项 TCC 授权，结果用退出码表示。
             #[cfg(target_os = "macos")]
             platform::UI_GRANT_ARG => std::process::exit(platform::run_ui_grant_check(&args.next().unwrap_or_default())),
@@ -217,6 +223,15 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
             Err(e) => reply(&mut conn, Err(io::Error::new(e.kind(), format!("连接 127.0.0.1:{port} 失败：{e}")))),
         },
         Request::Exec(req) => run_exec(conn, req, config),
+        #[cfg(windows)]
+        ui if platform::ui_request_for_desktop_helper(&ui) => forward_to_desktop_helper(&mut conn, &ui),
+        ui @ (Request::UiSnapshot { .. } | Request::UiAction { .. } | Request::UiInput { .. } | Request::UiScreenshot) => serve_ui(&mut conn, ui),
+    }
+}
+
+/// 处理 `ui-*` 请求；其他请求回失败。
+fn serve_ui(conn: &mut impl Write, request: Request) -> io::Result<()> {
+    match request {
         Request::UiSnapshot { app, max_depth, max_nodes } => {
             let options = SnapshotOptions {
                 app: app.as_deref(),
@@ -224,26 +239,88 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
                 max_nodes: max_nodes.unwrap_or(proto::DEFAULT_UI_NODES),
             };
             let body = platform::ui_snapshot(&options).and_then(|s| serde_json::to_vec(&s).map_err(io::Error::other));
-            reply_body(&mut conn, body)
+            reply_body(conn, body)
         }
         Request::UiAction { element, action, value } => {
             let result = platform::ui_action(&element, action, value.as_deref()).map(|_| Response::ok());
-            reply_ui(&mut conn, result)
+            reply_ui(conn, result)
         }
         Request::UiInput { mut events } => {
             let result = resolve_clicks(&mut events).and_then(|_| platform::ui_input(&events)).map(|_| Response::ok());
-            reply_ui(&mut conn, result)
+            reply_ui(conn, result)
         }
-        Request::UiScreenshot => reply_body(&mut conn, platform::ui_screenshot()),
+        Request::UiScreenshot => reply_body(conn, platform::ui_screenshot()),
+        _ => proto::write_json_line(conn, &Response::error("只受理 UI 请求")),
     }
 }
 
+/// 把请求原样交给安全桌面助手，再把它的响应原样交回宿主。
+#[cfg(windows)]
+fn forward_to_desktop_helper(conn: &mut Conn, request: &Request) -> io::Result<()> {
+    let mut helper = match platform::connect_desktop_helper() {
+        Ok(h) => h,
+        Err(e) => return reply_ui(conn, Err(e)),
+    };
+    proto::write_json_line(&mut helper, request)?;
+    io::copy(&mut helper, conn)?;
+    Ok(())
+}
+
+/// 安全桌面助手：每个连接一个 UI 请求，在当时的输入桌面上处理。
+#[cfg(windows)]
+fn serve_desktop_helper(supervisor: Option<u32>) -> i32 {
+    let Some(supervisor) = supervisor else {
+        eprintln!("macvm-agent: {} 需要守护进程的 pid", platform::DESKTOP_HELPER_ARG);
+        return 2;
+    };
+    if let Err(e) = platform::become_desktop_helper(supervisor) {
+        eprintln!("macvm-agent: 找不到守护进程 {supervisor}：{e}");
+        return 1;
+    }
+    let mut listener = match platform::DesktopHelperListener::bind() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("macvm-agent: 建立桌面助手管道失败：{e}");
+            return 1;
+        }
+    };
+    loop {
+        match listener.accept() {
+            Ok(conn) => {
+                thread::spawn(move || {
+                    if let Err(e) = serve_desktop_request(conn) {
+                        eprintln!("macvm-agent: {e}");
+                    }
+                });
+            }
+            Err(e) => {
+                eprintln!("macvm-agent: 桌面助手 accept 失败：{e}");
+                thread::sleep(ACCEPT_RETRY_DELAY);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn serve_desktop_request(mut conn: platform::HelperConn) -> io::Result<()> {
+    let line = proto::read_line(&mut conn)?;
+    let request: Request = match serde_json::from_slice(&line) {
+        Ok(r) => r,
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("无法解析请求：{e}"))),
+    };
+    let _desktop = match platform::enter_input_desktop() {
+        Ok(d) => d,
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("切换到输入桌面失败：{e}"))),
+    };
+    serve_ui(&mut conn, request)
+}
+
 /// UI 请求的响应：权限不足时带上 `code`，宿主据此提示授权。
-fn reply_ui(conn: &mut Conn, result: io::Result<Response>) -> io::Result<()> {
+fn reply_ui(conn: &mut impl Write, result: io::Result<Response>) -> io::Result<()> {
     proto::write_json_line(conn, &result.unwrap_or_else(|e| Response::from_error(&e)))
 }
 
-fn reply_body(conn: &mut Conn, body: io::Result<Vec<u8>>) -> io::Result<()> {
+fn reply_body(conn: &mut impl Write, body: io::Result<Vec<u8>>) -> io::Result<()> {
     match body {
         Ok(body) => proto::write_body(conn, &body),
         Err(e) => reply_ui(conn, Err(e)),

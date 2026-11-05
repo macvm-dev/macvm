@@ -8,6 +8,8 @@ public enum AgentInstaller {
     static let windowsDirectory = #"C:\ProgramData\macvm"#
     static let windowsPath = windowsDirectory + #"\macvm-agent.exe"#
     static let windowsTaskName = "macvm-agent"
+    /// 开机时以 SYSTEM 运行安全桌面守护进程的计划任务。
+    static let windowsDesktopTaskName = "macvm-agent-desktop"
     /// macOS 版代理 App 包的 bundle ID，也是 LaunchAgent 的标签。
     static let launchAgentLabel = "cn.barey.macvm.agent"
     static let macOSAppName = "MacVM Agent.app"
@@ -56,8 +58,9 @@ public enum AgentInstaller {
     /// 收紧权限后再查一遍，仍不可信就抛错中止，不往里写。片段只用 ASCII：Windows PowerShell 按 ANSI 读无 BOM 的脚本。
     static var windowsPrepareDirectory: String {
         """
+        Stop-ScheduledTask -TaskName \(windowsDesktopTaskName) -ErrorAction SilentlyContinue
         Stop-ScheduledTask -TaskName \(windowsTaskName) -ErrorAction SilentlyContinue
-        Get-Process macvm-agent -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-Process macvm-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
         $macvm = \(PowerShell.quote(windowsDirectory))
         $admins = New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'
@@ -98,7 +101,7 @@ public enum AgentInstaller {
 
     /// Windows 上把 `source` 处的代理装好并启动的 PowerShell 片段，要在 `windowsPrepareDirectory` 之后运行：
     /// 登录时以最高权限在 `user` 的交互会话里运行的计划任务（剪贴板只在交互会话可用），
-    /// 外加对所有网络生效的入站规则。
+    /// 开机时以 SYSTEM 运行的安全桌面守护任务（UAC 提示与锁屏上的 UI 自动化），外加对所有网络生效的入站规则。
     static func windowsRegistration(source: String, user: String) -> String {
         let quoted = PowerShell.quote
         return """
@@ -107,8 +110,11 @@ public enum AgentInstaller {
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 9999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
         $principal = New-ScheduledTaskPrincipal -UserId \(quoted(user)) -LogonType Interactive -RunLevel Highest
         Register-ScheduledTask -TaskName \(windowsTaskName) -Action (New-ScheduledTaskAction -Execute $exe) -Trigger (New-ScheduledTaskTrigger -AtLogOn -User \(quoted(user))) -Principal $principal -Settings $settings -Force | Out-Null
+        $system = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        Register-ScheduledTask -TaskName \(windowsDesktopTaskName) -Action (New-ScheduledTaskAction -Execute $exe -Argument '--desktop-supervisor') -Trigger (New-ScheduledTaskTrigger -AtStartup) -Principal $system -Settings $settings -Force | Out-Null
         Remove-NetFirewallRule -Name \(windowsTaskName) -ErrorAction SilentlyContinue
         New-NetFirewallRule -Name \(windowsTaskName) -DisplayName 'macvm agent' -Profile Any -Direction Inbound -Protocol TCP -LocalPort \(AgentProtocol.port) -Program $exe -Action Allow | Out-Null
+        Start-ScheduledTask -TaskName \(windowsDesktopTaskName)
         Start-ScheduledTask -TaskName \(windowsTaskName)
         """
     }

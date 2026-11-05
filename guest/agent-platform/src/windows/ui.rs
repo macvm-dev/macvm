@@ -1,7 +1,7 @@
 //! Windows：经 UI Automation 读无障碍树、执行动作，经 SendInput 注入输入，用 GDI 截屏。
 //! 每个请求在自己的连接线程上进 COM 多线程套间并按每显示器 DPI 感知运行，坐标都是物理像素。
 
-use super::{capture, dpi, sendinput, until_nul};
+use super::{capture, desktop, dpi, sendinput, until_nul};
 use crate::{SnapshotOptions, stale_element};
 use macvm_agent_protocol::{ElementAction, InputEvent, MouseButton, UiApp, UiNode, UiScreen, UiSnapshot, UiState};
 use std::io;
@@ -71,7 +71,7 @@ static CACHE: Mutex<Cache> = Mutex::new(Cache { generation: 0, elements: Vec::ne
 
 fn lookup(id: &str) -> io::Result<IUIAutomationElement> {
     let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    let (generation, index) = id.split_once('.').ok_or_else(|| stale_element(id))?;
+    let (generation, index) = id.strip_prefix(desktop::element_prefix()).and_then(|i| i.split_once('.')).ok_or_else(|| stale_element(id))?;
     if generation.parse::<u32>().ok() != Some(cache.generation) {
         return Err(stale_element(id));
     }
@@ -123,7 +123,7 @@ pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
                 snapshot.truncated = true;
                 break;
             }
-            let id = format!("{generation}.{}", cache.elements.len());
+            let id = format!("{}{generation}.{}", desktop::element_prefix(), cache.elements.len());
             snapshot.nodes.push(describe(&element, id, depth));
             let mut children = Vec::new();
             let mut child = walker.GetFirstChildElementBuildCache(&element, &request).ok();

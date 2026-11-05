@@ -299,6 +299,7 @@ struct WindowsUnattendTests {
         o.installAgent = true
         let script = WindowsUnattend.setupScript(o)
         #expect(script.contains("Register-ScheduledTask") && script.contains("-UserId 'a<b'"))
+        #expect(script.contains("-TaskName \(AgentInstaller.windowsDesktopTaskName) -Action (New-ScheduledTaskAction -Execute $exe -Argument '--desktop-supervisor') -Trigger (New-ScheduledTaskTrigger -AtStartup)"))
         #expect(script.contains("-LocalPort \(AgentProtocol.port)"))
     }
 

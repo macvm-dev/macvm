@@ -3,6 +3,7 @@ mod listener;
 mod capture;
 mod clipboard;
 mod cursor;
+mod desktop;
 mod display;
 mod dpi;
 mod gpu;
@@ -11,6 +12,10 @@ mod system;
 mod ui;
 
 pub use cursor::{configure_hardware_cursor, restore_system_cursors, watch_cursor};
+pub use desktop::{
+    DESKTOP_HELPER_ARG, DESKTOP_SUPERVISOR_ARG, DesktopHelperListener, HelperConn, become_desktop_helper, connect_desktop_helper, enter_input_desktop,
+    in_desktop_helper, run_desktop_supervisor, ui_request_for_desktop_helper,
+};
 pub use display::set_display;
 pub use dpi::set_display_scale;
 pub use gpu::{gpu_driver_package_is, install_gpu_driver, replace_gpu_driver};
