@@ -20,8 +20,11 @@ struct LibraryView: View {
             if model.selection.map({ !names.contains($0) }) ?? true { model.selection = names.first }
         }
         .toolbar {
-            Button { model.showingCreate = true } label: { Label("新建", systemImage: "plus") }
-                .help("新建虚拟机")
+            // 空库时引导页正中已有新建按钮。
+            if !isEmpty {
+                Button { model.showingCreate = true } label: { Label("新建", systemImage: "plus") }
+                    .help("新建虚拟机")
+            }
         }
         .sheet(isPresented: $model.showingCreate) { CreateSheet() }
         .alert("操作失败", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
@@ -40,8 +43,8 @@ struct LibraryView: View {
         } description: {
             Text("新建一台 macOS、Linux 或 Windows 虚拟机")
         } actions: {
-            Button("新建虚拟机…") { model.showingCreate = true }
-                .buttonStyle(.borderedProminent)
+            Button { model.showingCreate = true } label: { Label("新建虚拟机…", systemImage: "plus") }
+                .buttonStyle(.bordered)
                 .controlSize(.large)
         }
         .frame(minWidth: Self.sidebarIdealWidth + Self.detailMinWidth)

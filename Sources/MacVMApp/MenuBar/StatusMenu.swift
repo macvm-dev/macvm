@@ -24,7 +24,7 @@ struct StatusMenu: View {
             if let error = model.lastError {
                 ErrorBanner(message: error) { model.lastError = nil }
             }
-            Divider()
+            separator
             if isEmpty {
                 empty
             } else if rowCount > Self.maxVisibleRows {
@@ -33,7 +33,7 @@ struct StatusMenu: View {
             } else {
                 sections
             }
-            Divider()
+            separator
             footer
         }
         .frame(width: 360)
@@ -46,21 +46,23 @@ struct StatusMenu: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 Text("MacVM").font(.system(size: 14, weight: .semibold))
-                HStack(spacing: 5) {
-                    if runningCount > 0 {
-                        Circle().fill(.green).frame(width: 6, height: 6)
+                // 空库时正文的空状态已有同样的说明与新建按钮。
+                if !isEmpty {
+                    HStack(spacing: 5) {
+                        if runningCount > 0 {
+                            Circle().fill(.green).frame(width: 6, height: 6)
+                        }
+                        Text(summary)
                     }
-                    Text(summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
             }
             Spacer()
-            IconButton(systemImage: "plus", help: "新建虚拟机") { createMachine() }
+            if !isEmpty {
+                IconButton(systemImage: "plus", help: "新建虚拟机") { createMachine() }
+            }
             MoreMenu {
-                Button("新建虚拟机…") { createMachine() }
-                Button("打开 MacVM") { showLibrary() }
-                Divider()
                 Button("在 Finder 中显示虚拟机目录") {
                     NSWorkspace.shared.activateFileViewerSelecting([model.library.root])
                 }
@@ -87,26 +89,25 @@ struct StatusMenu: View {
         .padding(.vertical, 6)
     }
 
+    /// 分隔线两端内缩，不顶到面板的圆角边。
+    private var separator: some View {
+        Divider().padding(.horizontal, 12)
+    }
+
     private var empty: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Image(systemName: "desktopcomputer")
-                .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(.tint)
-                .frame(width: 56, height: 56)
-                .background(.tint.opacity(0.12), in: .rect(cornerRadius: 14, style: .continuous))
-            VStack(spacing: 3) {
-                Text("还没有虚拟机").font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.tertiary)
+            VStack(spacing: 4) {
+                Text("还没有虚拟机").font(.system(size: 14, weight: .semibold))
                 Text("新建一台 macOS、Linux 或 Windows 虚拟机").font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Button { createMachine() } label: {
-                Label("新建虚拟机…", systemImage: "plus")
-                    .padding(.horizontal, 4)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.top, 2)
+            FilledButton("新建虚拟机…", systemImage: "plus") { createMachine() }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
+        .padding(.top, 24)
+        .padding(.bottom, 22)
     }
 
     private var runningCount: Int { running.count }
@@ -637,6 +638,40 @@ private struct MoreMenu<Content: View>: View {
         .background(.primary.opacity(hovering ? 0.1 : 0), in: .rect(cornerRadius: 7, style: .continuous))
         .onHover { hovering = $0 }
         .help("更多")
+    }
+}
+
+/// 带浅灰底的文字按钮，悬停时底色加深；字号与圆角跟面板里其他按钮一致。
+private struct FilledButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    init(_ title: String, systemImage: String, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(title)
+            }
+            .font(.system(size: 12.5, weight: .medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.primary.opacity(hovering ? 0.12 : 0.07), in: .rect(cornerRadius: 7, style: .continuous))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
