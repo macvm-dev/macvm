@@ -23,6 +23,8 @@ public struct VMBundle: Sendable, Equatable {
     public var snapshotsURL: URL { url.appending(path: "snapshots", directoryHint: .isDirectory) }
     public var lockURL: URL { url.appending(path: "run.lock") }
     public var logURL: URL { url.appending(path: "run.log") }
+    /// 宿主直连客户机时记下的客户机 SSH 主机密钥；磁盘换了主机密钥后要删掉它才能再连。
+    public var knownHostsURL: URL { url.appending(path: "known_hosts") }
     /// 存发起方给的创建令牌。引擎建好包后不删它，由发起方在整个创建流程结束时删掉；
     /// 包里留着这个文件、内容又与发起方记下的令牌相同，就是它中断时留下的半成品。
     public var creationMarkerURL: URL { url.appending(path: "creating") }

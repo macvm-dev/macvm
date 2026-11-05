@@ -32,6 +32,15 @@ public enum SSHConfig {
         ["-i", SSHKeys.privateKeyURL.path] + arguments(keyOptions(proxyCommand: proxyCommand))
     }
 
+    /// 用 macvm 专用密钥直连、按 `knownHosts` 校验主机密钥的 ssh 命令行选项：文件里还没有记录时记下这次的主机密钥，
+    /// 之后不符就拒绝连接。记录不按 IP 而按固定别名，客户机换了 IP 仍能对上；`knownHosts` 只能存一台客户机的密钥。
+    public static func pinnedKeyArguments(knownHosts: URL) -> [String] {
+        ["-i", SSHKeys.privateKeyURL.path] + arguments([
+            ("IdentitiesOnly", "yes"), ("StrictHostKeyChecking", "accept-new"),
+            ("UserKnownHostsFile", "\"\(knownHosts.path)\""), ("HostKeyAlias", "macvm-guest"), ("LogLevel", "ERROR"),
+        ])
+    }
+
     /// 能原样写进 ssh 配置、拼成 ssh 命令行里 `user@host` 的名字：只含 ASCII 字母、数字与 `._-`，不以 `-` 开头。
     /// 虚拟机名与登录用户名读自包里的 `VMConfig`，包可能来自别处，要挡掉换行、空白与会被 ssh 当成选项的写法。
     static func isPlainName(_ name: String) -> Bool {

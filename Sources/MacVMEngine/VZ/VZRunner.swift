@@ -211,11 +211,11 @@ public final class VZRunner: NSObject, MachineRunner {
 
     /// 先经 SSH 用包内保存的客户机密码 sudo 立即关机；不行再经 vsock 请代理关机。返回客户机是否接受。
     /// 代理以登录用户身份运行，只能像用户点「关机」那样请求，其他 App 可以拦下，所以排在后面。
-    /// 桥接时不走 SSH：客户机 IP 在真实局域网上，SSH 又不校验主机密钥，冒充该 IP 的主机就能收到密码。
     private func shutdownMacOSGuest() async -> Bool {
-        if config.networks.first?.mode != .bridged,
-           let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle),
-           await Task.detached(operation: { Self.sshSudoShutdown(user: user, ip: ip, password: password) }).value {
+        if let user = config.guestUser, let ip = guestIP, let password = GuestCredentials.password(for: bundle),
+           await Task.detached(operation: { [bundle] in
+               Self.sshSudoShutdown(user: user, ip: ip, password: password, knownHosts: bundle.knownHostsURL)
+           }).value {
             return true
         }
         if config.guestAgent, let connection = try? await connectToGuest(port: AgentProtocol.port) {
@@ -234,13 +234,14 @@ public final class VZRunner: NSObject, MachineRunner {
 
     /// 登录先试 macvm 专用密钥，客户机没装公钥时用 `password`；sudo 认证通过后先输出 `sshShutdownMarker`，
     /// 再在客户机后台立即关机。返回是否收到标记：关机会断开连接，ssh 的退出码不能说明 sudo 是否成功。
-    nonisolated private static func sshSudoShutdown(user: String, ip: String, password: String) -> Bool {
+    /// 主机密钥按 `knownHosts` 固定：桥接时客户机 IP 在真实局域网上，不校验的话冒充该 IP 的机器就能收到密码。
+    nonisolated private static func sshSudoShutdown(user: String, ip: String, password: String, knownHosts: URL) -> Bool {
         guard let askpass = try? GuestSSH.makeAskpass() else { return false }
         defer { try? FileManager.default.removeItem(at: askpass) }
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/ssh")
         let remote = "sudo -S -p '' /bin/sh -c 'echo \(sshShutdownMarker); nohup /sbin/shutdown -h now >/dev/null 2>&1 &'"
-        process.arguments = ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: nil)
+        process.arguments = ["-q", "-T"] + SSHConfig.pinnedKeyArguments(knownHosts: knownHosts)
             + ["-o", "PreferredAuthentications=publickey,keyboard-interactive,password", "-o", "NumberOfPasswordPrompts=1",
                "-o", "ConnectTimeout=10", "\(user)@\(ip)", remote]
         process.environment = GuestSSH.askpassEnvironment(askpass, password: password)

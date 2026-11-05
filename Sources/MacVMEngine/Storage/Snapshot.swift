@@ -73,6 +73,8 @@ public struct Snapshot: Codable, Sendable, Equatable {
         }
         try? FileManager.default.removeItem(at: bundle.savedStateURL)
         try? FileManager.default.removeItem(at: bundle.savedStateShareDeviceURL)
+        // 还原出的磁盘可能带着另一套 SSH 主机密钥，留着旧记录会让直连一直被拒。
+        try? FileManager.default.removeItem(at: bundle.knownHostsURL)
         for item in staged {
             guard rename(item.temp.path, item.target.path) == 0 else { throw MacVMError.posix("还原 \(item.target.lastPathComponent)") }
         }
