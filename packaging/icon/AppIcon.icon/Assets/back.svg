@@ -1,3 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="40 40 944 944">
-  <path d="M332.9 234.5 L576.1 234.5 C613.1 234.5 631.6 234.5 651.5 240.8 C673.2 248.7 690.3 265.8 698.2 287.5 C704.5 307.4 704.5 325.9 704.5 362.9 L704.5 526.1 C704.5 563.1 704.5 581.6 698.2 601.5 C690.3 623.2 673.2 640.3 651.5 648.2 C631.6 654.5 613.1 654.5 576.1 654.5 L332.9 654.5 C295.9 654.5 277.4 654.5 257.5 648.2 C235.8 640.3 218.7 623.2 210.8 601.5 C204.5 581.6 204.5 563.1 204.5 526.1 L204.5 362.9 C204.5 325.9 204.5 307.4 210.8 287.5 C218.7 265.8 235.8 248.7 257.5 240.8 C277.4 234.5 295.9 234.5 332.9 234.5Z" fill="#141C33" stroke="#33477A" stroke-width="28"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g" x1="268" y1="132" x2="1138" y2="826" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A9BFF"/>
+      <stop offset="0.45" stop-color="#0A5FE8"/>
+      <stop offset="1" stop-color="#0031A8"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(512 512) scale(0.8) translate(-770 -509)">
+    <path d="M408 132H998A140 140 0 0 1 1138 272V783H425V826H398A130 130 0 0 1 268 696V272A140 140 0 0 1 408 132Z" fill="url(#g)"/>
+    <g fill="#FFFFFF">
+      <circle cx="422" cy="221" r="30"/>
+      <circle cx="521" cy="221" r="30"/>
+      <circle cx="620" cy="221" r="30"/>
+    </g>
+  </g>
 </svg>

@@ -10,7 +10,7 @@ DEVELOPER_ID   = $(shell security find-identity -v -p codesigning 2>/dev/null | 
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
 SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
-.PHONY: build sign run test test-swift test-guest lint lint-guest agent boot qemu app release clean
+.PHONY: build sign run test test-swift test-guest lint lint-guest agent boot qemu icon app release clean
 
 build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
@@ -49,6 +49,9 @@ boot:
 
 qemu:
 	scripts/build-qemu.sh
+
+icon:
+	scripts/build-icon.sh
 
 app:
 	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh

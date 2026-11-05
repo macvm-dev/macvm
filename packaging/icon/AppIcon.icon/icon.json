@@ -1,16 +1,16 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "srgb:0.13333,0.17647,0.28235,1.00000",
-      "srgb:0.03922,0.05882,0.11765,1.00000"
+      "srgb:1.00000,1.00000,1.00000,1.00000",
+      "srgb:0.91765,0.94510,0.98431,1.00000"
     ],
     "orientation" : {
       "start" : {
-        "x" : 0.2,
+        "x" : 0.5,
         "y" : 0
       },
       "stop" : {
-        "x" : 0.8,
+        "x" : 0.5,
         "y" : 1
       }
     }
@@ -19,8 +19,12 @@
     {
       "layers" : [
         {
-          "image-name" : "leg.svg",
-          "name" : "leg"
+          "image-name" : "letters.svg",
+          "name" : "letters"
+        },
+        {
+          "image-name" : "card.svg",
+          "name" : "card"
         }
       ],
       "shadow" : {
@@ -31,7 +35,7 @@
         "enabled" : false,
         "value" : 0.5
       },
-      "name" : "Leg"
+      "name" : "Card"
     },
     {
       "layers" : [
@@ -53,30 +57,13 @@
     {
       "layers" : [
         {
-          "image-name" : "middle.svg",
-          "name" : "middle"
-        }
-      ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.4
-      },
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0.5
-      },
-      "name" : "Middle"
-    },
-    {
-      "layers" : [
-        {
           "image-name" : "back.svg",
           "name" : "back"
         }
       ],
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.3
+        "opacity" : 0.5
       },
       "translucency" : {
         "enabled" : false,
