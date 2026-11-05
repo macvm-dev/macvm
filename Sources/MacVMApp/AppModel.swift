@@ -135,6 +135,9 @@ final class AppModel {
     /// 已请求正常关机、还在等客户机自己关。
     func isStopping(_ name: String) -> Bool { activity[name]?.title == Self.stoppingTitle }
 
+    /// 新建后的首次开机：客户机在建用户目录、自动登录，宿主在装 SSH 公钥与代理。
+    func isSettingUpGuest(_ name: String) -> Bool { activity[name]?.title == Self.sshKeyTitle }
+
     /// 正在创建、还没出现在 `machines` 里的虚拟机名。
     var pendingCreations: [String] {
         activity.keys.filter { name in !machines.contains { $0.name == name } }.sorted()
@@ -622,27 +625,16 @@ final class AppModel {
 
     private static let sshKeyTitle = "正在首次开机并配置 SSH 与客户机代理…"
 
-    /// 安装用的虚拟机在安装结束后还要一会儿才放开辅助储存，这期间开机会失败：隔 `firstBootRetryInterval` 重试，
-    /// 共 `firstBootAttempts` 次，只报告最后一次的错误。
+    /// 失败时报告错误并返回 false；任务取消时不报告。
     private func startAfterInstall(_ name: String) async -> Bool {
-        for attempt in 1...Self.firstBootAttempts {
-            do {
-                _ = try await launch(name)
-                return true
-            } catch {
-                guard !Task.isCancelled else { return false }
-                guard attempt < Self.firstBootAttempts else {
-                    report(error)
-                    return false
-                }
-            }
-            do { try await Task.sleep(for: Self.firstBootRetryInterval) } catch { return false }
+        do {
+            try await MacOSInstaller.firstBoot { _ = try await launch(name) }
+            return true
+        } catch {
+            if !Task.isCancelled { report(error) }
+            return false
         }
-        return false
     }
-
-    private static let firstBootAttempts = 10
-    private static let firstBootRetryInterval: Duration = .seconds(2)
 
     /// 取消正在进行的新建：终止下载与安装，删掉建了一半的包；已下载的部分留在下载目录里，下次新建接着用。
     func cancelCreation(_ name: String) {

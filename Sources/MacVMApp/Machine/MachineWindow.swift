@@ -29,10 +29,12 @@ struct MachineWindow: View {
     private var runningElsewhere: Bool { isRunning && !model.isRunningHere(name) }
     /// 等客户机自己关机期间关机按钮换成转圈；挂起仍可点，客户机不理会关机时还能挂起。
     private var stopping: Bool { model.isStopping(name) }
-    /// 进行中的挂起或关机，在画面顶部一直显示到结束。
+    /// 进行中的挂起、关机或首次开机配置，在画面顶部一直显示到结束。
+    /// 首次登录建用户目录期间客户机画面是黑的，靠这条提示说明不是卡住了。
     private var progress: String? {
         if suspending { return "正在挂起…" }
         if stopping { return "正在关机…" }
+        if model.isSettingUpGuest(name) { return "首次开机：正在登录并安装客户机代理，画面可能黑一会儿…" }
         return nil
     }
 

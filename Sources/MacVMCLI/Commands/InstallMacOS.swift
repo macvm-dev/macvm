@@ -77,7 +77,7 @@ struct InstallMacOS: AsyncParsableCommand {
             var tuningError: String?
             if !noProvision, let pw = GuestCredentials.password(for: bundle) {
                 if interactive { FileHandle.standardError.write(Data("首次开机并配置 SSH（可能需要几分钟）…\n".utf8)) }
-                _ = try await Start.launch(bundle, timeout: 120)
+                try await MacOSInstaller.firstBoot { _ = try await Start.launch(bundle, timeout: 120) }
                 let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: name, flags: ["--tcp", "--timeout", "600"])
                 try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: pw, proxyCommand: proxy, timeout: 900)
                 sshReady = true

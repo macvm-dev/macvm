@@ -5,6 +5,28 @@ public import MacVMModel
 /// 从 IPSW 创建并安装 macOS 客户机。
 @MainActor
 public enum MacOSInstaller {
+    /// 刚装好的虚拟机首次开机：安装用的虚拟机在安装结束后还要一会儿才放开辅助储存，这期间开机会失败，
+    /// 隔 `firstBootRetryInterval` 重试 `start`，共 `firstBootAttempts` 次，抛出最后一次的错误；任务取消后不再重试。
+    /// `MacVMError.timeout` 不重试：等启动超时时虚拟机可能还在启动，再开一次只会撞上包锁。
+    public static func firstBoot(isolation: isolated (any Actor)? = #isolation,
+                                 _ start: () async throws -> Void) async throws {
+        for attempt in 1... {
+            do {
+                return try await start()
+            } catch where attempt < firstBootAttempts && !Task.isCancelled && !isTimeout(error) {
+                try await Task.sleep(for: firstBootRetryInterval)
+            }
+        }
+    }
+
+    nonisolated private static func isTimeout(_ error: any Error) -> Bool {
+        if case MacVMError.timeout = error { return true }
+        return false
+    }
+
+    nonisolated static let firstBootAttempts = 10
+    nonisolated static let firstBootRetryInterval: Duration = .seconds(2)
+
     public enum Source: Sendable {
         /// 本机支持的最新版本，从 Apple 下载并缓存。
         case latest
