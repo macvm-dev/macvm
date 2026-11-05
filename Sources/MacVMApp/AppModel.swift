@@ -683,7 +683,7 @@ final class AppModel {
 
     // MARK: - 新建
 
-    /// 在后台按 `request` 新建；需要用户在窗口里操作时（装 Windows、图形安装）调用 `openMachineWindow`。
+    /// 在后台按 `request` 新建；需要用户在窗口里操作时（装 Windows、图形安装）和从模板建完时调用 `openMachineWindow`。
     /// `resumed` 的请求失败后回到 `interruptedCreations`，留给用户继续或放弃。
     func create(_ request: CreationRequest, resumed: Bool = false, openMachineWindow: @escaping @MainActor (String) -> Void) {
         let name = request.name
@@ -711,7 +711,12 @@ final class AppModel {
                 try? FileManager.default.removeItem(at: VMBundle(url: library.bundleURL(named: name)).creationMarkerURL)
                 SSHConfig.refreshIfInstalled(library: library, macvmPath: CLILocation.path)
                 selection = name
-                if request.os == .macOS, request.source.template == nil { setUpGuestOnFirstBoot(name, openMachineWindow: openMachineWindow) }
+                if request.source.template != nil {
+                    // 模板里的系统已装好，建完直接开机。
+                    openMachineWindow(name)
+                } else if request.os == .macOS {
+                    setUpGuestOnFirstBoot(name, openMachineWindow: openMachineWindow)
+                }
             } catch {
                 if Task.isCancelled {
                     cleanUpCancelled(request)
