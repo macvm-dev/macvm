@@ -12,7 +12,7 @@ public final class QEMUDisplayView: NSView {
     private let bundle: VMBundle
     private let vncPath: String
     private let spicePath: String
-    private var backend: (any DisplayBackend)?
+    var backend: (any DisplayBackend)?
     private var spice: SpiceDisplay? { backend as? SpiceDisplay }
     private var cursorWatcher: AgentCursorWatcher?
     private var cursorWatchRetry: Timer?
@@ -24,7 +24,8 @@ public final class QEMUDisplayView: NSView {
     private var reconnect: Timer?
     private var buttons: UInt8 = 0
     private var scrollAccumulator: CGFloat = 0
-    private var pressedModifiers: Set<UInt16> = []
+    /// 已发给客户机按下、还没发抬起的键（macOS 虚拟键码）。
+    private var pressedKeys: Set<UInt16> = []
 
     public init(bundle: VMBundle) {
         self.bundle = bundle
@@ -439,6 +440,7 @@ public final class QEMUDisplayView: NSView {
 
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
+        releaseKeys()
         keyObservers.forEach(NotificationCenter.default.removeObserver)
         keyObservers = []
         if cursorHidden {
@@ -454,6 +456,10 @@ public final class QEMUDisplayView: NSView {
                 MainActor.assumeIsolated { self?.updateCursor() }
             })
         }
+        // 切到别的 App 时窗口失去 key 而视图仍是第一响应者，之后的抬起都送不到这里。
+        keyObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: newWindow, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.releaseKeys() }
+        })
     }
 
     public override func updateTrackingAreas() {
@@ -517,7 +523,10 @@ public final class QEMUDisplayView: NSView {
     // MARK: - 键盘
 
     public override func keyDown(with event: NSEvent) { sendKey(event.keyCode, down: true) }
-    public override func keyUp(with event: NSEvent) { sendKey(event.keyCode, down: false) }
+    public override func keyUp(with event: NSEvent) {
+        guard pressedKeys.contains(event.keyCode) else { return }
+        sendKey(event.keyCode, down: false)
+    }
 
     /// 让 Cmd 组合键也交给客户机，而不是触发菜单快捷键。
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -536,19 +545,23 @@ public final class QEMUDisplayView: NSView {
         }
         guard let mask = Self.modifierMasks[code] else { return }
         let down = event.modifierFlags.rawValue & mask != 0
-        if down { pressedModifiers.insert(code) } else { pressedModifiers.remove(code) }
+        guard down || pressedKeys.contains(code) else { return }
         sendKey(code, down: down)
     }
 
-    /// 失去焦点时松开仍按着的修饰键，免得客户机里一直按着。
     public override func resignFirstResponder() -> Bool {
-        for code in pressedModifiers { sendKey(code, down: false) }
-        pressedModifiers.removeAll()
+        releaseKeys()
         return super.resignFirstResponder()
+    }
+
+    /// 松开所有仍按着的键：视图收不到它们的抬起时调用，免得客户机里一直按着。
+    private func releaseKeys() {
+        for code in pressedKeys { sendKey(code, down: false) }
     }
 
     private func sendKey(_ keyCode: UInt16, down: Bool) {
         guard let scancode = Self.scancodes[keyCode] else { return }
+        if down { pressedKeys.insert(keyCode) } else { pressedKeys.remove(keyCode) }
         backend?.sendKey(qnum: scancode, down: down)
     }
 
