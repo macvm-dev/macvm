@@ -160,6 +160,9 @@ struct MachineRow: View {
     let vm: VMSummary
     let activity: AppModel.Activity?
 
+    /// 选中行的底是强调色，这时圆点加白边，否则绿点落在蓝底上看不清。
+    @Environment(\.backgroundProminence) private var prominence
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: vm.os.symbol)
@@ -176,7 +179,10 @@ struct MachineRow: View {
             Spacer(minLength: 4)
             // 停止是常态，不画圆点，只有运行中和挂起才提示。
             if vm.state != .stopped {
-                Circle().fill(vm.state.color).frame(width: 7, height: 7)
+                Circle().fill(vm.state.color)
+                    .frame(width: 8, height: 8)
+                    .padding(1.5)
+                    .background(.white.opacity(prominence == .increased ? 1 : 0), in: .circle)
             }
         }
         .padding(.vertical, 4)
