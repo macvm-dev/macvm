@@ -9,7 +9,7 @@
 | 命令行 Linux（最快，推荐） | `macvm create dev --image debian-13` 或 `--image ubuntu-24.04` | 云镜像，首次下载后缓存；开机即带登录用户与 macvm 专用 SSH 密钥，可直接 `exec` / `ssh` |
 | 带桌面的 Ubuntu | `macvm create desk --desktop ubuntu-desktop` | 离线无人值守安装，命令等到装好的系统里代理响应才返回；系统为英文、时区同主机 |
 | 带桌面的 Fedora | `macvm create desk --desktop fedora-workstation` | 开机后要在窗口里手动图形安装，不适合无人值守 |
-| Windows 11 | `macvm create win --os windows` | 从微软下载 ARM64 ISO 无人值守安装，总是先用 qemu 引擎部署；装好带用户、OpenSSH 与代理。`--product-key` 才会激活 |
+| Windows 11 | `macvm create win --os windows` | 从微软下载 ARM64 ISO 无人值守安装，总是先用 qemu 引擎部署；装好带用户、OpenSSH 与代理，关机卸下安装介质后自动再开机。`--product-key` 才会激活 |
 | macOS | `macvm create mac --os macos` | 不给 `--ipsw` 时下载本机支持的最新版（约 15–20 GB）；装好自动登录、开 SSH、装代理并做降占用调优。网络与共享目录装好后用 `set` 改 |
 | 从模板复制（任何系统） | `macvm create dev2 --template base` | 零拷贝或整盘复制；换新的机器标识与 MAC。模板由 `macvm template save <虚拟机> [<模板>]` 存下 |
 | 自己的安装盘 | `macvm create box --os linux --iso 文件` | 开机从 ISO 安装，要在窗口里操作 |

@@ -807,6 +807,8 @@ final class AppModel {
             let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: CLILocation.path) {
                 setActivity(name, "正在完成安装…")
                 await stop(name)
+            } start: {
+                guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name)") }
             }
             guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
         case (_, .desktop(let id)):

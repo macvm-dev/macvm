@@ -142,14 +142,17 @@ public enum WindowsInstaller {
     }
 
     /// 在已开机安装的 `bundle` 上等首次登录脚本写下完成标记，然后经 `requestStop` 请客户机关机，
-    /// 停下后 `finishSetup`。返回 false 表示客户机在 `stopTimeout` 秒内没有关机，安装介质仍挂着。
+    /// 停下后 `finishSetup`，再经 `start` 开机。QEMU 运行中不能卸盘，所以要先关机。
+    /// 返回 false 表示客户机在 `stopTimeout` 秒内没有关机，安装介质仍挂着。
     public static func completeSetup(_ bundle: VMBundle, macvmPath: String, stopTimeout: TimeInterval = 180,
                                      isolation: isolated (any Actor)? = #isolation,
-                                     requestStop: () async throws -> Void) async throws -> Bool {
+                                     requestStop: () async throws -> Void,
+                                     start: () async throws -> Void) async throws -> Bool {
         try await waitUntilSetupComplete(bundle, macvmPath: macvmPath)
         try await requestStop()
         guard try await VMStatus.waitUntilStopped(bundle, timeout: stopTimeout) else { return false }
         try finishSetup(bundle)
+        try await start()
         return true
     }
 

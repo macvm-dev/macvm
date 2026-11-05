@@ -295,6 +295,9 @@ struct Create: AsyncParsableCommand {
         let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: SSHConfigCommand.executablePath) {
             say("安装完成，正在关机并卸下安装介质…")
             _ = try ControlClient.send(.stop(force: false), to: bundle)
+        } start: {
+            say("正在重新开机…")
+            _ = try await Start.launch(bundle, timeout: 120)
         }
         guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
         say("Windows 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
