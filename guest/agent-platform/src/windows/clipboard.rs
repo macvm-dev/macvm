@@ -11,8 +11,8 @@ struct Opened;
 
 impl Opened {
     fn open() -> io::Result<Self> {
-        // 别的程序可能短暂占用剪贴板，重试几次。
-        for _ in 0..10 {
+        // 别的程序可能短暂占用剪贴板：剪贴板历史服务（cbdhsvc）在每次复制后都要打开它读走内容，刚复制完时常要等上几百毫秒。
+        for _ in 0..50 {
             // SAFETY: 不关联窗口打开剪贴板。
             if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 { return Ok(Opened) }
             std::thread::sleep(std::time::Duration::from_millis(20));

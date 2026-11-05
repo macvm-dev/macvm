@@ -240,10 +240,18 @@ pub fn set_time(unix_ms: i64) -> io::Result<()> {
     Ok(())
 }
 
+/// pbcopy 与 pbpaste 按 locale 决定文本编码，launchd 拉起的代理没有 `LANG`，不设就把非 ASCII 字符当成问号。
+#[cfg(target_os = "macos")]
+fn pasteboard_tool(path: &str) -> Command {
+    let mut command = Command::new(path);
+    command.env("LANG", "en_US.UTF-8");
+    command
+}
+
 pub fn clipboard_get() -> io::Result<String> {
     #[cfg(target_os = "macos")]
     {
-        let out = Command::new("/usr/bin/pbpaste").output()?;
+        let out = pasteboard_tool("/usr/bin/pbpaste").output()?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
     #[cfg(target_os = "linux")]
@@ -254,7 +262,7 @@ pub fn clipboard_set(text: &str) -> io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         use std::io::Write;
-        let mut child = Command::new("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn()?;
+        let mut child = pasteboard_tool("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn()?;
         child.stdin.take().unwrap().write_all(text.as_bytes())?;
         child.wait()?;
         Ok(())
