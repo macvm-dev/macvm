@@ -294,6 +294,27 @@ final class AppModel {
     /// 每台虚拟机这一轮「正在关机」的超时任务；状态撤掉时取消，免得到点时撤掉之后新一轮的。
     @ObservationIgnored private var stoppingTimers: [String: Task<Void, Never>] = [:]
 
+    /// 让本进程运行的每台虚拟机正常关机；请求不了的（还在开机等）留给 `forceStopAll`。
+    func requestStopAll() {
+        for (name, runner) in runners where (try? runner.requestStop()) != nil {
+            showStopping(name)
+        }
+    }
+
+    /// 等本进程运行的虚拟机全部停下，返回是否在 `timeout` 内等到。
+    func waitUntilAllStopped(timeout: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while !runners.isEmpty {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return true
+    }
+
+    func forceStopAll() async {
+        for runner in Array(runners.values) { try? await runner.forceStop() }
+    }
+
     private static let stoppingTitle = "正在关机…"
     private static let stoppingTimeout: Duration = .seconds(90)
 

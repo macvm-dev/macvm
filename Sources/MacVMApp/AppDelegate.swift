@@ -37,30 +37,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ChildProcesses.terminateAll()
     }
 
-    /// 本进程运行的虚拟机随进程退出而断电，新建以外的任务（存模板、首次开机配置 SSH）中断后不会续做，退出前都要确认。
+    /// 新建以外的任务（存模板、首次开机配置 SSH）中断后不会续做，退出前要确认；
+    /// 本进程运行的虚拟机先正常关机，全部停下后才退出。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 关机途中再次退出时由进行中的那一轮答复，这一次不另起。
+        guard !shuttingDown else { return .terminateCancel }
         let running = model.runners.keys.sorted()
         let creating = model.resumableCreations
         let other = model.creatingNames.filter { !creating.contains($0) }
         var notes: [String] = []
-        if !running.isEmpty {
-            notes.append("\(running.joined(separator: "、")) 在本 App 里运行，退出会直接断电，客户机里没保存的内容会丢失。")
-        }
         if !creating.isEmpty {
             notes.append("\(creating.joined(separator: "、")) 还在创建，退出会中断创建，下次打开 MacVM 时自动继续，已下载的部分不用重下。")
         }
         if !other.isEmpty {
             notes.append("\(other.joined(separator: "、")) 有进行中的任务，退出会中断，不会自动继续。")
         }
-        guard !notes.isEmpty else { return .terminateNow }
-        let alert = NSAlert()
-        alert.messageText = "要退出 MacVM 吗？"
-        alert.informativeText = notes.joined(separator: "\n\n")
-        alert.addButton(withTitle: "取消")
-        alert.addButton(withTitle: "退出")
-        NSApp.activate()
-        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        if !notes.isEmpty {
+            if !running.isEmpty {
+                notes.append("\(running.joined(separator: "、")) 会先关机再退出。")
+            }
+            let alert = NSAlert()
+            alert.messageText = "要退出 MacVM 吗？"
+            alert.informativeText = notes.joined(separator: "\n\n")
+            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: "退出")
+            NSApp.activate()
+            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        }
+        guard !running.isEmpty else { return .terminateNow }
+        shuttingDown = true
+        Task { await shutDownThenTerminate() }
+        return .terminateLater
     }
+
+    /// 客户机可能停在「是否保存」之类的对话框上迟迟不关机，每等满 `shutdownWait` 问一次是继续等、断电还是不退出了。
+    private func shutDownThenTerminate() async {
+        defer { shuttingDown = false }
+        model.requestStopAll()
+        while !(await model.waitUntilAllStopped(timeout: Self.shutdownWait)) {
+            let alert = NSAlert()
+            alert.messageText = "\(model.runners.keys.sorted().joined(separator: "、")) 还没关机"
+            alert.informativeText = "客户机可能在等你保存文档或确认关机，可以到它的窗口里处理后继续等。断电退出会丢失客户机里没保存的内容。"
+            alert.addButton(withTitle: "继续等待")
+            alert.addButton(withTitle: "断电并退出")
+            alert.addButton(withTitle: "不退出")
+            NSApp.activate()
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                continue
+            case .alertSecondButtonReturn:
+                await model.forceStopAll()
+            default:
+                NSApp.reply(toApplicationShouldTerminate: false)
+                return
+            }
+        }
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
+    private var shuttingDown = false
+    private static let shutdownWait: Duration = .seconds(60)
 
     private static func updateActivationPolicy() {
         let menuBarVisible = UserDefaults.standard.object(forKey: StatusMenu.visibleKey) as? Bool ?? true
