@@ -40,7 +40,7 @@ public final class QEMURunner: MachineRunner {
         _ = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments()
     }
 
-    public var canSuspend: Bool { config.supportsSuspend }
+    public var canSuspend: Bool { qemu.canSuspend(config) }
 
     public var supportsLiveShares: Bool { false }
 
@@ -202,7 +202,8 @@ public final class QEMURunner: MachineRunner {
 
     /// 暂停后把内存与设备状态迁移到包内文件，然后退出 QEMU；下次 `start` 以 `-incoming` 读回。
     public func suspend() async throws {
-        guard canSuspend else { throw MacVMError.unsupported("该虚拟机的配置不支持挂起") }
+        guard config.supportsSuspend else { throw MacVMError.unsupported("该虚拟机的配置不支持挂起") }
+        guard !qemu.usesVirgl else { throw QEMUInstallation.virglSuspendError }
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
         try requireNoAttachedImages()
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }

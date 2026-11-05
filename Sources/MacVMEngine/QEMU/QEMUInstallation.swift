@@ -1,5 +1,5 @@
 public import Foundation
-import MacVMModel
+public import MacVMModel
 
 /// 运行 QEMU 引擎用的 QEMU：App 自带的（带 SPICE 与 GL 图形加速），或用户经 Homebrew 安装的。
 public struct QEMUInstallation: Sendable {
@@ -15,6 +15,22 @@ public struct QEMUInstallation: Sendable {
     public var direct3D = false
     /// 自带布局的根目录；有它才是带图形加速补丁的 QEMU。
     public var bundleRoot: URL?
+
+    /// 显卡走 virglrenderer：QEMU 给 virgl 设了迁移阻断，这样的虚拟机不能挂起。
+    public var usesVirgl: Bool { displayLibrary != nil }
+
+    /// 用这个 QEMU 运行的 `config` 能否挂起。
+    func canSuspend(_ config: VMConfig) -> Bool { config.supportsSuspend && !usesVirgl }
+
+    /// 本机找到的 QEMU 能否挂起 `config` 描述的虚拟机；没装 QEMU 时为 false。
+    public static func canSuspend(_ config: VMConfig) -> Bool {
+        located?.canSuspend(config) == true
+    }
+
+    /// `locate` 的结果，供界面频繁查询；装卸 QEMU 后要重启 App 才更新。
+    private static let located = locate()
+
+    static let virglSuspendError = MacVMError.unsupported("App 自带 QEMU 的 3D 显卡（virgl）不支持挂起，请关机")
 
     /// 自带的 QEMU 把客户机经气球上报的空闲页还给宿主；Homebrew 的 QEMU 只调 madvise，macOS 上释放不了客户机写过的页。
     var returnsFreedGuestMemory: Bool { bundleRoot != nil }

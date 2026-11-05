@@ -217,7 +217,7 @@ struct MachineDetailView: View {
                     Button { openWindow(id: "machine", value: vm.name) } label: { Label("显示", systemImage: "macwindow") }
                         .buttonStyle(.borderedProminent)
                 }
-                if config?.supportsSuspend == true {
+                if model.canSuspend(vm.name) {
                     Button { Task { await model.suspend(vm.name) } } label: { Label("挂起", systemImage: "pause.fill") }
                 }
                 // 点按钮本身正常关机，下拉里才是强制断电。

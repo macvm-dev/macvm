@@ -26,7 +26,7 @@
 
 - **三种系统，一个入口**：macOS、Linux、Windows（ARM64）都能在 App 里点几下建好，也能用一条命令建好。
 - **无人值守安装**：macOS 自动下载最新 IPSW 并装好；Windows 用微软原版 ISO 自动部署，可填产品密钥自动激活；Linux 云镜像几秒开机，用户、SSH 密钥和代理都已配好。
-- **原生性能**：基于 Apple Virtualization.framework，占用低、启动快。需要声音、挂起或 3D 加速时，可以切换到 App 自带的 QEMU 引擎。
+- **原生性能**：基于 Apple Virtualization.framework，占用低、启动快。Windows 需要声音或 3D 加速时，可以切换到 App 自带的 QEMU 引擎。
 - **好用的 Windows**：Direct3D 11 硬件加速，分辨率跟随窗口大小，支持 Retina，光标直接用 macOS 的，跟手没有延迟。
 - **开发者友好**：`macvm exec` 直接在客户机里执行命令，配好 `macvm ssh-config` 后 `ssh 虚拟机名` 即可登录；支持共享目录，Linux 下可用 Rosetta 运行 x86_64 程序；所有命令都能输出 JSON，方便写脚本。
 - **剪贴板互通**：宿主和虚拟机之间直接复制粘贴文本。macOS 和 Windows 客户机经客户机代理同步，Linux 客户机经 spice-vdagent 同步。
@@ -114,7 +114,8 @@ macvm ssh-config --install        # 之后直接 ssh dev
 | 资源占用 | 最低 | 多一个 QEMU 进程 |
 | macOS 客户机 | ✓ | — |
 | 共享目录 | ✓ | — |
-| Windows 声音、挂起 | — | ✓ |
+| Windows 声音 | — | ✓ |
+| Windows、Linux 挂起 | macOS 与无画面的 Linux 可以 | 只有 Homebrew 的 QEMU（自带的 QEMU 用 virgl 3D，不能挂起） |
 | Windows 3D 加速、分辨率跟随窗口 | — | ✓（App 自带的 QEMU） |
 | Linux 客户机不用的内存还给 macOS | — | ✓（App 自带的 QEMU） |
 

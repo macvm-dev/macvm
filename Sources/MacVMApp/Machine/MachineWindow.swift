@@ -157,7 +157,7 @@ struct MachineWindow: View {
                     }
                     .help(config.audio ? "声音：开（下次开机生效）" : "声音：关（下次开机生效）")
                 }
-                if config?.supportsSuspend == true {
+                if model.canSuspend(name) {
                     if suspending {
                         busyItem("正在挂起…")
                     } else {
@@ -227,7 +227,7 @@ extension MachineWindow {
     /// 改了声音或麦克风后的提示。与本进程开机时的设置不同时，补一句这次开机不能挂起。
     fileprivate func announce(_ text: String) {
         var text = text
-        if let runner, runner.config.supportsSuspend, let saved = model.config(of: name), saved.audioDiffers(from: runner.config) {
+        if let runner, runner.canSuspend, let saved = model.config(of: name), saved.audioDiffers(from: runner.config) {
             text += "；改回之前这次开机不能挂起"
         }
         withAnimation { notice = text }

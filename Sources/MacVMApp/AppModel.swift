@@ -88,6 +88,19 @@ final class AppModel {
     private var refreshTask: Task<Void, Never>?
     /// 每次同步 `refresh` 加一；后台轮询读完时它变了，说明结果已比同步刷新的旧，丢弃。
     private var refreshGeneration = 0
+    /// 别的进程里运行的虚拟机能否挂起，开机后经控制 socket 问一次，停机后清掉。
+    private var remoteSuspend: [String: Bool] = [:]
+
+    /// 经控制 socket 问运行 `machines` 的进程能否挂起；问不到的不记，下一轮再问。
+    nonisolated private static func querySuspend(of machines: [VMSummary], in library: VMLibrary) -> [String: Bool] {
+        var result: [String: Bool] = [:]
+        for vm in machines {
+            guard let bundle = try? library.bundle(named: vm.name),
+                  let canSuspend = (try? ControlClient.send(.status, to: bundle, timeout: 1))?.canSuspend else { continue }
+            result[vm.name] = canSuspend
+        }
+        return result
+    }
     private(set) var library = VMLibrary.default
     private(set) var settings = MacVMSettings.load()
     private(set) var templateLibrary = TemplateLibrary.default
@@ -104,6 +117,13 @@ final class AppModel {
                 let list = await Task.detached { VMStatus.summaries(in: library) }.value
                 guard let self, generation == refreshGeneration else { continue }
                 apply(list)
+                // 列表先更新：问挂起能力要连各虚拟机的控制 socket，连不上时每台要等到超时。
+                let known = Set(remoteSuspend.keys).union(runners.keys)
+                let pending = list.filter { $0.state == .running && !known.contains($0.name) }
+                guard !pending.isEmpty else { continue }
+                let queried = await Task.detached { Self.querySuspend(of: pending, in: library) }.value
+                let running = Set(machines.filter { $0.state == .running }.map(\.name))
+                remoteSuspend.merge(queried.filter { running.contains($0.key) }) { $1 }
             }
         }
     }
@@ -115,6 +135,8 @@ final class AppModel {
 
     private func apply(_ list: [VMSummary]) {
         if list != machines { machines = list }
+        let running = Set(list.filter { $0.state == .running }.map(\.name))
+        if remoteSuspend.keys.contains(where: { !running.contains($0) }) { remoteSuspend = remoteSuspend.filter { running.contains($0.key) } }
         for vm in list where vm.state != .running { clearStopping(vm.name) }
     }
 
@@ -173,6 +195,14 @@ final class AppModel {
     /// VZ 的画面只能在运行它的进程里显示。
     func canDisplay(_ name: String) -> Bool {
         isRunningHere(name) || config(of: name)?.engine == .qemu
+    }
+
+    /// 是否提供挂起：运行中的以运行它的进程报的为准（别的进程可能用了另一套 QEMU），其余按配置与本机的 QEMU 判断。
+    func canSuspend(_ name: String) -> Bool {
+        if let runner = runners[name] { return runner.canSuspend }
+        if let remote = remoteSuspend[name] { return remote }
+        guard let config = config(of: name) else { return false }
+        return config.engine == .qemu ? QEMUInstallation.canSuspend(config) : config.supportsSuspend
     }
 
     // MARK: - 运行

@@ -168,7 +168,7 @@ struct StatusMenu: View {
             } else {
                 switch vm.state {
                 case .running:
-                    if config?.supportsSuspend == true {
+                    if model.canSuspend(vm.name) {
                         IconButton(systemImage: "pause.fill", help: "挂起") {
                             perform(vm.name, "正在挂起…") { await model.suspend(vm.name) }
                         }

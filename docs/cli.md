@@ -57,7 +57,8 @@
 | 依赖 | 无 | App 自带（macOS 27 起）；否则 `brew install qemu` |
 | 资源占用 | 最低 | 多一个 QEMU 进程 |
 | macOS 客户机 | 支持 | 不支持 |
-| Windows 声音 / 挂起 | 无 | 有 |
+| Windows 声音 | 无 | 有 |
+| 挂起 | macOS；Linux 只在无画面时 | 只有 Homebrew 的 QEMU：自带的 QEMU 显卡用 virgl，QEMU 不能迁移它的状态，挂起报 `unsupported` |
 | 共享目录（virtio-fs） | 支持 | 不支持 |
 | 客户机端口访问 | vsock、客户机 IP | NAT 下只有 22 与代理端口，经 Unix socket 转发；桥接下直连客户机 IP |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 截不到）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
