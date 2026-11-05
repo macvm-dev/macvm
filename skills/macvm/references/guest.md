@@ -33,5 +33,5 @@ macvm exec dev --user root -- apt-get update  # --user 要经客户机代理（L
 
 ## 显示
 
-- `macvm display <名> 1920x1080`：调整运行中虚拟机的显示尺寸（vz 下的 Windows 不支持）。
+- `macvm display <名> 1920x1080`：调整运行中虚拟机的显示尺寸（vz 下的 Windows 不支持）；不带尺寸时恢复为默认尺寸。
 - 画面窗口在 MacVM App 里打开。`macvm run <名>` 是前台无头运行到关机（`--console` 接客户机控制台），只有 Homebrew 的 QEMU 能用 `run --display` 另开 QEMU 窗口。
