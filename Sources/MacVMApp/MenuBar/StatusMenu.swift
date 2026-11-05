@@ -248,9 +248,7 @@ struct StatusMenu: View {
                     .font(.system(size: request.os.tileSymbolSize, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
-            .overlay(alignment: .bottomTrailing) {
-                Badge(systemImage: "exclamationmark", color: .orange)
-            }
+            .statusBadge(systemImage: "exclamationmark", color: .orange)
         } trailing: {
             IconButton(systemImage: "arrow.clockwise", help: "继续创建") {
                 NSApp.activate()
@@ -501,41 +499,37 @@ private struct ErrorBanner: View {
     }
 }
 
-/// 像 App 图标的圆角方块：运行中是系统代表色的渐变，带顶部高光与细边；没运行时是浅灰底、灰色图标。
+/// 像 App 图标的圆角方块：运行中是系统代表色的纯色底与细边；没运行时是浅灰底、灰色图标。
 /// 运行中与已挂起在右下角加状态圆点。
 private struct OSTile: View {
     let os: GuestOS
     let state: VMSummary.State
 
     var body: some View {
+        if state == .stopped {
+            tile
+        } else {
+            tile.cornerBadge(size: 9, ring: 2, inset: 3.5) { Circle().fill(state.color) }
+        }
+    }
+
+    private var tile: some View {
         let active = state == .running
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        Image(systemName: os.tileSymbol)
+        return Image(systemName: os.tileSymbol)
             .font(.system(size: os.tileSymbolSize, weight: .medium))
             .foregroundStyle(active ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
             .shadow(color: .black.opacity(active ? 0.18 : 0), radius: 0.5, y: 0.5)
             .frame(width: 38, height: 38)
             .background {
                 if active {
-                    shape.fill(LinearGradient(colors: [os.tileTop, os.tileBottom], startPoint: .top, endPoint: .bottom))
-                        .overlay {
-                            shape.fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .center))
-                        }
-                        .shadow(color: os.tileBottom.opacity(0.35), radius: 2, y: 1)
+                    shape.fill(os.tileColor)
+                        .shadow(color: os.tileColor.opacity(0.35), radius: 2, y: 1)
                 } else {
                     shape.fill(.primary.opacity(0.06))
                 }
             }
             .overlay { shape.strokeBorder(active ? .white.opacity(0.16) : .primary.opacity(0.08), lineWidth: 0.5) }
-            .overlay(alignment: .bottomTrailing) {
-                if state != .stopped {
-                    Circle().fill(state.color)
-                        .frame(width: 9, height: 9)
-                        .padding(2)
-                        .background(.background, in: .circle)
-                        .offset(x: 3, y: 3)
-                }
-            }
     }
 }
 
@@ -545,37 +539,50 @@ private struct ProgressTile: View {
     let activity: AppModel.Activity?
 
     var body: some View {
-        Tile {
-            if let os {
+        if let os {
+            Tile {
                 Image(systemName: os.tileSymbol)
                     .font(.system(size: os.tileSymbolSize, weight: .medium))
                     .foregroundStyle(.tertiary)
-            } else {
-                ProgressView().controlSize(.small)
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if os != nil {
-                Badge(systemImage: activity?.bytesPerSecond != nil ? "arrow.down" : "gearshape.fill", color: .accentColor)
-            }
+            .statusBadge(systemImage: activity?.bytesPerSecond != nil ? "arrow.down" : "gearshape.fill", color: .accentColor)
+        } else {
+            Tile { ProgressView().controlSize(.small) }
         }
     }
 }
 
-/// 图标块右下角的小圆标。
-private struct Badge: View {
-    let systemImage: String
-    let color: Color
+extension View {
+    /// 图标块右下角的小圆标。
+    fileprivate func statusBadge(systemImage: String, color: Color) -> some View {
+        cornerBadge(size: 15, ring: 1.5, inset: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white)
+                .background(color, in: .circle)
+        }
+    }
 
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 8, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 15, height: 15)
-            .background(color, in: .circle)
-            .padding(1.5)
-            .background(.background, in: .circle)
-            .offset(x: 4, y: 4)
+    /// 在右下角放直径 `size` 的角标，圆心距右下两边各 `inset`；本视图上挖掉角标外宽 `ring` 的一圈，
+    /// 透出背后的面板而不是画一圈底色：面板是半透明材质，任何纯色描边都和它对不上。
+    fileprivate func cornerBadge<Badge: View>(size: CGFloat, ring: CGFloat, inset: CGFloat,
+                                              @ViewBuilder _ badge: () -> Badge) -> some View {
+        let hole = size + ring * 2
+        return mask {
+            // 遮罩向外多留一截，不切掉图标块的阴影。
+            Color.clear
+                .background { Rectangle().padding(-8) }
+                .overlay(alignment: .bottomTrailing) {
+                    Circle().frame(width: hole, height: hole)
+                        .offset(x: hole / 2 - inset, y: hole / 2 - inset)
+                        .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+        }
+        .overlay(alignment: .bottomTrailing) {
+            badge().frame(width: size, height: size)
+                .offset(x: size / 2 - inset, y: size / 2 - inset)
+        }
     }
 }
 
@@ -724,19 +731,11 @@ private extension GuestOS {
         }
     }
 
-    var tileTop: Color {
+    var tileColor: Color {
         switch self {
-        case .macOS: Color(red: 0.42, green: 0.44, blue: 0.48)
-        case .linux: Color(red: 1.00, green: 0.73, blue: 0.24)
-        case .windows: Color(red: 0.24, green: 0.66, blue: 1.00)
-        }
-    }
-
-    var tileBottom: Color {
-        switch self {
-        case .macOS: Color(red: 0.13, green: 0.14, blue: 0.16)
-        case .linux: Color(red: 0.93, green: 0.47, blue: 0.05)
-        case .windows: Color(red: 0.00, green: 0.42, blue: 0.86)
+        case .macOS: Color(red: 0.27, green: 0.28, blue: 0.31)
+        case .linux: Color(red: 0.96, green: 0.58, blue: 0.13)
+        case .windows: Color(red: 0.10, green: 0.53, blue: 0.93)
         }
     }
 }
