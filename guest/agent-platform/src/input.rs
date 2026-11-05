@@ -153,51 +153,65 @@ pub fn play(injector: &mut impl Injector, events: &[InputEvent]) -> io::Result<(
                 injector.move_to(*x, *y)?;
                 injector.scroll(*x, *y, *dx, *dy)?;
             }
-            InputEvent::Key { keys } => {
-                let keys = parse_combo(keys)?;
-                let mut pressed = 0;
-                let mut result = Ok(());
-                for &key in &keys {
-                    result = injector.key(key, true);
-                    if result.is_err() {
-                        break;
-                    }
-                    pressed += 1;
-                }
-                for &key in keys[..pressed].iter().rev() {
-                    let up = injector.key(key, false);
-                    result = result.and(up);
-                }
-                result?;
-            }
+            InputEvent::Key { keys } => press(injector, &parse_combo(keys)?)?,
             InputEvent::Text { text } => injector.text(text)?,
         }
     }
     Ok(())
 }
 
-/// 按美式布局逐字打出 ASCII 文本，供没有 Unicode 输入通道的平台用。
+/// 依次按下 `keys` 再倒序抬起；中途出错时已按下的键照样抬起。
+fn press(injector: &mut impl Injector, keys: &[Key]) -> io::Result<()> {
+    let mut pressed = 0;
+    let mut result = Ok(());
+    for &key in keys {
+        result = injector.key(key, true);
+        if result.is_err() {
+            break;
+        }
+        pressed += 1;
+    }
+    for &key in keys[..pressed].iter().rev() {
+        let up = injector.key(key, false);
+        result = result.and(up);
+    }
+    result
+}
+
+/// 逐字按键打出文本，供没有 Unicode 输入通道的平台用：ASCII 按美式布局打，其余字符用 GTK 与 IBus 的
+/// Unicode 输入（ctrl+shift+u、十六进制码、空格），GNOME 里的 GTK、Qt 程序、终端与浏览器都认。
 #[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
-pub fn type_ascii(injector: &mut impl Injector, text: &str) -> io::Result<()> {
+pub fn type_with_keys(injector: &mut impl Injector, text: &str) -> io::Result<()> {
     for c in text.chars() {
         let key = match c {
             '\n' => Key::Enter,
             '\t' => Key::Tab,
             ' ' => Key::Space,
             c if c.is_ascii_graphic() => Key::Char(unshifted(c).0),
-            c => return Err(io::Error::new(io::ErrorKind::Unsupported, format!("这个客户机只能输入 ASCII 文本：{c:?}"))),
+            c => {
+                type_code_point(injector, c)?;
+                continue;
+            }
         };
-        let shift = c.is_ascii_graphic() && unshifted(c).1;
-        if shift {
-            injector.key(Key::Shift, true)?;
-        }
-        injector.key(key, true)?;
-        injector.key(key, false)?;
-        if shift {
-            injector.key(Key::Shift, false)?;
+        if c.is_ascii_graphic() && unshifted(c).1 {
+            press(injector, &[Key::Shift, key])?;
+        } else {
+            press(injector, &[key])?;
         }
     }
     Ok(())
+}
+
+/// 按下 ctrl+shift+u 后输入法要这么久才进入 Unicode 输入状态，之前的按键会被当成普通输入。
+const UNICODE_ENTRY_PAUSE: Duration = Duration::from_millis(50);
+
+fn type_code_point(injector: &mut impl Injector, c: char) -> io::Result<()> {
+    press(injector, &[Key::Ctrl, Key::Shift, Key::Char('u')])?;
+    thread::sleep(UNICODE_ENTRY_PAUSE);
+    for digit in format!("{:x}", u32::from(c)).chars() {
+        press(injector, &[Key::Char(digit)])?;
+    }
+    press(injector, &[Key::Space])
 }
 
 #[cfg(test)]
@@ -311,11 +325,23 @@ mod tests {
     #[test]
     fn ascii_typing_uses_shift() {
         let mut r = Recorder::default();
-        type_ascii(&mut r, "A!").unwrap();
+        type_with_keys(&mut r, "A!").unwrap();
         assert_eq!(
             r.0,
             ["Shift down", "Char('a') down", "Char('a') up", "Shift up", "Shift down", "Char('1') down", "Char('1') up", "Shift up"]
         );
-        assert!(type_ascii(&mut r, "é").is_err());
+    }
+
+    #[test]
+    fn non_ascii_typing_uses_unicode_entry() {
+        let mut r = Recorder::default();
+        type_with_keys(&mut r, "é").unwrap();
+        assert_eq!(
+            r.0,
+            [
+                "Ctrl down", "Shift down", "Char('u') down", "Char('u') up", "Shift up", "Ctrl up",
+                "Char('e') down", "Char('e') up", "Char('9') down", "Char('9') up", "Space down", "Space up"
+            ]
+        );
     }
 }

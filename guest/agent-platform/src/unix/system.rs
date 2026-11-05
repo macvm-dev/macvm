@@ -217,17 +217,14 @@ pub fn ignore_firmware_framebuffer() -> io::Result<()> {
     Ok(())
 }
 
-/// 除 simpledrm 外是否还有 DRM 显卡（`/sys/class/drm/cardN` 的驱动不是 simple-framebuffer）。
+/// 除固件帧缓冲外是否还有 DRM 显卡。
 #[cfg(target_os = "linux")]
 fn has_other_gpu() -> bool {
     let Ok(entries) = std::fs::read_dir("/sys/class/drm") else { return false };
     entries.flatten().any(|entry| {
         let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let is_card = name.strip_prefix("card").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
-        is_card
-            && std::fs::read_link(entry.path().join("device/driver"))
-                .is_ok_and(|driver| driver.file_name().is_some_and(|d| d != "simple-framebuffer"))
+        let Some(card) = name.to_string_lossy().strip_prefix("card").and_then(|n| n.parse::<u32>().ok()) else { return false };
+        entry.path().join("device/driver").exists() && !super::drm::is_firmware_framebuffer(card)
     })
 }
 

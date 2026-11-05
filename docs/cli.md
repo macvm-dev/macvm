@@ -14,7 +14,7 @@
 | --- | --- |
 | `create <名> [--image ID \| --desktop ID [--manual-install] \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--network nat\|bridged[:网卡]] [--password 密码] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机；`--network` 见下文「网络」，Windows 只能用 NAT 安装，且不接受 `--share`、`--rosetta`、`--headless`、`--console`、`--manual-install`；`--share 路径[:名称][:ro]` 的名称规则与 `set --add-share` 相同，不能与 `--engine qemu` 同用；`--user` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录用户名（默认与主机用户同名，主机用户名不合下列规则时须自己指定；用户名须为 1–20 个小写字母、数字或 `_ . -`、以字母或 `_` 开头，且不能是 root、administrator 等系统账户），`--password` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录密码（不能为空、首尾不能有空格、不能含换行等控制字符）并存进包内 `guest-password`（云镜像省略时只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 省略时随机生成），云镜像与 Windows 的 SSH 始终只认密钥，时区与主机相同；`--image` 的云镜像下载解包后缓存在下载目录的 `images/`，之后一直用这份、不再检查发行方是否更新，要换新版须删掉那里对应的 `.raw`；`--desktop ubuntu-desktop\|fedora-workstation` 下载发行方最新的 arm64 桌面版安装 ISO（校验 SHA-256，缓存在下载目录的 `iso/`）：Ubuntu 默认无人值守安装（缓存里另存一份内核参数带 `autoinstall` 的引导副本 `<名>.autoinstall.iso`，安装环境里关掉网络、只用安装盘里的软件包离线安装，不装更新；命令开机后等到装好的系统里的客户机代理响应才返回，安装盘与种子盘下次开机时卸下；需要随程序分发的 Linux 版客户机代理；装好即带登录用户、macvm 专用 SSH 公钥、免密 sudo 与客户机代理，系统语言为英文（en_US.UTF-8）、时区同主机、键盘为美式，之后卸下安装盘），加 `--manual-install` 则和 Fedora 一样开机后在窗口里完成图形安装；Windows 从原版 ISO 无人值守部署，不给 `--iso` 时从微软下载 Windows 11 ARM64 ISO（语言取系统首选语言里微软提供的第一个，都没有时用英语；缓存在下载目录的 `windows/`，下完新版后删掉旧的，仍被还没装完的虚拟机当安装介质的除外；问不到微软或微软拒绝时用缓存里的，缓存里也没有时报错，可到 https://www.microsoft.com/software-download/windows11arm64 手动下载后用 `--iso` 指定），给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态） |
 | `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--network nat\|bridged[:网卡]] [--display 宽x高] [--retina on\|off] [--clipboard on\|off] [--disk-size 256G] [--add-share 路径[:名称][:ro]]… [--remove-share 路径或名称]…` | 修改已关机虚拟机的配置，可切换引擎；运行中报 `already_running`，挂起时报 `invalid_config`。只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效）。`--clipboard` 开关应用窗口与客户机之间的文本剪贴板同步（默认开，客户机里的程序都能读到宿主上复制的内容）：macOS、Windows 客户机经客户机代理同步，窗口成为主窗口时交出宿主剪贴板、离开时取回客户机的，运行中也可修改；Linux 客户机经 spice-vdagent 同步（vz 引擎有画面时、自带的 QEMU），要关机后修改。`--disk-size` 只扩大系统盘镜像、不能缩小，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。共享目录只用于 vz 引擎的 macOS、Linux 客户机，名称缺省取目录名（Linux 只留 ASCII 字母数字与 `._-`，重名加 `-2`…），不超过 36 字节；先执行 `--remove-share` 再执行 `--add-share`，移除后加回即可改只读。有共享目录或开着 Rosetta 时不能切到 qemu（报 `unsupported`） |
-| `screenshot <名> <文件>` | 保存画面为 PNG（用 Homebrew 的 QEMU 时；VZ 引擎与 App 自带的 QEMU 报 `unsupported`） |
+| `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎；VZ 引擎报 `unsupported`）。自带的 QEMU 读画面的 IOSurface，要有过 GL 画面输出（开机早期的固件画面截不到） |
 | `display <名> <宽>x<高>` | 调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `install-macos <名> [--ipsw 文件] [--user 用户] [--password 密码] [--no-tune]` | 安装 macOS 虚拟机并开通 SSH 与代理，主机名设为虚拟机名、时区与主机相同，再执行 `tune` 的全部项；`--user` 的规则与 `create` 相同，`--password` 省略时随机生成，存在包内 `guest-password`；结果里的 `tuning` 是调优报告，跳过或出错时没有该字段，出错原因在 `tuningError`，安装本身仍算成功 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
@@ -32,7 +32,7 @@
 | `ui snapshot <名> [--app 应用] [--depth N] [--limit N]` | 读客户机桌面的无障碍树，见下文「UI 自动化」；结果为 `UISnapshot`（`screen`、`apps`、`app`、`nodes`、`truncated`），格式见代理协议的 `ui-snapshot` |
 | `ui act <名> <元素> <动作> [--value 文本]` | 对快照里的元素执行动作：`press`、`focus`、`set-value`、`toggle`、`expand`、`collapse`、`select`、`scroll-into-view`、`show-menu`、`raise`；编号已失效或元素不支持该动作时报 `engine` |
 | `ui click <名> (<x> <y> \| --element 元素) [--button left\|right\|middle] [--count N]` / `ui move <名> <x> <y>` / `ui drag <名> <x1> <y1> <x2> <y2> [--button …]` / `ui scroll <名> <x> <y> [--dx N] [--dy N]` | 注入鼠标；`--element` 点元素当前位置的中心，滚动单位是滚轮格，正值向右、向下 |
-| `ui type <名> <文本>` / `ui key <名> <组合键>` | 输入文本（Linux 客户机只支持 ASCII）/ 按组合键，如 `cmd+shift+t`、`enter` |
+| `ui type <名> <文本>` / `ui key <名> <组合键>` | 输入文本 / 按组合键，如 `cmd+shift+t`、`enter` |
 | `ui screenshot <名> <文件>` | 在客户机里截主屏存为 PNG，结果为 `{path, width, height}`；任何引擎都可用 |
 | `ip <名>` / `rm <名>` / `doctor` | IP / 删除 / 检查本机能力 |
 
@@ -61,7 +61,7 @@
 | 挂起 | macOS；Linux 只在无画面时 | 只有 Homebrew 的 QEMU：自带的 QEMU 显卡用 virgl，QEMU 不能迁移它的状态，挂起报 `unsupported` |
 | 共享目录（virtio-fs） | 支持 | 不支持 |
 | 客户机端口访问 | vsock、客户机 IP | NAT 下只有 22 与代理端口，经 Unix socket 转发；桥接下直连客户机 IP |
-| 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 截不到）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
+| 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 读这块 IOSurface）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Linux 分辨率 | 跟随窗口大小（按点数，最小 800x600，画面放大显示；`--retina on` 时按屏幕像素，有客户机代理时把 GNOME 的缩放倍数调到屏幕倍数，没有代理时 Retina 屏上界面会变小，要在客户机里调缩放） | 自带的 QEMU 下与 Windows 一样跟随窗口，有客户机代理时同样调 GNOME 的缩放倍数；Homebrew 的 QEMU 由客户机设定 |
 | Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600；`--retina on` 时按屏幕像素，并把 Windows 缩放比例调到相同倍数；总像素不超过约 780 万）；否则由客户机设定 |
 | Windows 光标 | 客户机自绘 | 宿主的 macOS 光标，跟手无延迟：Windows 的系统光标换成 macOS 的同类光标（输入、手形、调整大小等，没有同类的用箭头）。viogpu3d 不支持硬件光标，代理在画面打开期间把客户机的系统光标换成透明的；程序自带的光标仍由客户机画（viogpudo 下按原图显示） |
@@ -86,7 +86,7 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 - 元素编号至少在下一次 `snapshot` 之前有效；失效后操作报 `engine`，要重新快照。
 - 虚拟机要在运行，不会自动开机；没装代理或代理版本过旧（`agent info` 里的 `features` 没有 `ui`）时报 `unsupported`，运行 `macvm agent install <名>` 更新。
 - macOS 客户机要在「系统设置 › 隐私与安全性」里给 MacVM Agent「辅助功能」（快照、动作、输入）与「屏幕录制」（截屏）权限；没给时报 `permission_denied`（退出码 22），代理每次启动后第一次缺权限时让客户机弹出系统的授权提示。授权后第一次调用回「正在重启以载入授权」：代理进程看不到启动后才授予的权限，会自行重启（中断当时的 exec 与端口转发），几秒后重试即可；系统设置里的「退出并重新打开」不起作用，点「稍后」。权限跟着代理的代码签名：同一团队 ID 签名的代理更新后授权保留，ad-hoc 签名的每次重编后要重新授权。代理注入的输入不算用户活动，客户机显示器仍按节能设置休眠；快照、输入与截屏会先唤醒显示器并等画面亮起来（约两秒）。
-- Linux 客户机要有已登录的图形会话；第一次快照时代理打开会话的无障碍支持，之前已在运行的部分应用要重启后才看得到。`type` 只支持 ASCII。Wayland 下除 GNOME Shell 自己的界面（顶栏、程序坞）外元素没有 `bounds`，`click --element` 报 `engine`，要用 `act` 或按截图坐标点击。QEMU 开了 3D 加速时客户机里可能截不到画面。
+- Linux 客户机要有已登录的图形会话；第一次快照时代理打开会话的无障碍支持，之前已在运行的部分应用要重启后才看得到。`type` 里的非 ASCII 字符用 ctrl+shift+u 加十六进制码输入，GTK、Qt（经 IBus）程序、终端与浏览器认，别的程序要用 `act --value`。Wayland 下除 GNOME Shell 自己的界面（顶栏、程序坞）外元素没有 `bounds`，`click --element` 报 `engine`，要用 `act` 或按截图坐标点击。自带的 QEMU 用 virgl 时画面在宿主 GPU 上，`screenshot` 改由运行 QEMU 的进程从画面的 IOSurface 截取。客户机闲置息屏时 `screenshot` 报错，先用 `key` 或 `move` 唤醒；息屏期间输入坐标仍按显示器的首选分辨率换算。
 - Windows 客户机：UAC 等安全桌面上的窗口收不到输入。
 
 ## 与 runode 配合

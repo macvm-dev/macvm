@@ -26,10 +26,28 @@ public enum GuestUI {
         _ = try AgentClient.call(.uiInput(events), bundle: bundle)
     }
 
-    /// 主屏截图（PNG）。
+    /// 主屏截图（PNG）。QEMU 引擎下代理截不到时（Linux 的 virgl 画面在宿主 GPU 上）改由运行 QEMU 的进程截。
+    /// 两边都失败时报两边的原因；代理缺权限时只报代理的，保留 `permissionDenied`。
     public static func screenshot(_ bundle: VMBundle) throws -> Data {
         try requireSupport(bundle)
-        return try AgentClient.fetch(.uiScreenshot, bundle: bundle)
+        do {
+            return try AgentClient.fetch(.uiScreenshot, bundle: bundle)
+        } catch let agentError {
+            guard (try? bundle.loadConfig())?.engine == .qemu else { throw agentError }
+            do {
+                return try hostScreenshot(bundle)
+            } catch {
+                if case MacVMError.permissionDenied = agentError { throw agentError }
+                throw MacVMError.engine("\(agentError.localizedDescription)；宿主截屏也失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private static func hostScreenshot(_ bundle: VMBundle) throws -> Data {
+        let url = FileManager.default.temporaryDirectory.appending(path: "macvm-ui-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try ControlClient.perform(.screenshot(path: url.path), on: bundle)
+        return try Data(contentsOf: url)
     }
 
     private static func requireSupport(_ bundle: VMBundle) throws {

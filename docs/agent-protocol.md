@@ -88,7 +88,7 @@ Windows 3D 显卡驱动：宿主把 viogpu3d 驱动包平铺放在 `C:\ProgramDa
  "truncated":true}
 ```
 
-- `screen.scale` 是每个客户机坐标单位（macOS 的点、Windows 的 96 DPI 像素）对应的截图像素数。
+- `screen.scale` 是每个客户机坐标单位（macOS 的点、Windows 的 96 DPI 像素、Wayland 下 GNOME 的逻辑像素）对应的截图像素数；`bounds` 已按它换算成截图像素。
 - `apps` 是有窗口的应用；`app` 是本次快照的应用，没有前台应用时省略，`nodes` 为空。
 - `nodes` 按先序排列，父子关系由 `depth` 表达；Windows 上应用的每个顶层窗口（含任务栏、桌面与对话框）各是一个 `depth` 为 0 的元素。遍历到 `max_depth` 或 `max_nodes` 时 `truncated` 为 true，否则省略。
 - `id` 对宿主不透明，至少在同一代理的下一次快照之前有效；失效时 `ui-action` 回失败，要重新快照。
@@ -106,7 +106,7 @@ Windows 3D 显卡驱动：宿主把 viogpu3d 驱动包平铺放在 `C:\ProgramDa
 | `drag` | `from`、`to`（`[x,y]`），`button` |
 | `scroll` | `x`，`y`，`dx`、`dy`（滚轮格数，正值向右、向下，默认 0） |
 | `key` | `keys`：组合键，如 `cmd+shift+t`、`enter`。修饰键 `cmd`（Windows 为 Win 键，Linux 为 Super）、`ctrl`、`alt`（`option`）、`shift` 在前，最后是主键：`enter`、`tab`、`esc`、`space`、`backspace`、`delete`、`up`、`down`、`left`、`right`、`home`、`end`、`pageup`、`pagedown`、`f1`–`f12`，或美式键盘上不按 Shift 时的字符 |
-| `text` | `text`：逐字输入；Linux 上只支持 ASCII |
+| `text` | `text`：逐字输入；Linux 上 ASCII 按美式布局按键，其余字符用 ctrl+shift+u 加十六进制码输入（GTK、IBus 支持的程序才认） |
 
 各系统的前提：
 

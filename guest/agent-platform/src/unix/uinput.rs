@@ -213,7 +213,7 @@ impl Injector for Uinput<'_> {
     }
 
     fn text(&mut self, text: &str) -> io::Result<()> {
-        input::type_ascii(self, text)
+        input::type_with_keys(self, text)
     }
 }
 

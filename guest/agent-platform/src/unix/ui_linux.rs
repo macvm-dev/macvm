@@ -19,7 +19,9 @@ pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
     let request = HelperRequest::Snapshot { app: options.app.map(str::to_owned), max_depth: options.max_depth, max_nodes: options.max_nodes };
     let mut snapshot = helper(&request)?.snapshot.unwrap_or_default();
     let (width, height) = drm::screen_size().unwrap_or_default();
-    snapshot.screen = UiScreen { width, height, scale: 1.0 };
+    // 缩放倍数由会话里的 helper 读出。
+    let scale = if snapshot.screen.scale > 0.0 { snapshot.screen.scale } else { 1.0 };
+    snapshot.screen = UiScreen { width, height, scale };
     Ok(snapshot)
 }
 
@@ -148,7 +150,9 @@ fn handle(request: &HelperRequest) -> io::Result<HelperReply> {
     let mut atspi = Atspi::connect()?;
     Ok(match request {
         HelperRequest::Snapshot { app, max_depth, max_nodes } => {
-            HelperReply { snapshot: Some(atspi.snapshot(app.as_deref(), *max_depth, *max_nodes)?), ..Default::default() }
+            let mut snapshot = atspi.snapshot(app.as_deref(), *max_depth, *max_nodes)?;
+            snapshot.screen.scale = atspi.scale;
+            HelperReply { snapshot: Some(snapshot), ..Default::default() }
         }
         HelperRequest::Action { element, action, value } => {
             atspi.act(&Obj::parse(element)?, *action, value.as_deref())?;
@@ -165,6 +169,24 @@ fn handle(request: &HelperRequest) -> io::Result<HelperReply> {
             HelperReply { bounds: atspi.extents(&obj)?, ..Default::default() }
         }
     })
+}
+
+/// mutter 主逻辑显示器的缩放倍数，取自 `org.gnome.Mutter.DisplayConfig.GetCurrentState`：
+/// 返回值的第三项是逻辑显示器数组，每项为 (x, y, scale, transform, primary, monitors, properties)；
+/// 第四项是全局属性，`layout-mode` 为 2（物理布局）时 mutter 的坐标本来就是像素，倍数按 1 算。
+fn primary_monitor_scale(session: &mut Bus) -> Option<f64> {
+    let reply = session
+        .call("org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig", "org.gnome.Mutter.DisplayConfig", "GetCurrentState", &[])
+        .ok()?;
+    let physical = reply.get(3).is_some_and(|properties| {
+        properties.items().iter().any(|p| p.items().first().and_then(Value::str) == Some("layout-mode") && p.items().get(1).and_then(Value::int) == Some(2))
+    });
+    if physical {
+        return Some(1.0);
+    }
+    let monitors = reply.get(2)?.items();
+    let primary = monitors.iter().find(|m| matches!(m.items().get(4), Some(Value::Bool(true)))).or(monitors.first())?;
+    primary.items().get(2)?.float().filter(|s| *s > 0.0)
 }
 
 /// 一个 AT-SPI 对象：所在应用的总线名与对象路径。
@@ -249,6 +271,8 @@ const ACTION_NAMES: [(&str, ElementAction); 10] = [
 struct Atspi {
     bus: Bus,
     wayland: bool,
+    /// Wayland 下 AT-SPI 报逻辑坐标，乘上主显示器的缩放倍数才是截图像素。
+    scale: f64,
 }
 
 /// 每个应用的根对象路径。
@@ -269,7 +293,8 @@ impl Atspi {
         let reply = session.call("org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus", "GetAddress", &[])?;
         let a11y = reply.first().and_then(Value::str).ok_or_else(|| io::Error::other("无障碍总线没有地址"))?;
         let wayland = std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
-        Ok(Self { bus: Bus::connect(a11y)?, wayland })
+        let scale = if wayland { primary_monitor_scale(&mut session).unwrap_or(1.0) } else { 1.0 };
+        Ok(Self { bus: Bus::connect(a11y)?, wayland, scale })
     }
 
     /// 总线名为 `bus` 的应用报的坐标是否是屏幕坐标。
@@ -311,8 +336,9 @@ impl Atspi {
     fn extents(&mut self, obj: &Obj) -> io::Result<Option<[i32; 4]>> {
         let rect = self.first(obj, COMPONENT, "GetExtents", &[Value::U32(COORD_SCREEN)])?;
         let v: Vec<i32> = rect.items().iter().filter_map(|n| n.int().map(|n| n as i32)).collect();
+        let px = |n: i32| (f64::from(n) * self.scale).round() as i32;
         Ok(match v[..] {
-            [x, y, w, h] if w > 0 && h > 0 => Some([x, y, w, h]),
+            [x, y, w, h] if w > 0 && h > 0 => Some([px(x), px(y), px(w), px(h)]),
             _ => None,
         })
     }

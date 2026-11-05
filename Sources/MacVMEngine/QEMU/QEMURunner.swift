@@ -225,13 +225,26 @@ public final class QEMURunner: MachineRunner {
 
     public func waitUntilStopped() async -> MachineStopReason { await stopLatch.wait() }
 
-    /// SPICE + GL 的画面在 GPU 上，`screendump` 拿不到。
+    /// `qmp_x_macvm_display_surface` 在客户机关掉 GL 扫描输出时的报错文字。
+    private static let noScanoutMessage = "the display has no GL scanout"
+
+    /// virgl 的画面在宿主 GPU 上，`screendump` 只看得到旧的帧缓冲，改读 QEMU 交出的 IOSurface。
     public func screenshot(to url: URL) async throws {
-        guard qemu.displayLibrary == nil else {
-            throw MacVMError.unsupported("App 自带的 QEMU 以 SPICE + GL 显示，截不到画面；Homebrew 的 QEMU 可以截图")
-        }
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }
-        try await qmp.execute("screendump", ["filename": url.path, "format": "png"])
+        guard qemu.usesVirgl else {
+            try await qmp.execute("screendump", ["filename": url.path, "format": "png"])
+            return
+        }
+        let surface: QMPClient.JSON
+        do {
+            surface = try await qmp.execute("x-macvm-display-surface")
+        } catch MacVMError.engine(let message) where message.hasSuffix(Self.noScanoutMessage) {
+            throw MacVMError.engine("客户机现在没有显卡画面输出（闲置息屏，或开机早期还在固件画面），唤醒后再截")
+        }
+        guard let id = (surface["iosurface"] as? NSNumber)?.uint32Value else {
+            throw MacVMError.engine("QEMU 没有给出画面的 IOSurface")
+        }
+        try IOSurfaceImage.writePNG(surfaceID: id, to: url)
     }
 
     /// 自带的 QEMU 把尺寸告诉客户机（与调整显示窗口大小的效果相同），客户机的显卡驱动决定是否跟随：

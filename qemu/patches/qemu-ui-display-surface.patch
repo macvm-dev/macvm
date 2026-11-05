@@ -1,0 +1,90 @@
+Add x-macvm-display-surface, returning the global IOSurface that holds the GL scanout of
+the first console. With virgl the frame lives on the host GPU, the guest cannot read it
+and screendump only sees a stale surface; a host process can read the IOSurface instead.
+
+--- a/qapi/ui.json
++++ b/qapi/ui.json
+@@ -1710,8 +1710,41 @@
+ ##
+ { 'command': 'x-macvm-set-display-size',
+   'data': { 'width': 'int', 'height': 'int' } }
++
++##
++# @MacVMDisplaySurface:
++#
++# The IOSurface holding the GL scanout of a display.
++#
++# @iosurface: global IOSurface ID, for IOSurfaceLookup in another
++#     process
++#
++# @width: width in pixels
++#
++# @height: height in pixels
++#
++# Since: 11.1
++##
++{ 'struct': 'MacVMDisplaySurface',
++  'data': { 'iosurface': 'uint32', 'width': 'int', 'height': 'int' },
++  'if': 'CONFIG_SPICE' }
+ 
+ ##
++# @x-macvm-display-surface:
++#
++# Return the IOSurface that holds the GL scanout of the first
++# console, so that a host process can read the guest screen when the
++# frame lives on the GPU and screendump only sees a stale surface.
++#
++# Returns: the surface
++#
++# Since: 11.1
++##
++{ 'command': 'x-macvm-display-surface',
++  'returns': 'MacVMDisplaySurface',
++  'if': 'CONFIG_SPICE' }
++
++##
+ # @client_migrate_info:
+ #
+ # Set migration information for remote display.  This makes the server
+--- a/ui/spice-display.c
++++ b/ui/spice-display.c
+@@ -26,6 +26,7 @@
+ #include "ui/console.h"
+ #include "system/system.h"
+ #include "trace.h"
++#include "qapi/qapi-commands-ui.h"
+ #ifdef CONFIG_IOSURFACE
+ #include <TargetConditionals.h>
+ #if TARGET_OS_OSX
+@@ -1919,7 +1920,31 @@
+     qemu_console_register_listener(con, &ssd->dcl, ops);
+     g_ptr_array_add(spice_displays, ssd);
+ }
++
++MacVMDisplaySurface *qmp_x_macvm_display_surface(Error **errp)
++{
++#if defined(HAVE_SPICE_GL) && defined(CONFIG_IOSURFACE)
++    for (guint i = 0; spice_displays && i < spice_displays->len; i++) {
++        SimpleSpiceDisplay *ssd = g_ptr_array_index(spice_displays, i);
++        MacVMDisplaySurface *ret;
+ 
++        if (qemu_console_get_index(ssd->dcl.con) != 0) {
++            continue;
++        }
++        if (!ssd->have_scanout || !ssd->iosurface) {
++            break;
++        }
++        ret = g_new0(MacVMDisplaySurface, 1);
++        ret->iosurface = IOSurfaceGetID(ssd->iosurface);
++        ret->width = IOSurfaceGetWidth(ssd->iosurface);
++        ret->height = IOSurfaceGetHeight(ssd->iosurface);
++        return ret;
++    }
++#endif
++    error_setg(errp, "the display has no GL scanout");
++    return NULL;
++}
++
+ void qemu_spice_display_early_init(void)
+ {
+ #ifdef HAVE_SPICE_GL

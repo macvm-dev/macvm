@@ -4,7 +4,7 @@ import MacVMEngine
 import MacVMModel
 
 struct Screenshot: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "把运行中虚拟机的画面存为 PNG（QEMU 引擎，不含自带 QEMU 的 SPICE 显示）。")
+    static let configuration = CommandConfiguration(abstract: "把运行中虚拟机的画面存为 PNG（QEMU 引擎）。")
 
     @OptionGroup var global: GlobalOptions
     @Argument(help: "虚拟机名称。") var name: String

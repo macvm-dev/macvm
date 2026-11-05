@@ -144,7 +144,7 @@ struct UICommand: AsyncParsableCommand {
     }
 
     struct TypeText: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "type", abstract: "向焦点处输入文本（Linux 客户机只支持 ASCII）。")
+        static let configuration = CommandConfiguration(commandName: "type", abstract: "向焦点处输入文本。")
         @OptionGroup var global: GlobalOptions
         @Argument(help: "虚拟机名称。") var name: String
         @Argument(help: "文本。") var text: String
