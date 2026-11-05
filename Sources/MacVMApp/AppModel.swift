@@ -374,6 +374,31 @@ final class AppModel {
         }
     }
 
+    /// 退出时能否转到后台进程接着运行：在本进程挂起，再由后台进程从挂起状态恢复。
+    /// 开了 `VMConfig.serialConsole` 的 VZ 虚拟机不行：后台进程为控制台多接一个串口，与本进程存下的状态对不上，只能冷启动。
+    func canMoveToBackground(_ name: String) -> Bool {
+        guard let runner = runners[name], runner.canSuspend else { return false }
+        return !(runner.config.engine == .vz && runner.config.serialConsole)
+    }
+
+    /// 退出前逐台挂起本进程运行的 `names`，交给后台进程从挂起状态接着运行。挂起失败的留着运行，由随后的关机处理；
+    /// 返回挂起了但没等到后台进程就绪的与原因：后台进程没起来的停在挂起状态，超时的可能稍后自己运行起来。
+    func moveToBackgroundForQuit(_ names: [String]) async -> [(name: String, reason: String)] {
+        var failed: [(name: String, reason: String)] = []
+        for name in names {
+            guard let runner = runners[name] else { continue }
+            setActivity(name, "正在转到后台…")
+            defer { setActivity(name, nil) }
+            guard (try? await runner.suspend()) != nil else { continue }
+            do {
+                _ = try await DetachedRun.launch(runner.bundle, executable: CLILocation.path, timeout: 120)
+            } catch {
+                failed.append((name, error.localizedDescription))
+            }
+        }
+        return failed
+    }
+
     /// 让本进程运行的每台虚拟机正常关机；请求不了的（还在开机等）留给 `forceStopAll`。
     func requestStopAll() {
         for (name, runner) in runners where (try? runner.requestStop()) != nil {

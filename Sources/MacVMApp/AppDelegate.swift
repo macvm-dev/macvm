@@ -37,12 +37,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ChildProcesses.terminateAll()
     }
 
-    /// 本进程运行的虚拟机要停下才能退出：问用户挂起还是关机，能挂起的挂起、其余正常关机，全部停下后才退出。
+    /// 本进程运行的虚拟机要交出去或停下才能退出：问用户转到后台、挂起还是关机，全部处理完才退出。
     /// 新建以外的任务（存模板、首次开机配置 SSH）中断后不会续做，一并在这里提醒。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // 停机途中再次退出时由进行中的那一轮答复，这一次不另起。
         guard !shuttingDown else { return .terminateCancel }
         let running = model.runners.keys.sorted()
+        let background = running.filter { model.canMoveToBackground($0) }
         let suspendable = running.filter { model.canSuspend($0) }
         let creating = model.resumableCreations
         let other = model.creatingNames.filter { !creating.contains($0) }
@@ -56,28 +57,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !running.isEmpty || !notes.isEmpty else { return .terminateNow }
 
         let alert = NSAlert()
+        var actions: [QuitAction] = []
         if running.isEmpty {
             alert.messageText = "要退出 MacVM 吗？"
             alert.addButton(withTitle: "退出")
+            actions.append(.shutDown)
         } else {
             alert.messageText = running.count == 1 ? "「\(running[0])」还在运行" : "还有 \(running.count) 台虚拟机在运行"
-            notes.insert(Self.stopNote(running: running, suspendable: suspendable), at: 0)
-            if !suspendable.isEmpty { alert.addButton(withTitle: "挂起并退出") }
+            var stopNotes: [String] = []
+            if !background.isEmpty {
+                stopNotes.append(backgroundNote(running: running, background: background, suspendable: suspendable))
+                alert.addButton(withTitle: "转到后台并退出")
+                actions.append(.background)
+            }
+            stopNotes.append(Self.stopNote(running: running, suspendable: suspendable))
+            notes.insert(contentsOf: stopNotes, at: 0)
+            if !suspendable.isEmpty {
+                alert.addButton(withTitle: "挂起并退出")
+                actions.append(.suspend)
+            }
             alert.addButton(withTitle: suspendable.isEmpty ? "关机并退出" : "全部关机并退出")
+            actions.append(.shutDown)
         }
         alert.informativeText = notes.joined(separator: "\n\n")
         alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
         NSApp.activate()
         let choice = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-        guard choice < alert.buttons.count - 1 else { return .terminateCancel }
+        guard actions.indices.contains(choice) else { return .terminateCancel }
         guard !running.isEmpty else { return .terminateNow }
-        let suspend = choice == 0 && !suspendable.isEmpty ? suspendable : []
         shuttingDown = true
-        Task { await stopThenTerminate(suspending: suspend) }
+        switch actions[choice] {
+        case .background:
+            // 转不到后台的照样能挂起的挂起。
+            let rest = suspendable.filter { !background.contains($0) }
+            Task { await stopThenTerminate(background: background, suspending: rest) }
+        case .suspend:
+            Task { await stopThenTerminate(suspending: suspendable) }
+        case .shutDown:
+            Task { await stopThenTerminate(suspending: []) }
+        }
         return .terminateLater
     }
 
-    /// 提示里说明各台虚拟机退出时会怎样。
+    private enum QuitAction { case background, suspend, shutDown }
+
+    /// 提示里说明转到后台时各台虚拟机会怎样。
+    private func backgroundNote(running: [String], background: [String], suspendable: [String]) -> String {
+        let subject = background.count == running.count ? "虚拟机" : background.joined(separator: "、")
+        var note = "转到后台时\(subject)先挂起几秒，再交给后台进程接着运行，MacVM 退出后也不停。"
+        if background.contains(where: { model.config(of: $0)?.engine == .vz }) {
+            note += "VZ 虚拟机的画面只能在运行它的进程里显示，之后要关机再从 MacVM 启动才能看到画面。"
+        }
+        let rest = running.filter { !background.contains($0) }
+        let restSuspended = rest.filter { suspendable.contains($0) }
+        let restStopped = rest.filter { !suspendable.contains($0) }
+        if !restSuspended.isEmpty { note += "\(restSuspended.joined(separator: "、")) 不能转到后台，会挂起。" }
+        if !restStopped.isEmpty { note += "\(restStopped.joined(separator: "、")) 不能转到后台，会正常关机。" }
+        return note
+    }
+
+    /// 提示里说明挂起或关机时各台虚拟机会怎样。
     private static func stopNote(running: [String], suspendable: [String]) -> String {
         let others = running.filter { !suspendable.contains($0) }
         if others.isEmpty {
@@ -89,10 +128,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return "挂起时 \(suspendable.joined(separator: "、")) 保存当前状态，下次开机接着运行；\(others.joined(separator: "、")) 不支持挂起，会正常关机。"
     }
 
-    /// 先挂起 `suspending` 里的虚拟机（挂起失败的改为关机），再让其余的正常关机。
+    /// 先把 `background` 里的虚拟机转到后台、挂起 `suspending` 里的（挂起失败的改为关机），再让其余的正常关机。
     /// 客户机可能停在「是否保存」之类的对话框上迟迟不关机，每等满 `shutdownWait` 问一次是继续等、断电还是不退出了。
-    private func stopThenTerminate(suspending: [String]) async {
+    private func stopThenTerminate(background: [String] = [], suspending: [String]) async {
         defer { shuttingDown = false }
+        let failed = await model.moveToBackgroundForQuit(background)
+        if !failed.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "\(failed.map(\.name).joined(separator: "、")) 没能转到后台"
+            alert.informativeText = failed.map { "\($0.name)：\($0.reason)" }.joined(separator: "\n")
+                + "\n\n挂起状态已保存，没在后台运行起来的下次开机从这里接着运行。"
+            alert.addButton(withTitle: "好")
+            NSApp.activate()
+            alert.runModal()
+        }
         await model.suspendForQuit(suspending)
         model.requestStopAll()
         while !(await model.waitUntilAllStopped(timeout: Self.shutdownWait)) {
