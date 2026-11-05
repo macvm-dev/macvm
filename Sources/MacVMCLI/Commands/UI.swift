@@ -26,6 +26,11 @@ struct UICommand: AsyncParsableCommand {
         @Option(help: "遍历深度上限。") var depth: Int?
         @Option(help: "元素个数上限。") var limit: Int?
 
+        func validate() throws {
+            if let depth, depth < 0 { throw ValidationError("--depth 不能为负数") }
+            if let limit, limit < 0 { throw ValidationError("--limit 不能为负数") }
+        }
+
         func run() async throws {
             try await Output.run(json: global.json, human: Self.render) {
                 try GuestUI.snapshot(VMLibrary.default.bundle(named: name), app: app, maxDepth: depth, maxNodes: limit)
@@ -91,7 +96,9 @@ struct UICommand: AsyncParsableCommand {
         @Option(help: "连击次数。") var count = 1
 
         func validate() throws {
-            guard (point.count == 2) != (element != nil) else { throw ValidationError("给出 x y 两个坐标，或者 --element，二选一") }
+            guard point.isEmpty ? element != nil : point.count == 2 && element == nil else {
+                throw ValidationError("给出 x y 两个坐标，或者 --element，二选一")
+            }
             guard count >= 1 else { throw ValidationError("--count 至少为 1") }
         }
 

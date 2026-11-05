@@ -124,7 +124,7 @@ const DRAG_STEPS: i32 = 12;
 /// 拖动中相邻两次移动的间隔。
 const DRAG_PAUSE: Duration = Duration::from_millis(8);
 
-/// 按顺序注入 `events`；`Click` 必须已带坐标。
+/// 按顺序注入 `events`；`Click` 必须已带坐标。中途出错时已按下的键与鼠标键照样抬起，客户机里不留按住的键。
 pub fn play(injector: &mut impl Injector, events: &[InputEvent]) -> io::Result<()> {
     for event in events {
         match event {
@@ -140,13 +140,14 @@ pub fn play(injector: &mut impl Injector, events: &[InputEvent]) -> io::Result<(
             InputEvent::Drag { from, to, button } => {
                 injector.move_to(from[0], from[1])?;
                 injector.button(*button, true, from[0], from[1], 1)?;
-                for step in 1..=DRAG_STEPS {
+                let moved = (1..=DRAG_STEPS).try_for_each(|step| {
                     thread::sleep(DRAG_PAUSE);
                     let x = from[0] + (to[0] - from[0]) * step / DRAG_STEPS;
                     let y = from[1] + (to[1] - from[1]) * step / DRAG_STEPS;
-                    injector.move_to(x, y)?;
-                }
-                injector.button(*button, false, to[0], to[1], 1)?;
+                    injector.move_to(x, y)
+                });
+                let released = injector.button(*button, false, to[0], to[1], 1);
+                moved.and(released)?;
             }
             InputEvent::Scroll { x, y, dx, dy } => {
                 injector.move_to(*x, *y)?;
@@ -154,12 +155,20 @@ pub fn play(injector: &mut impl Injector, events: &[InputEvent]) -> io::Result<(
             }
             InputEvent::Key { keys } => {
                 let keys = parse_combo(keys)?;
+                let mut pressed = 0;
+                let mut result = Ok(());
                 for &key in &keys {
-                    injector.key(key, true)?;
+                    result = injector.key(key, true);
+                    if result.is_err() {
+                        break;
+                    }
+                    pressed += 1;
                 }
-                for &key in keys.iter().rev() {
-                    injector.key(key, false)?;
+                for &key in keys[..pressed].iter().rev() {
+                    let up = injector.key(key, false);
+                    result = result.and(up);
                 }
+                result?;
             }
             InputEvent::Text { text } => injector.text(text)?,
         }
@@ -250,6 +259,37 @@ mod tests {
         let mut r = Recorder::default();
         play(&mut r, &[InputEvent::Key { keys: "ctrl+shift+z".into() }]).unwrap();
         assert_eq!(r.0, ["Ctrl down", "Shift down", "Char('z') down", "Char('z') up", "Shift up", "Ctrl up"]);
+    }
+
+    /// 按下 `fails` 时报错，其余照记。
+    struct FailsOn(Key, Recorder);
+
+    impl Injector for FailsOn {
+        fn move_to(&mut self, x: i32, y: i32) -> io::Result<()> {
+            self.1.move_to(x, y)
+        }
+        fn button(&mut self, button: MouseButton, down: bool, x: i32, y: i32, clicks: u32) -> io::Result<()> {
+            self.1.button(button, down, x, y, clicks)
+        }
+        fn scroll(&mut self, x: i32, y: i32, dx: i32, dy: i32) -> io::Result<()> {
+            self.1.scroll(x, y, dx, dy)
+        }
+        fn key(&mut self, key: Key, down: bool) -> io::Result<()> {
+            if down && key == self.0 {
+                return Err(io::Error::other("blocked"));
+            }
+            self.1.key(key, down)
+        }
+        fn text(&mut self, text: &str) -> io::Result<()> {
+            self.1.text(text)
+        }
+    }
+
+    #[test]
+    fn failed_combo_releases_pressed_keys() {
+        let mut r = FailsOn(Key::Char('z'), Recorder::default());
+        assert!(play(&mut r, &[InputEvent::Key { keys: "ctrl+shift+z".into() }]).is_err());
+        assert_eq!(r.1.0, ["Ctrl down", "Shift down", "Shift up", "Ctrl up"]);
     }
 
     #[test]

@@ -11,15 +11,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 pub fn png(width: u32, height: u32) -> io::Result<Vec<u8>> {
     let bgra = grab(width as i32, height as i32)?;
     let rgb: Vec<u8> = bgra.as_chunks::<4>().0.iter().flat_map(|p| [p[2], p[1], p[0]]).collect();
-    let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, width, height);
-    encoder.set_color(png::ColorType::Rgb);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(png::Compression::Fast);
-    let mut writer = encoder.write_header().map_err(io::Error::other)?;
-    writer.write_image_data(&rgb).map_err(io::Error::other)?;
-    writer.finish().map_err(io::Error::other)?;
-    Ok(out)
+    crate::encode_png(width, height, &rgb)
 }
 
 /// 屏幕左上角 `width`×`height` 的 B G R X 像素，自上而下。

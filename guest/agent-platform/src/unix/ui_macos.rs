@@ -276,7 +276,11 @@ fn require_trust() -> io::Result<()> {
         ));
         AXIsProcessTrustedWithOptions(options.as_ref().map_or(std::ptr::null(), |o| o.0)) != 0
     };
-    if trusted { Ok(()) } else { Err(permission_error()) }
+    if !trusted {
+        return Err(permission_error());
+    }
+    limit_messaging();
+    Ok(())
 }
 
 fn ax_result(code: AXError, what: &str, id: &str) -> io::Result<()> {
@@ -366,8 +370,20 @@ fn lookup(id: &str) -> io::Result<Cf> {
     index.parse::<usize>().ok().and_then(|i| cache.elements.get(i)).cloned().ok_or_else(|| stale_element(id))
 }
 
-/// 一个应用等待 AX 回应的最长时间，避免卡在没有响应的应用上。
+/// 本进程每次 AX 调用等应用回应的最长时间，避免卡在没有响应的应用上。
 const MESSAGING_TIMEOUT: f32 = 2.0;
+
+/// 把 `MESSAGING_TIMEOUT` 设在系统级元素上：只有这样才对本进程的所有元素生效。
+fn limit_messaging() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: 系统级元素按 Create 规则持有。
+        if let Some(system) = Cf::own(unsafe { AXUIElementCreateSystemWide() }) {
+            // SAFETY: system 是 AXUIElement。
+            unsafe { AXUIElementSetMessagingTimeout(system.0, MESSAGING_TIMEOUT) };
+        }
+    });
+}
 /// 元素的 `value` 最多保留这么多字符（文本区可能是整篇文档）。
 const MAX_VALUE_CHARS: usize = 2000;
 
@@ -413,8 +429,6 @@ pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
     let Some(app) = target else { return Ok(snapshot) };
     // SAFETY: 为 pid 创建应用元素，按 Create 规则持有。
     let root = Cf::own(unsafe { AXUIElementCreateApplication(app.pid as i32) }).ok_or_else(|| io::Error::other("创建应用元素失败"))?;
-    // SAFETY: root 是 AXUIElement。
-    unsafe { AXUIElementSetMessagingTimeout(root.0, MESSAGING_TIMEOUT) };
     let names: Vec<Cf> = ATTRIBUTES.iter().map(|n| Cf::str(n)).collect();
     let attributes = Cf::array(&names.iter().collect::<Vec<_>>());
     let generation = cache.generation;

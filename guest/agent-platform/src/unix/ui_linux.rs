@@ -44,15 +44,7 @@ pub fn prepare_ui_input() -> io::Result<()> {
 
 pub fn ui_screenshot() -> io::Result<Vec<u8>> {
     let frame = drm::capture()?;
-    let mut png = Vec::new();
-    let mut encoder = png::Encoder::new(&mut png, frame.width, frame.height);
-    encoder.set_color(png::ColorType::Rgb);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(png::Compression::Fast);
-    let mut writer = encoder.write_header().map_err(io::Error::other)?;
-    writer.write_image_data(&frame.rgb).map_err(io::Error::other)?;
-    writer.finish().map_err(io::Error::other)?;
-    Ok(png)
+    crate::encode_png(frame.width, frame.height, &frame.rgb)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -116,10 +108,16 @@ fn helper(request: &HelperRequest) -> io::Result<HelperReply> {
         .spawn()?;
     let mut line = serde_json::to_vec(request).map_err(io::Error::other)?;
     line.push(b'\n');
-    child.stdin.take().expect("piped").write_all(&line)?;
+    // 读写出错也要等子进程退出，不留僵尸进程。
     let mut out = Vec::new();
-    child.stdout.take().expect("piped").read_to_end(&mut out)?;
+    let exchanged = child
+        .stdin
+        .take()
+        .expect("piped")
+        .write_all(&line)
+        .and_then(|_| child.stdout.take().expect("piped").read_to_end(&mut out));
     let status = child.wait()?;
+    exchanged?;
     let reply: HelperReply = serde_json::from_slice(&out)
         .map_err(|_| io::Error::other(format!("无障碍查询子进程异常退出（{status}）")))?;
     match reply.error {

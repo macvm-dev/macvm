@@ -22,23 +22,15 @@ static BOOL debug_enabled(void) {
     } \
 } while (0)
 
-/// 宿主剪贴板与各 SPICE 会话之间只传文本。CocoaSpice 在 glib 线程上调用这些方法，NSPasteboard 可在任意线程使用。
+/// 宿主剪贴板与一个 SPICE 会话之间只传文本，每个会话一个。CocoaSpice 在 glib 线程上调用这些方法，NSPasteboard 可在任意线程使用。
 @interface MacVMPasteboard : NSObject <CSPasteboardDelegate>
-+ (instancetype)shared;
-/// 宿主剪贴板里有文本、且自上次同步后变过（`force` 时不论变没变）时，通知各会话交给客户机。
+/// 宿主剪贴板里有文本、且自本会话上次同步后变过（`force` 时不论变没变）时，通知各会话交给客户机。
 - (void)offer:(BOOL)force;
 @end
 
 @implementation MacVMPasteboard {
-    /// 上次交给客户机或从客户机写入时宿主剪贴板的 changeCount。
+    /// 上次交给本会话的客户机或从它写入时宿主剪贴板的 changeCount。
     NSInteger _syncedChangeCount;
-}
-
-+ (instancetype)shared {
-    static MacVMPasteboard *shared;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ shared = [[MacVMPasteboard alloc] init]; });
-    return shared;
 }
 
 - (instancetype)init {
@@ -101,6 +93,8 @@ static BOOL debug_enabled(void) {
 
 @implementation MacVMSpiceView {
     CSConnection *_connection;
+    /// 会话只弱引用剪贴板代理，由视图持有。
+    MacVMPasteboard *_pasteboard;
     CSMetalRenderer *_renderer;
     CSDisplay *_display;
     CSInput *_input;
@@ -143,7 +137,8 @@ static BOOL debug_enabled(void) {
     _connection = [[CSConnection alloc] initWithUnixSocketFile:socket];
     _connection.delegate = self;
     _connection.audioEnabled = NO;
-    _connection.session.pasteboardDelegate = MacVMPasteboard.shared;
+    _pasteboard = [[MacVMPasteboard alloc] init];
+    _connection.session.pasteboardDelegate = _pasteboard;
     // spice-gtk 只在有 EGL 时默认声明能收 GL scanout；不声明，服务端会改走视频编码（这里没有编码器）而不共享 IOSurface。
     SpiceSession *session = ((SpiceSession *(*)(id, SEL))objc_msgSend)(_connection, NSSelectorFromString(@"spiceSession"));
     g_object_set(session, "gl-scanout", TRUE, NULL);
@@ -226,7 +221,7 @@ static BOOL debug_enabled(void) {
 }
 
 - (void)offerPasteboard {
-    [MacVMPasteboard.shared offer:NO];
+    [_pasteboard offer:NO];
 }
 
 // 全屏时系统可能让画面跳过合成器直接上屏，不等垂直同步就会撕裂。
@@ -413,7 +408,8 @@ static BOOL debug_enabled(void) {
 
 // 客户机代理（重新）连上时它的剪贴板是空的，宿主剪贴板没变也要给一次。
 - (void)spiceAgentConnected:(CSConnection *)connection supportingFeatures:(CSConnectionAgentFeature)features {
-    dispatch_async(dispatch_get_main_queue(), ^{ [MacVMPasteboard.shared offer:YES]; });
+    MacVMPasteboard *pasteboard = _pasteboard;
+    dispatch_async(dispatch_get_main_queue(), ^{ [pasteboard offer:YES]; });
 }
 - (void)spiceAgentDisconnected:(CSConnection *)connection {}
 - (void)spiceForwardedPortOpened:(CSConnection *)connection port:(CSPort *)port {}

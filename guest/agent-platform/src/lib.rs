@@ -79,6 +79,20 @@ pub struct SnapshotOptions<'a> {
 /// 一次快照遍历的最长时间：应用卡住时每次查询都要等到超时，到时就交出已遍历的部分并标为不完整。
 pub(crate) const SNAPSHOT_BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
 
+/// 自上而下逐行的 8 位 RGB 像素编码成 PNG。
+#[cfg(any(target_os = "linux", windows))]
+pub(crate) fn encode_png(width: u32, height: u32, rgb: &[u8]) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::Fast);
+    let mut writer = encoder.write_header().map_err(io::Error::other)?;
+    writer.write_image_data(rgb).map_err(io::Error::other)?;
+    writer.finish().map_err(io::Error::other)?;
+    Ok(out)
+}
+
 /// 元素编号不在最近一次快照里。
 pub(crate) fn stale_element(id: &str) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, format!("元素 {id} 不在最近一次快照里，重新快照后再试"))

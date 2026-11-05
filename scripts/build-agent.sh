@@ -19,7 +19,7 @@ PATH="$TOOLCHAIN_BIN:${CARGO_HOME:-$HOME/.cargo}/bin:$PATH" cargo-xwin xwin buil
 
 mkdir -p "$out"
 # macOS 版装成 App 包：客户机「登录项」里按包名显示为 MacVM Agent，不显示签名的开发者名。
-# 按 SIGN_IDENTITY 签好整个包（默认 ad-hoc），scripts/bundle-app.sh 组装 App 时用 App 的身份重签。
+# 按 SIGN_IDENTITY 签好整个包（默认 ad-hoc），组装 App 时再用 App 的签名身份重签。
 app="$out/MacVM Agent.app"
 rm -rf "$app" "$out/macvm-agent-darwin"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
