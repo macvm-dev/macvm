@@ -46,13 +46,20 @@ struct MacVMApp: App {
                 .environment(model)
         }
 
-        // 有虚拟机在下载或创建、安装时换个图标，菜单没打开也能看出来。
-        MenuBarExtra("MacVM", systemImage: model.isDownloading ? "desktopcomputer.and.arrow.down"
-                        : model.creatingNames.isEmpty ? "desktopcomputer" : "gearshape.2",
-                     isInserted: $showsMenuBarExtra) {
+        MenuBarExtra(isInserted: $showsMenuBarExtra) {
             StatusMenu()
                 .environment(model)
+        } label: {
+            Image(nsImage: menuBarIcon.image)
+                .renderingMode(.template)
+                .accessibilityLabel(menuBarIcon.label)
+                .help(menuBarIcon.label)
         }
         .menuBarExtraStyle(.window)
+    }
+
+    private var menuBarIcon: MenuBarIcon {
+        if model.isDownloading { return .downloading }
+        return model.creatingNames.isEmpty ? .idle : .working
     }
 }
