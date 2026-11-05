@@ -88,6 +88,9 @@ fn parse_args() -> Config {
             // 代理以图形会话用户身份运行的无障碍查询：标准输入一行请求，标准输出一行结果。
             #[cfg(target_os = "linux")]
             "--ui-helper" => std::process::exit(platform::run_ui_helper()),
+            // 在新进程里查一项 TCC 授权，结果用退出码表示。
+            #[cfg(target_os = "macos")]
+            platform::UI_GRANT_ARG => std::process::exit(platform::run_ui_grant_check(&args.next().unwrap_or_default())),
             "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);

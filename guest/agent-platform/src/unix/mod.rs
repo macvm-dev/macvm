@@ -22,4 +22,4 @@ pub use system::*;
 #[cfg(target_os = "linux")]
 pub use ui_linux::{prepare_ui_input, run_ui_helper, ui_action, ui_element_bounds, ui_input, ui_screenshot, ui_snapshot};
 #[cfg(target_os = "macos")]
-pub use ui_macos::{ui_action, ui_element_bounds, ui_input, ui_screenshot, ui_snapshot};
+pub use ui_macos::{UI_GRANT_ARG, run_ui_grant_check, ui_action, ui_element_bounds, ui_input, ui_screenshot, ui_snapshot};

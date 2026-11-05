@@ -8,8 +8,9 @@ use std::ffi::{c_char, c_void};
 use std::io;
 use std::process::Command;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 type CFTypeRef = *const c_void;
 type CFIndex = isize;
@@ -97,9 +98,18 @@ unsafe extern "C" {
     fn AXValueGetValue(value: CFTypeRef, kind: u32, out: *mut c_void) -> u8;
 }
 
+#[link(name = "IOKit", kind = "framework")]
+unsafe extern "C" {
+    fn IOPMAssertionDeclareUserActivity(name: CFTypeRef, kind: u32, id: *mut u32) -> i32;
+}
+
+/// `kIOPMUserActiveLocal`：本机用户在操作。
+const USER_ACTIVE_LOCAL: u32 = 0;
+
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGMainDisplayID() -> u32;
+    fn CGDisplayIsAsleep(display: u32) -> u32;
     fn CGDisplayBounds(display: u32) -> CGRect;
     fn CGDisplayCopyDisplayMode(display: u32) -> CFTypeRef;
     fn CGDisplayModeGetPixelWidth(mode: CFTypeRef) -> usize;
@@ -110,6 +120,7 @@ unsafe extern "C" {
     fn CGEventPost(tap: u32, event: CFTypeRef);
     fn CGEventSetIntegerValueField(event: CFTypeRef, field: u32, value: i64);
     fn CGEventSetFlags(event: CFTypeRef, flags: u64);
+    fn CGEventSetType(event: CFTypeRef, kind: u32);
     fn CGEventKeyboardSetUnicodeString(event: CFTypeRef, len: usize, chars: *const u16);
     fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> CFTypeRef;
     static kCGWindowOwnerPID: CFTypeRef;
@@ -135,6 +146,8 @@ const AX_ERROR_NO_VALUE: AXError = -25212;
 const WINDOW_LIST_ON_SCREEN: u32 = 1;
 const WINDOW_LIST_EXCLUDE_DESKTOP: u32 = 1 << 4;
 const HID_EVENT_TAP: u32 = 0;
+/// `kCGEventFlagsChanged`：真实键盘按放修饰键时发的事件类型。
+const EVENT_FLAGS_CHANGED: u32 = 12;
 const SCROLL_UNIT_LINE: u32 = 1;
 const MOUSE_EVENT_CLICK_STATE: u32 = 1;
 
@@ -257,28 +270,143 @@ fn present(cf: CFTypeRef) -> Option<CFTypeRef> {
 }
 
 fn permission_error() -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, "MacVM Agent 没有辅助功能权限：在客户机「系统设置 › 隐私与安全性 › 辅助功能」里允许 MacVM Agent 后重试")
+    Grant::Accessibility.denied()
 }
 
-/// 检查辅助功能授权；没有时让系统弹出授权提示。
-fn require_trust() -> io::Result<()> {
-    // SAFETY: 用系统提供的键与 kCFBooleanTrue 建一个字典传给 AXIsProcessTrustedWithOptions。
-    let trusted = unsafe {
-        let keys = [kAXTrustedCheckOptionPrompt];
-        let values = [kCFBooleanTrue];
-        let options = Cf::own(CFDictionaryCreate(
-            std::ptr::null(),
-            keys.as_ptr(),
-            values.as_ptr(),
-            1,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks,
-        ));
-        AXIsProcessTrustedWithOptions(options.as_ref().map_or(std::ptr::null(), |o| o.0)) != 0
-    };
-    if !trusted {
-        return Err(permission_error());
+/// 代理用到的两项 TCC 授权。
+#[derive(Clone, Copy)]
+enum Grant {
+    Accessibility,
+    ScreenCapture,
+}
+
+impl Grant {
+    const ALL: [Grant; 2] = [Grant::Accessibility, Grant::ScreenCapture];
+
+    fn name(self) -> &'static str {
+        match self {
+            Grant::Accessibility => "accessibility",
+            Grant::ScreenCapture => "screen-capture",
+        }
     }
+
+    /// 本进程眼里有没有这项授权；`prompt` 时没有就让系统弹出授权提示。
+    fn held(self, prompt: bool) -> bool {
+        match self {
+            // SAFETY: 用系统提供的键与 kCFBooleanTrue 建一个字典传给 AXIsProcessTrustedWithOptions。
+            Grant::Accessibility => unsafe {
+                if !prompt {
+                    return AXIsProcessTrustedWithOptions(std::ptr::null()) != 0;
+                }
+                let keys = [kAXTrustedCheckOptionPrompt];
+                let values = [kCFBooleanTrue];
+                let options = Cf::own(CFDictionaryCreate(
+                    std::ptr::null(),
+                    keys.as_ptr(),
+                    values.as_ptr(),
+                    1,
+                    &kCFTypeDictionaryKeyCallBacks,
+                    &kCFTypeDictionaryValueCallBacks,
+                ));
+                AXIsProcessTrustedWithOptions(options.as_ref().map_or(std::ptr::null(), |o| o.0)) != 0
+            },
+            // SAFETY: 查询与申请屏幕录制授权，申请会在客户机里弹出系统提示。
+            Grant::ScreenCapture => unsafe { CGPreflightScreenCaptureAccess() || (prompt && CGRequestScreenCaptureAccess()) },
+        }
+    }
+
+    fn denied(self) -> io::Error {
+        let message = match self {
+            Grant::Accessibility => "MacVM Agent 没有辅助功能权限：在客户机「系统设置 › 隐私与安全性 › 辅助功能」里允许 MacVM Agent 后重试",
+            Grant::ScreenCapture => "MacVM Agent 没有屏幕录制权限：在客户机「系统设置 › 隐私与安全性 › 屏幕与系统录音」里允许 MacVM Agent 后重试",
+        };
+        io::Error::new(io::ErrorKind::PermissionDenied, message)
+    }
+}
+
+/// 每项授权在本进程里只弹一次提示：系统授权提示框会叠在前台应用上。
+static PROMPTED: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
+
+/// 检查授权，没有时弹一次授权提示。
+///
+/// 进程启动后才授予的权限，本进程一直看不到（系统设置里点「退出并重新打开」也只发退出用的 Apple Event，代理不处理）。
+/// 所以本进程看不到时再起一个新进程查：新进程看得到，就回一个可重试的错误并退出，由 launchd 的 KeepAlive 拉起新代理。
+/// 退出会断开当时正在进行的 exec 与端口转发。
+fn require(grant: Grant) -> io::Result<()> {
+    if grant.held(false) {
+        return Ok(());
+    }
+    if held_in_fresh_process(grant) {
+        thread::spawn(|| {
+            thread::sleep(RESTART_DELAY);
+            std::process::exit(0);
+        });
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "授权已生效，正在重启以载入授权，几秒后重试"));
+    }
+    if !PROMPTED[grant as usize].swap(true, Ordering::Relaxed) {
+        grant.held(true);
+    }
+    Err(grant.denied())
+}
+
+/// 回完错误再退出，留给响应写出去的时间。
+const RESTART_DELAY: Duration = Duration::from_millis(500);
+
+fn held_in_fresh_process(grant: Grant) -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    Command::new(exe).args([UI_GRANT_ARG, grant.name()]).status().is_ok_and(|s| s.success())
+}
+
+/// `held_in_fresh_process` 起子进程用的参数，后跟 `Grant::name`。
+pub const UI_GRANT_ARG: &str = "--ui-grant";
+
+/// 子进程入口：有这项授权时退出码 0，没有时 1，参数不认识时 2。
+pub fn run_ui_grant_check(name: &str) -> i32 {
+    match Grant::ALL.into_iter().find(|g| g.name() == name) {
+        Some(grant) => i32::from(!grant.held(false)),
+        None => 2,
+    }
+}
+
+/// 算一次用户活动，显示器睡着时等它醒来：注入的 HID 事件不算用户活动，叫不醒按节能设置睡下的显示器，
+/// 也不推迟息屏。
+fn wake_display() {
+    // SAFETY: 只查询主显示器状态。
+    let asleep = || unsafe { CGDisplayIsAsleep(CGMainDisplayID()) } != 0;
+    // 声明用户活动后显示器立即报醒，画面却还没亮：要在声明之前看它睡没睡。
+    let was_asleep = asleep();
+    {
+        let mut id = ACTIVITY.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: 名字是有效的 CFString，id 是上次返回的断言或 0。
+        unsafe { IOPMAssertionDeclareUserActivity(Cf::str("MacVM Agent UI").0, USER_ACTIVE_LOCAL, &mut *id) };
+    }
+    let mut woke = LAST_WAKE.lock().unwrap_or_else(|e| e.into_inner());
+    if was_asleep {
+        let deadline = Instant::now() + WAKE_TIMEOUT;
+        while asleep() && Instant::now() < deadline {
+            thread::sleep(WAKE_POLL);
+        }
+        *woke = Some(Instant::now());
+    }
+    // 亮屏后窗口要从壁纸底下淡回来，这期间截到的是半透明的叠影。
+    if let Some(remaining) = woke.and_then(|at| WAKE_SETTLE.checked_sub(at.elapsed())) {
+        thread::sleep(remaining);
+    }
+}
+
+/// 用户活动断言：每次把上次返回的 ID 传回去续期，系统按显示器休眠设置让它过期，不释放（释放即撤销唤醒）。
+static ACTIVITY: Mutex<u32> = Mutex::new(0);
+
+/// 最近一次等到显示器醒来的时刻。唤醒它的请求（如按键）返回后紧跟的截屏也要等过渡结束。
+static LAST_WAKE: Mutex<Option<Instant>> = Mutex::new(None);
+
+const WAKE_TIMEOUT: Duration = Duration::from_secs(3);
+const WAKE_POLL: Duration = Duration::from_millis(50);
+const WAKE_SETTLE: Duration = Duration::from_secs(2);
+
+/// 检查辅助功能授权。
+fn require_trust() -> io::Result<()> {
+    require(Grant::Accessibility)?;
     limit_messaging();
     Ok(())
 }
@@ -412,9 +540,11 @@ const SELECT_ROLES: [&str; 3] = ["AXRow", "AXCell", "AXTab"];
 
 pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
     require_trust()?;
+    wake_display();
     let screen = Screen::main();
-    let frontmost = frontmost_pid();
     let mut apps = running_apps();
+    // 焦点在系统授权提示一类窗口上时读不到焦点应用，这时取最前面那个窗口的属主。
+    let frontmost = frontmost_pid().or_else(|| apps.first().map(|a| a.pid));
     for app in &mut apps {
         app.frontmost = Some(app.pid) == frontmost;
     }
@@ -433,7 +563,7 @@ pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
     let attributes = Cf::array(&names.iter().collect::<Vec<_>>());
     let generation = cache.generation;
     let mut stack = vec![(root, 0u32)];
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     while let Some((element, depth)) = stack.pop() {
         if snapshot.nodes.len() >= options.max_nodes as usize || started.elapsed() > crate::SNAPSHOT_BUDGET {
             snapshot.truncated = true;
@@ -450,7 +580,9 @@ pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
         let attr = |name: &str| ATTRIBUTES.iter().position(|a| *a == name).and_then(|i| values.get(i).copied()).and_then(present);
         let id = format!("{generation}.{}", cache.elements.len());
         let node = describe(&element, &id, depth, &attr, &screen);
-        let children = attr("AXChildren").map(items).unwrap_or_default();
+        // 关着的菜单不展开：菜单栏下的整棵菜单树都在，展开会占满节点上限；要看菜单项先按开菜单再快照。
+        let closed_menu = node.role == "AXMenu" && node.states.contains(&UiState::Offscreen);
+        let children = if closed_menu { Vec::new() } else { attr("AXChildren").map(items).unwrap_or_default() };
         if !children.is_empty() {
             if depth >= options.max_depth {
                 snapshot.truncated = true;
@@ -625,14 +757,31 @@ fn bundle_id(pid: u32) -> Option<String> {
     }
 }
 
-/// 按 pid、bundle id 或名称（不区分大小写）找应用；pid 不必有窗口。
+/// 按 pid、bundle id 或名称（不区分大小写）找应用；pid 与进程名不必有窗口。
 fn find_app(apps: &[UiApp], query: &str) -> io::Result<UiApp> {
     if let Ok(pid) = query.parse::<u32>() {
         return Ok(apps.iter().find(|a| a.pid == pid).cloned().unwrap_or_else(|| describe_app(pid, false)));
     }
     let found = apps.iter().find(|a| a.bundle.as_deref().is_some_and(|b| b.eq_ignore_ascii_case(query)) || a.name.eq_ignore_ascii_case(query));
-    found.cloned().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("没有找到带窗口的应用 {query}")))
+    // 系统授权提示、菜单栏应用的窗口不在普通层，`apps` 里没有它们，按进程名再找一遍。
+    found.cloned().or_else(|| find_process(query)).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("没有找到应用 {query}")))
 }
+
+/// 可执行文件名为 `query`（不区分大小写）的进程，有多个时取 pid 最小的。
+fn find_process(query: &str) -> Option<UiApp> {
+    let mut pids = vec![0i32; MAX_PROCESSES];
+    // SAFETY: 缓冲区按字节数传入，返回写入的 pid 个数。
+    let n = unsafe { libc::proc_listallpids(pids.as_mut_ptr() as *mut c_void, (pids.len() * size_of::<i32>()) as i32) };
+    pids.truncate(n.max(0) as usize);
+    pids.sort_unstable();
+    let pid = pids.into_iter().filter(|&p| p > 0).find(|&p| {
+        process_path(p as u32).is_some_and(|path| path.rsplit('/').next().is_some_and(|name| name.eq_ignore_ascii_case(query)))
+    })?;
+    Some(describe_app(pid as u32, false))
+}
+
+/// `find_process` 最多看这么多个进程。
+const MAX_PROCESSES: usize = 8192;
 
 pub fn ui_action(id: &str, action: ElementAction, value: Option<&str>) -> io::Result<()> {
     require_trust()?;
@@ -680,6 +829,7 @@ pub fn ui_element_bounds(id: &str) -> io::Result<[i32; 4]> {
 
 pub fn ui_input(events: &[InputEvent]) -> io::Result<()> {
     require_trust()?;
+    wake_display();
     input::play(&mut Events { screen: Screen::main(), held: None, modifiers: 0 }, events)
 }
 
@@ -767,6 +917,10 @@ impl Injector for Events {
         let event = unsafe { CGEventCreateKeyboardEvent(std::ptr::null(), code, down) };
         if !event.is_null() {
             unsafe { CGEventSetFlags(event, self.modifiers) };
+            // 修饰键按成 keyDown 时，文本框把它当一次输入：先对前一个词做自动更正，紧跟的快捷键随之失效。
+            if flag != 0 {
+                unsafe { CGEventSetType(event, EVENT_FLAGS_CHANGED) };
+            }
         }
         self.post(event)
     }
@@ -822,14 +976,8 @@ fn keycode(key: Key) -> Option<u16> {
 }
 
 pub fn ui_screenshot() -> io::Result<Vec<u8>> {
-    // SAFETY: 查询与申请屏幕录制授权，申请会在客户机里弹出系统提示。
-    if !unsafe { CGPreflightScreenCaptureAccess() } {
-        unsafe { CGRequestScreenCaptureAccess() };
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "MacVM Agent 没有屏幕录制权限：在客户机「系统设置 › 隐私与安全性 › 屏幕与系统录音」里允许 MacVM Agent 后重试",
-        ));
-    }
+    require(Grant::ScreenCapture)?;
+    wake_display();
     let path = std::env::temp_dir().join(format!("macvm-screenshot-{}-{:?}.png", std::process::id(), thread::current().id()));
     let status = Command::new("/usr/sbin/screencapture").args(["-x", "-m", "-t", "png"]).arg(&path).status()?;
     let data = std::fs::read(&path);
