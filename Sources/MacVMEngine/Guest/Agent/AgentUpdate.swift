@@ -1,5 +1,5 @@
 import CryptoKit
-public import Foundation
+import Foundation
 public import MacVMModel
 import Synchronization
 

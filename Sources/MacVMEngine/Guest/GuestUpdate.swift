@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import MacVMModel
 
 /// 把运行中的虚拟机里随 App 分发、或由安装流程做好的东西更新到 App 当前的版本：

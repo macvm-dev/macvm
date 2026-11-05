@@ -185,8 +185,8 @@ final class AppModel {
         Task {
             do {
                 let result = try await GuestUpdate.apply(bundle) { step in
-                    Task { @MainActor [weak self] in
-                        if case .updating = self?.guestUpdates[name] { self?.guestUpdates[name] = .updating(step) }
+                    Task { @MainActor in
+                        if case .updating = self.guestUpdates[name] { self.guestUpdates[name] = .updating(step) }
                     }
                 }
                 guard case .updating = guestUpdates[name] else { return }

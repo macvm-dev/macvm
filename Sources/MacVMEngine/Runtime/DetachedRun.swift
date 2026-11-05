@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 public import MacVMModel
 
 /// 在独立的后台进程里运行虚拟机：派生 `macvm run <名字> --detached`，与派生它的终端或 App 脱离，它们退出后虚拟机照样运行。
