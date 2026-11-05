@@ -44,7 +44,7 @@ public enum AgentUpdate {
 
     private static let bundledHashes = Mutex<[String: String]>([:])
 
-    /// 随程序分发的代理可执行文件的 SHA-256；macOS 版取代理 App 包里的可执行文件。按文件路径与修改时间缓存。
+    /// 随程序分发的代理可执行文件的 `fingerprint`；macOS 版取代理 App 包里的可执行文件。按文件路径与修改时间缓存。
     static func bundledSHA256(for os: GuestOS) -> String? {
         guard var url = AgentInstaller.binary(for: os) else { return nil }
         if os == .macOS { url = url.appending(path: "Contents/MacOS/macvm-agent") }
@@ -52,9 +52,45 @@ public enum AgentUpdate {
         let key = "\(url.path)@\(modified?.timeIntervalSince1970 ?? 0)"
         if let cached = bundledHashes.withLock({ $0[key] }) { return cached }
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let hash = fingerprint(data)
         bundledHashes.withLock { $0[key] = hash }
         return hash
+    }
+
+    /// 可执行文件的指纹：带代码签名的 64 位 Mach-O 取签名里主 CodeDirectory 的 SHA-256，签名时间等不在其中，
+    /// 同样的代码换个时间重签指纹不变；其余取整个文件的 SHA-256。
+    static func fingerprint(_ data: Data) -> String {
+        let bytes = [UInt8](data)
+        let digest = SHA256.hash(data: codeDirectory(bytes).map { Data(bytes[$0]) } ?? data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// `LC_CODE_SIGNATURE` 指向的签名 SuperBlob 里 0 号槽的 CodeDirectory 的字节范围；不是带签名的 64 位小端 Mach-O 时为 nil。
+    static func codeDirectory(_ bytes: [UInt8]) -> Range<Int>? {
+        func word(_ at: Int, bigEndian: Bool) -> Int? {
+            guard at >= 0, at + 4 <= bytes.count else { return nil }
+            let b = bytes[at..<at + 4].map(Int.init)
+            return bigEndian ? b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3] : b[3] << 24 | b[2] << 16 | b[1] << 8 | b[0]
+        }
+        guard word(0, bigEndian: false) == 0xfeed_facf, let count = word(16, bigEndian: false) else { return nil }
+        var at = 32
+        for _ in 0..<count {
+            guard let cmd = word(at, bigEndian: false), let size = word(at + 4, bigEndian: false) else { return nil }
+            if cmd == 0x1d {
+                guard let offset = word(at + 8, bigEndian: false), let length = word(at + 12, bigEndian: false),
+                      offset + length <= bytes.count, word(offset, bigEndian: true) == 0xfade_0cc0,
+                      let slots = word(offset + 8, bigEndian: true) else { return nil }
+                for i in 0..<slots where word(offset + 12 + i * 8, bigEndian: true) == 0 {
+                    guard let blob = word(offset + 16 + i * 8, bigEndian: true).map({ offset + $0 }),
+                          word(blob, bigEndian: true) == 0xfade_0c02, let size = word(blob + 4, bigEndian: true),
+                          blob + size <= offset + length else { return nil }
+                    return blob..<blob + size
+                }
+                return nil
+            }
+            at += size
+        }
+        return nil
     }
 
     /// 把运行中的 `bundle` 里的代理换成随程序分发的，等新代理上线。

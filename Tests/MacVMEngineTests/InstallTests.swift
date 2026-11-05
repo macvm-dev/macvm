@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import MacVMEngine
 import MacVMModel
@@ -371,6 +372,18 @@ struct WindowsUnattendTests {
         let encoded = try #require(command.split(separator: " ").last)
         let data = try #require(Data(base64Encoded: String(encoded)))
         #expect(String(data: data, encoding: .utf16LittleEndian) == script)
+    }
+
+    /// 只有 `LC_CODE_SIGNATURE` 的最小 Mach-O：SuperBlob 里一个 CodeDirectory、一个签名 blob。
+    @Test func agentFingerprintIgnoresSignatureBlob() throws {
+        let hex = "cffaedfe0c0000010000000002000000010000001000000000000000000000001d000000100000003000000038000000fade0cc00000003800000002000000000000001c000100000000002cfade0c0200000010636f646564697221fade0b010000000c73696731"
+        var bytes = stride(from: 0, to: hex.count, by: 2).map {
+            UInt8(hex[hex.index(hex.startIndex, offsetBy: $0)..<hex.index(hex.startIndex, offsetBy: $0 + 2)], radix: 16)!
+        }
+        #expect(AgentUpdate.fingerprint(Data(bytes)) == "d6ede52a4223af0f0f79c79e5673d492d23dad44b683a0fb53966cd4e1ad9725")
+        bytes[bytes.count - 1] ^= 0xff
+        #expect(AgentUpdate.fingerprint(Data(bytes)) == "d6ede52a4223af0f0f79c79e5673d492d23dad44b683a0fb53966cd4e1ad9725")
+        #expect(AgentUpdate.fingerprint(Data("plain".utf8)) == SHA256.hash(data: Data("plain".utf8)).map { String(format: "%02x", $0) }.joined())
     }
 
     @Test func agentUpdateScripts() throws {

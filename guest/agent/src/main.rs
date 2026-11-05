@@ -355,15 +355,44 @@ fn info() -> Info {
     }
 }
 
-/// 本进程可执行文件的 SHA-256，`main` 启动时算出后缓存：更新时文件会先于进程被换掉，晚算会报出新文件的值。
+/// 本进程可执行文件的 `fingerprint`，`main` 启动时算出后缓存：更新时文件会先于进程被换掉，晚算会报出新文件的值。
 fn exe_sha256() -> Option<String> {
     static HASH: OnceLock<Option<String>> = OnceLock::new();
-    HASH.get_or_init(|| {
-        use sha2::{Digest, Sha256};
-        let bytes = std::fs::read(std::env::current_exe().ok()?).ok()?;
-        Some(proto::auth::hex(&Sha256::digest(bytes)))
-    })
-    .clone()
+    HASH.get_or_init(|| Some(fingerprint(&std::fs::read(std::env::current_exe().ok()?).ok()?))).clone()
+}
+
+/// 可执行文件的指纹（SHA-256 的小写十六进制）：带代码签名的 64 位 Mach-O 取签名里主 CodeDirectory 的，
+/// 签名时间等不在其中，同样的代码换个时间重签指纹不变；其余取整个文件的。
+fn fingerprint(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    proto::auth::hex(&Sha256::digest(code_directory(bytes).unwrap_or(bytes)))
+}
+
+/// `LC_CODE_SIGNATURE` 指向的签名 SuperBlob 里 0 号槽的 CodeDirectory；不是带签名的 64 位小端 Mach-O 时为 None。
+fn code_directory(bytes: &[u8]) -> Option<&[u8]> {
+    let le = |at: usize| Some(u32::from_le_bytes(bytes.get(at..at.checked_add(4)?)?.try_into().ok()?));
+    if le(0)? != 0xfeed_facf {
+        return None;
+    }
+    let mut at = 32usize;
+    for _ in 0..le(16)? {
+        let (cmd, size) = (le(at)?, le(at + 4)? as usize);
+        if cmd == 0x1d {
+            let offset = le(at + 8)? as usize;
+            let signature = bytes.get(offset..offset.checked_add(le(at + 12)? as usize)?)?;
+            let be = |at: usize| Some(u32::from_be_bytes(signature.get(at..at.checked_add(4)?)?.try_into().ok()?) as usize);
+            if be(0)? != 0xfade_0cc0 {
+                return None;
+            }
+            let blob = (0..be(8)?).find_map(|i| (be(12 + i * 8)? == 0).then(|| be(16 + i * 8)).flatten())?;
+            if be(blob)? != 0xfade_0c02 {
+                return None;
+            }
+            return signature.get(blob..blob.checked_add(be(blob + 4)?)?);
+        }
+        at = at.checked_add(size)?;
+    }
+    None
 }
 
 /// 首个形状之前先回 ok；平台不支持时回错误。之后每行一个 `CursorShape`，宿主断开即结束。
@@ -603,6 +632,23 @@ fn pump_output(mut source: File, kind: FrameKind, writer: Arc<Mutex<Conn>>) -> t
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 只有 `LC_CODE_SIGNATURE` 的最小 Mach-O：SuperBlob 里一个 CodeDirectory、一个签名 blob。
+    const SIGNED_MACHO: &str = "cffaedfe0c0000010000000002000000010000001000000000000000000000001d000000100000003000000038000000fade0cc00000003800000002000000000000001c000100000000002cfade0c0200000010636f646564697221fade0b010000000c73696731";
+
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+    }
+
+    #[test]
+    fn fingerprint_ignores_signature_blob() {
+        let mut bytes = unhex(SIGNED_MACHO);
+        assert_eq!(fingerprint(&bytes), "d6ede52a4223af0f0f79c79e5673d492d23dad44b683a0fb53966cd4e1ad9725");
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0xff;
+        assert_eq!(fingerprint(&bytes), "d6ede52a4223af0f0f79c79e5673d492d23dad44b683a0fb53966cd4e1ad9725");
+        assert_eq!(fingerprint(b"plain"), proto::auth::hex(&<sha2::Sha256 as sha2::Digest>::digest(b"plain")));
+    }
 
     #[test]
     fn admission_policy() {
