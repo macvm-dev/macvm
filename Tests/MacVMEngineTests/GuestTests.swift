@@ -87,6 +87,7 @@ struct AgentRequestTests {
         }
         #expect(responses.contains { $0.size == 48213 })
         #expect(responses.contains { $0.info?.features == [AgentProtocol.featureUI] })
+        #expect(responses.contains { $0.info?.exeSHA256?.count == 64 })
         let denied = try #require(responses.first { $0.code == "permission" })
         #expect(throws: MacVMError.permissionDenied(denied.error ?? "")) { try denied.checked() }
     }

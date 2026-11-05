@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,7 @@ struct Config {
 
 fn main() {
     let config = parse_args();
+    exe_sha256();
     let listener = match platform::Listener::bind(config.port) {
         Ok(l) => l,
         Err(e) => {
@@ -350,7 +351,19 @@ fn info() -> Info {
         mem_available,
         uptime_ms: platform::uptime_ms(),
         features: vec![proto::FEATURE_UI.to_string()],
+        exe_sha256: exe_sha256(),
     }
+}
+
+/// 本进程可执行文件的 SHA-256，`main` 启动时算出后缓存：更新时文件会先于进程被换掉，晚算会报出新文件的值。
+fn exe_sha256() -> Option<String> {
+    static HASH: OnceLock<Option<String>> = OnceLock::new();
+    HASH.get_or_init(|| {
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(std::env::current_exe().ok()?).ok()?;
+        Some(proto::auth::hex(&Sha256::digest(bytes)))
+    })
+    .clone()
 }
 
 /// 首个形状之前先回 ok；平台不支持时回错误。之后每行一个 `CursorShape`，宿主断开即结束。

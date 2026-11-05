@@ -373,6 +373,46 @@ struct WindowsUnattendTests {
         #expect(String(data: data, encoding: .utf16LittleEndian) == script)
     }
 
+    @Test func agentUpdateScripts() throws {
+        let linux = AgentUpdate.linuxScript(user: "dev")
+        // 重启会结束整个 cgroup，必须是最后一步且不等它完成。
+        #expect(linux.split(separator: "\n").last == "systemctl restart --no-block macvm-agent")
+        #expect(linux.contains("ExecStart=\(AgentInstaller.linuxPath) --user dev"))
+
+        let mac = AgentInstaller.macOSInstallScript(user: "dev", detachOutput: true)
+        let lines = mac.split(separator: "\n").map(String.init)
+        let detach = try #require(lines.firstIndex(of: "exec >/dev/null 2>&1"))
+        let bootout = try #require(lines.firstIndex { $0.hasPrefix("launchctl bootout") })
+        #expect(detach < bootout)
+        #expect(!AgentInstaller.macOSInstallScript(user: "dev", detachOutput: false).contains("exec >/dev/null"))
+
+        let windows = AgentUpdate.windowsScript(user: "dev")
+        #expect(windows.unicodeScalars.allSatisfy { $0.isASCII })
+        // 替换脚本写成文件，放在单引号 here-string 里，结束标记必须顶格。
+        #expect(windows.contains("\n'@, [Text.Encoding]::ASCII)"))
+        #expect(windows.hasSuffix("Start-ScheduledTask -TaskName \(AgentUpdate.windowsUpdateTaskName)"))
+    }
+
+    @Test func guestMigrationsReachLatestRevision() {
+        for os in [GuestOS.linux, .macOS, .windows] {
+            let revisions = GuestMigration.all.filter { $0.os == os }.map(\.revision).sorted()
+            #expect(revisions == Array(0..<GuestRevision.latest(for: os)).map { $0 + 1 })
+        }
+        var config = VMConfig(name: "w", os: .windows, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        #expect(GuestMigration.pending(for: config).isEmpty)
+        config.guestRevision = 0
+        #expect(GuestMigration.pending(for: config).map(\.revision) == [1, 2])
+    }
+
+    @Test func legacyConfigStartsAtRevisionZero() throws {
+        let config = VMConfig(name: "w", os: .windows, cpuCount: 2, memorySize: 1 << 30, disks: [])
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any])
+        #expect(json["guestRevision"] as? Int == GuestRevision.latest(for: .windows))
+        json["guestRevision"] = nil
+        let legacy = try JSONDecoder().decode(VMConfig.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(legacy.guestRevision == 0)
+    }
+
     @Test func computerNameIsValidForWindows() {
         #expect(WindowsInstaller.computerName(for: "win_11") == "win11")
         #expect(WindowsInstaller.computerName(for: "abcdefghijklmn-foo") == "abcdefghijklmn")

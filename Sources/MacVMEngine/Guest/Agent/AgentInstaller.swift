@@ -147,43 +147,7 @@ public enum AgentInstaller {
             sudo systemctl restart macvm-agent
             """
         case .macOS:
-            let plist = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0"><dict>
-            <key>Label</key><string>\(launchAgentLabel)</string>
-            <key>ProgramArguments</key><array><string>/Users/\(user)/\(macOSAppDirectory)/\(macOSAppName)/Contents/MacOS/macvm-agent</string></array>
-            <key>AssociatedBundleIdentifiers</key><array><string>\(launchAgentLabel)</string></array>
-            <key>RunAtLoad</key><true/>
-            <key>KeepAlive</key><true/>
-            <key>ProcessType</key><string>Interactive</string>
-            </dict></plist>
-            """
-            script = """
-            set -e
-            dir="$HOME/\(macOSAppDirectory)"
-            mkdir -p "$dir" ~/Library/LaunchAgents
-            staging=$(mktemp -d "$dir/.install.XXXXXX")
-            trap 'rm -rf "$staging"' EXIT
-            tar -x -f - -C "$staging"
-            rm -rf "$dir/\(macOSAppName)"
-            mv "$staging/\(macOSAppName)" "$dir/"
-            rm -f ~/.local/bin/macvm-agent
-            /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dir/\(macOSAppName)"
-            cat > ~/Library/LaunchAgents/\(launchAgentLabel).plist <<'PLIST'
-            \(plist)
-            PLIST
-            launchctl bootout gui/$(id -u)/\(launchAgentLabel) 2>/dev/null || true
-            deadline=$(( $(date +%s) + \(macOSLoginWait) ))
-            until launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist 2>/dev/null; do
-              launchctl print gui/$(id -u)/\(launchAgentLabel) >/dev/null 2>&1 && break
-              if [ $(date +%s) -ge $deadline ]; then
-                launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist
-                exit 1
-              fi
-              sleep 2
-            done
-            """
+            script = macOSInstallScript(user: user, detachOutput: false)
         case .windows:
             // Windows 的 sshd 把命令交给 PowerShell 执行，经标准输入传二进制不可靠，改用 scp 传到用户目录。
             let staged = "macvm-agent.exe"
@@ -217,11 +181,8 @@ public enum AgentInstaller {
             tokenDelivered = true
         }
         if config.os == .macOS {
-            // App 包是目录，打成 tar 经标准输入传；不带 AppleDouble 等扩展属性文件，免得混进包里破坏签名。
-            let archive = FileManager.default.temporaryDirectory.appending(path: "macvm-agent-\(UUID().uuidString).tar")
+            let archive = try await macOSArchive(binary)
             defer { try? FileManager.default.removeItem(at: archive) }
-            try await Subprocess.run("/usr/bin/tar", ["--no-mac-metadata", "-c", "-f", archive.path,
-                                                      "-C", binary.deletingLastPathComponent().path, binary.lastPathComponent])
             try await Subprocess.run("/usr/bin/ssh", ssh + [script], stdin: archive)
             return false
         }
@@ -241,11 +202,68 @@ public enum AgentInstaller {
         return (true, gpuDriver)
     }
 
+    /// 以登录用户运行、标准输入是代理 App 包 tar 的安装脚本：换掉包，写 LaunchAgent，重新加载它。
+    /// 由旧代理执行时，重新加载会结束代理与本脚本的输出管道，`detachOutput` 让脚本此前把输出改到 /dev/null，免得写输出时被 SIGPIPE 结束。
+    static func macOSInstallScript(user: String, detachOutput: Bool) -> String {
+        let plist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict>
+        <key>Label</key><string>\(launchAgentLabel)</string>
+        <key>ProgramArguments</key><array><string>/Users/\(user)/\(macOSAppDirectory)/\(macOSAppName)/Contents/MacOS/macvm-agent</string></array>
+        <key>AssociatedBundleIdentifiers</key><array><string>\(launchAgentLabel)</string></array>
+        <key>RunAtLoad</key><true/>
+        <key>KeepAlive</key><true/>
+        <key>ProcessType</key><string>Interactive</string>
+        </dict></plist>
+        """
+        return """
+        set -e
+        dir="$HOME/\(macOSAppDirectory)"
+        mkdir -p "$dir" ~/Library/LaunchAgents
+        staging=$(mktemp -d "$dir/.install.XXXXXX")
+        trap 'rm -rf "$staging"' EXIT
+        tar -x -f - -C "$staging"
+        rm -rf "$dir/\(macOSAppName)"
+        mv "$staging/\(macOSAppName)" "$dir/"
+        rm -f ~/.local/bin/macvm-agent
+        /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dir/\(macOSAppName)"
+        cat > ~/Library/LaunchAgents/\(launchAgentLabel).plist <<'PLIST'
+        \(plist)
+        PLIST
+        \(detachOutput ? "exec >/dev/null 2>&1" : "")
+        launchctl bootout gui/$(id -u)/\(launchAgentLabel) 2>/dev/null || true
+        deadline=$(( $(date +%s) + \(macOSLoginWait) ))
+        until launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist 2>/dev/null; do
+          launchctl print gui/$(id -u)/\(launchAgentLabel) >/dev/null 2>&1 && break
+          if [ $(date +%s) -ge $deadline ]; then
+            launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/\(launchAgentLabel).plist
+            exit 1
+          fi
+          sleep 2
+        done
+        """
+    }
+
+    /// 把代理 App 包 `app` 打成临时目录里的 tar，经标准输入传进客户机；用完由调用方删除。
+    /// 不带 AppleDouble 等扩展属性文件，免得混进包里破坏签名。
+    static func macOSArchive(_ app: URL) async throws -> URL {
+        let archive = FileManager.default.temporaryDirectory.appending(path: "macvm-agent-\(UUID().uuidString).tar")
+        try await Subprocess.run("/usr/bin/tar", ["--no-mac-metadata", "-c", "-f", archive.path,
+                                                  "-C", app.deletingLastPathComponent().path, app.lastPathComponent])
+        return archive
+    }
+
     /// 多行脚本经 sshd 交给 PowerShell 时会按行拆开，编码成一条 `-EncodedCommand`（UTF-16LE 的 Base64）。
     static func encodedPowerShell(_ script: String) -> String {
+        "powershell -NoProfile -NonInteractive -EncodedCommand \(powerShellBase64(script))"
+    }
+
+    /// `-EncodedCommand` 的参数：脚本的 UTF-16LE 编码再 Base64。
+    static func powerShellBase64(_ script: String) -> String {
         var bytes = Data()
         for unit in script.utf16 { bytes.append(contentsOf: [UInt8(unit & 0xFF), UInt8(unit >> 8)]) }
-        return "powershell -NoProfile -NonInteractive -EncodedCommand \(bytes.base64EncodedString())"
+        return bytes.base64EncodedString()
     }
 
     static func sshArguments(bundle: VMBundle, user: String, macvmPath: String) -> [String] {

@@ -22,7 +22,7 @@ macvm exec dev --user root -- apt-get update  # --user 要经客户机代理（L
 
 ## 客户机代理
 
-`exec --user`、剪贴板、UI 自动化、显示尺寸等经客户机里的 macvm-agent。代理没装或版本过旧时报 `unsupported`，运行 `macvm agent install <名>` 安装或更新；`macvm agent info <名> --json` 看版本与 `features`。
+`exec --user`、剪贴板、UI 自动化、显示尺寸等经客户机里的 macvm-agent。代理没装或版本过旧时报 `unsupported`，运行 `macvm agent install <名>` 安装或更新（代理在线时经代理自身更新、不需要 SSH，代理会重启一次）；`macvm agent info <名> --json` 看版本与 `features`。`macvm update <名> --check` 列出代理与客户机设置有没有要更新的，`macvm update <名>` 经代理一并更新（不需要 SSH，代理会重启一次；`rebootRequired` 为 true 时客户机要重启才完全生效，可加 `--reboot`）。
 
 ## 状态与快照
 

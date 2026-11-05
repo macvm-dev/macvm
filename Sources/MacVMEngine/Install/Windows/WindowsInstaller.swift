@@ -10,7 +10,8 @@ public import MacVMModel
 public enum WindowsInstaller {
     public static let setupImageName = "windows-setup.img"
     public static let dataImageName = "windows-data.img"
-    /// Red Hat 签名的 virtio 驱动盘，固定版本。上游不公布 ISO 的校验和，`virtioWinSHA256` 是下载这一版后算出的，换版本时两者一起改。
+    /// Red Hat 签名的 virtio 驱动盘，固定版本。上游不公布 ISO 的校验和，`virtioWinSHA256` 是下载这一版后算出的，换版本时两者一起改，
+    /// 并加一条与 `GuestMigration.windowsVirtioDrivers` 相同的迁移，已有的虚拟机才会装上新版。
     static let virtioWinURL = URL(string: "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.302-1/virtio-win-0.1.302.iso")!
     static let virtioWinSHA256 = "303f7ae40dad495d6ae474fdc571df58958a4dbc5c37a522d80f9a203867949d"
     /// 微软的 Windows 11 ARM64 ISO 下载页；直链要在页面里选语言后由微软生成，只能在浏览器里下载。
@@ -226,16 +227,21 @@ public enum WindowsInstaller {
                 try FileManager.default.copyItem(at: root.appending(path: "sources/install.wim"), to: volume.appending(path: "install.wim"))
             }
             try await DiskMount.withMounted(virtioWin) { root in
-                for name in drivers {
-                    let source = root.appending(path: "\(name)/w11/ARM64")
-                    guard FileManager.default.fileExists(atPath: source.path) else { continue }
-                    let target = volume.appending(path: "drivers/\(name)")
-                    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-                    // 调试符号占驱动目录的大头，部署用不到。
-                    for file in try FileManager.default.contentsOfDirectory(atPath: source.path) where !file.hasSuffix(".pdb") {
-                        try FileManager.default.copyItem(at: source.appending(path: file), to: target.appending(path: file))
-                    }
-                }
+                try copyDrivers(fromVirtioWin: root, to: volume.appending(path: "drivers"))
+            }
+        }
+    }
+
+    /// 把挂载在 `root` 的 virtio-win 驱动盘里 `drivers` 的 Windows 11 ARM64 版拷到 `target` 下，每个驱动一个子目录。
+    static func copyDrivers(fromVirtioWin root: URL, to target: URL) throws {
+        for name in drivers {
+            let source = root.appending(path: "\(name)/w11/ARM64")
+            guard FileManager.default.fileExists(atPath: source.path) else { continue }
+            let directory = target.appending(path: name)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            // 调试符号占驱动目录的大头，部署用不到。
+            for file in try FileManager.default.contentsOfDirectory(atPath: source.path) where !file.hasSuffix(".pdb") {
+                try FileManager.default.copyItem(at: source.appending(path: file), to: directory.appending(path: file))
             }
         }
     }

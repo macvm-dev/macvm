@@ -54,6 +54,39 @@ public enum AgentClient {
         return socket
     }
 
+    /// 执行命令，标准输入送 `input`，返回退出码与合在一起的标准输出、标准错误。
+    /// 退出码为 nil 表示没收到 `exit` 帧就断开了：命令重启了代理自己时会这样。
+    static func run(_ bundle: VMBundle, request: AgentProtocol.ExecRequest, input: Data, timeout: Int = 120) throws -> (code: Int32?, output: String) {
+        let (response, socket) = try open(.exec(request), bundle: bundle)
+        _ = try response.checked("执行失败")
+        socket.setTimeout(seconds: timeout)
+        let writer = Thread {
+            var offset = 0
+            let chunk = AgentProtocol.maxFrame / 2
+            while offset < input.count {
+                let end = min(offset + chunk, input.count)
+                guard (try? socket.writeAll(ExecSession.frame(.stdin, input[offset..<end]))) != nil else { return }
+                offset = end
+            }
+            _ = try? socket.writeAll(ExecSession.frame(.stdinEOF, Data()))
+        }
+        writer.start()
+        var output = Data()
+        while true {
+            guard let header = try? socket.readExact(5) else { break }
+            let length = Int(header[1]) | Int(header[2]) << 8 | Int(header[3]) << 16 | Int(header[4]) << 24
+            guard length <= AgentProtocol.maxFrame, let payload = try? socket.readExact(length) else { break }
+            switch AgentProtocol.FrameKind(rawValue: header[0]) {
+            case .stdout, .stderr: output.append(payload)
+            case .exit:
+                let status = try JSONDecoder().decode(AgentProtocol.ExitStatus.self, from: payload)
+                return (status.code, String(decoding: output, as: UTF8.self))
+            default: continue
+            }
+        }
+        return (nil, String(decoding: output, as: UTF8.self))
+    }
+
     /// 执行命令，标准输入输出接到本进程，返回客户机命令的退出码。
     public static func exec(_ bundle: VMBundle, request: AgentProtocol.ExecRequest) throws -> Int32 {
         let (response, socket) = try open(.exec(request), bundle: bundle)
@@ -123,12 +156,17 @@ final class ExecSession: @unchecked Sendable {
     }
 
     private func send(_ kind: AgentProtocol.FrameKind, _ payload: Data) {
-        var frame = Data([kind.rawValue])
-        withUnsafeBytes(of: UInt32(payload.count).littleEndian) { frame.append(contentsOf: $0) }
-        frame.append(payload)
+        let frame = Self.frame(kind, payload)
         writeLock.lock()
         defer { writeLock.unlock() }
         try? socket.writeAll(frame)
+    }
+
+    static func frame(_ kind: AgentProtocol.FrameKind, _ payload: Data) -> Data {
+        var frame = Data([kind.rawValue])
+        withUnsafeBytes(of: UInt32(payload.count).littleEndian) { frame.append(contentsOf: $0) }
+        frame.append(payload)
+        return frame
     }
 }
 

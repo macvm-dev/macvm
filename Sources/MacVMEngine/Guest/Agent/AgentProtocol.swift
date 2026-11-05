@@ -137,10 +137,12 @@ public enum AgentProtocol {
         public let uptimeMs: UInt64
         /// 代理在这个客户机上支持的可选能力，如 `featureUI`；缺省时没有任何可选能力。
         public let features: [String]?
+        /// 客户机里代理可执行文件的 SHA-256（小写十六进制）；缺省时无从比对，按与随程序分发的不同处理。
+        public let exeSHA256: String?
 
         enum CodingKeys: String, CodingKey {
             case version, os, hostname, ipv4, features
-            case memTotal = "mem_total", memAvailable = "mem_available", uptimeMs = "uptime_ms"
+            case memTotal = "mem_total", memAvailable = "mem_available", uptimeMs = "uptime_ms", exeSHA256 = "exe_sha256"
         }
     }
 

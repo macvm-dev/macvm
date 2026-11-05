@@ -18,6 +18,35 @@ struct MachineDetailView: View {
     /// 查系统网络配置，不放在 `@State` 的初始值里：视图结构体每次重建都会再算一遍初始值。
     @State private var bridgeInterfaces: [NetworkAttachments.BridgeInterface] = []
 
+    @ViewBuilder
+    private func guestUpdateRow(_ update: AppModel.GuestUpdateState) -> some View {
+        switch update {
+        case .available(let pending):
+            LabeledContent("客户机") {
+                HStack(spacing: 8) {
+                    Text("有可用更新").foregroundStyle(.secondary)
+                    Button("更新") { model.updateGuest(vm.name) }.controlSize(.small)
+                }
+            }
+            .help((["与 App 自带的版本不同，更新经客户机代理完成："] + (pending.agent ? ["· 客户机代理（会重启一次）"] : [])
+                   + pending.changes.map { "· \($0)" }).joined(separator: "\n"))
+        case .updating(let step):
+            LabeledContent("客户机") {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(step).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+        case .rebootRequired:
+            LabeledContent("客户机") {
+                HStack(spacing: 8) {
+                    Text("重启后生效").foregroundStyle(.secondary)
+                    Button("重启") { model.rebootGuest(vm.name) }.controlSize(.small)
+                }
+            }
+        }
+    }
+
     var body: some View {
         let config = model.config(of: vm.name)
         Form {
@@ -96,6 +125,9 @@ struct MachineDetailView: View {
                 }
                 if config?.guestUser != nil {
                     CopyableRow(title: "SSH", value: model.sshCommand(vm.name))
+                }
+                if let update = model.guestUpdates[vm.name] {
+                    guestUpdateRow(update)
                 }
                 LabeledContent("位置") {
                     HStack(spacing: 6) {

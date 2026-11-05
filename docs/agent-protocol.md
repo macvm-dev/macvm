@@ -53,7 +53,9 @@
 {"version":"0.1.0","os":"linux","hostname":"dev","ipv4":["192.168.64.3"],"mem_total":2073000000,"mem_available":1800000000,"uptime_ms":123456}
 ```
 
-`os` 取值 `linux`、`macos`、`windows`。内存单位为字节。`features` 列出可选能力，没有时省略；`ui` 表示支持 `ui-*` 请求。代理对不认识的 `op` 回失败响应，宿主按 `features` 判断代理是否支持某项能力。
+`os` 取值 `linux`、`macos`、`windows`。内存单位为字节。`exe_sha256` 是代理可执行文件的 SHA-256（小写十六进制，macOS 版是代理 App 包里的可执行文件），读不到自身时省略；宿主拿它比对随 App 分发的代理，不同或省略即为可更新。
+
+更新经 `exec` 完成，不另设请求，旧代理也能这样更新：宿主执行更新脚本，标准输入送新代理（macOS 版是代理 App 包的 tar），脚本换掉文件后交给客户机的服务管理器重启代理（Linux 以 root 执行、`systemctl restart --no-block`；macOS 以登录用户执行、重新加载 LaunchAgent；Windows 交给以 SYSTEM 运行的一次性计划任务 `macvm-agent-update` 停下代理、重新注册并启动）。代理可能在发出 `exit` 帧之前就被重启，宿主据 `exe_sha256` 变成新值判断更新完成。`features` 列出可选能力，没有时省略；`ui` 表示支持 `ui-*` 请求。代理对不认识的 `op` 回失败响应，宿主按 `features` 判断代理是否支持某项能力。
 
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
 

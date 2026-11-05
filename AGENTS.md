@@ -60,6 +60,11 @@
 - 所有命令支持 `--json`，输出一行 `JSONEnvelope`；错误码与退出码在 `MacVMError` 定义，已发布的值不能改。
 - 改命令或选项时同步更新 `docs/cli.md`，以及 `skills/macvm` 里讲到它的地方。
 
+## 客户机更新
+
+- 安装流程（`WindowsUnattend`、`CloudInit`、`UbuntuAutoinstall`、`MacOSProvisioning` 等）在客户机里新做一件事、或换了装进客户机的东西（如 virtio 驱动盘版本），要给该系统的 `GuestRevision.latest` 加一，并在 `GuestMigration.all` 补一条把已有虚拟机带到这一修订的迁移；迁移经代理 `exec` 运行，要能重复执行。只是偏好的默认值（时区、电源设置等）不补，免得覆盖用户改过的设置。
+- 客户机代理与 3D 显卡驱动按内容比对，不需要迁移。
+
 ## 注释
 
 只写本声明的契约和代码看不出的原因；引用别处代码用标识符，不写文件路径；不写历史、待办、issue 号。

@@ -39,6 +39,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
     /// 在宿主与客户机之间同步文本剪贴板。macOS、Windows 客户机经代理同步，随时可改；
     /// Linux 客户机经开机时接上的 SPICE 通道同步，改了要下次开机生效（`clipboardChangeNeedsStop`）。
     public var clipboard: Bool
+    /// 客户机里已做到的 `GuestRevision`。新建的虚拟机由安装流程做到最新；没有这个字段的旧配置按 0。
+    public var guestRevision: Int
 
     public init(
         name: String,
@@ -59,7 +61,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
         guestAgent: Bool = false,
         serialConsole: Bool = false,
         graphicsAcceleration: Bool = false,
-        clipboard: Bool = true
+        clipboard: Bool = true,
+        guestRevision: Int? = nil
     ) {
         self.version = Self.currentVersion
         self.name = name
@@ -81,6 +84,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.serialConsole = serialConsole
         self.graphicsAcceleration = graphicsAcceleration
         self.clipboard = clipboard
+        self.guestRevision = guestRevision ?? GuestRevision.latest(for: os)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -105,6 +109,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         serialConsole = try c.decodeIfPresent(Bool.self, forKey: .serialConsole) ?? false
         graphicsAcceleration = try c.decodeIfPresent(Bool.self, forKey: .graphicsAcceleration) ?? false
         clipboard = try c.decodeIfPresent(Bool.self, forKey: .clipboard) ?? true
+        guestRevision = try c.decodeIfPresent(Int.self, forKey: .guestRevision) ?? 0
     }
 
     /// 改剪贴板同步是否要先关机：Linux 客户机的 SPICE 通道是开机时接上的设备，挂起的存档也认这套设备。

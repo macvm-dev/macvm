@@ -91,6 +91,20 @@ final class AppModel {
     /// 别的进程里运行的虚拟机能否挂起，开机后经控制 socket 问一次，停机后清掉。
     private var remoteSuspend: [String: Bool] = [:]
 
+    enum GuestUpdateState: Equatable {
+        case available(GuestUpdate.Pending)
+        /// 当前步骤。
+        case updating(String)
+        /// 更新完了，有的设置要重启客户机才生效。
+        case rebootRequired
+    }
+    /// 运行中、有客户机更新可做或正在做的虚拟机，键为虚拟机名。
+    private(set) var guestUpdates: [String: GuestUpdateState] = [:]
+    /// 每台运行中虚拟机这次开机的更新核对，不论在哪个进程里运行；停机时取消并清掉。
+    @ObservationIgnored private var guestUpdateChecks: [String: Task<Void, Never>] = [:]
+    private static let guestUpdateCheckAttempts = 120
+    private static let guestUpdateCheckInterval: Duration = .seconds(5)
+
     /// 经控制 socket 问运行 `machines` 的进程能否挂起；问不到的不记，下一轮再问。
     nonisolated private static func querySuspend(of machines: [VMSummary], in library: VMLibrary) -> [String: Bool] {
         var result: [String: Bool] = [:]
@@ -138,6 +152,62 @@ final class AppModel {
         let running = Set(list.filter { $0.state == .running }.map(\.name))
         if remoteSuspend.keys.contains(where: { !running.contains($0) }) { remoteSuspend = remoteSuspend.filter { running.contains($0.key) } }
         for vm in list where vm.state != .running { clearStopping(vm.name) }
+        for name in guestUpdateChecks.keys where !running.contains(name) {
+            guestUpdateChecks.removeValue(forKey: name)?.cancel()
+            guestUpdates[name] = nil
+        }
+        for name in running where guestUpdateChecks[name] == nil { checkGuestUpdate(name) }
+    }
+
+    /// 等代理上线后核对一次；客户机代理在登录后才启动，最多等 `guestUpdateCheckAttempts` 轮。
+    private func checkGuestUpdate(_ name: String) {
+        guard config(of: name)?.guestAgent == true, let bundle = try? library.bundle(named: name) else {
+            guestUpdateChecks[name] = Task {}
+            return
+        }
+        guestUpdateChecks[name] = Task { [weak self] in
+            for _ in 0..<Self.guestUpdateCheckAttempts {
+                let pending = await Task.detached { try? GuestUpdate.pending(bundle) }.value
+                guard !Task.isCancelled else { return }
+                if let pending {
+                    if !pending.isEmpty { self?.guestUpdates[name] = .available(pending) }
+                    return
+                }
+                try? await Task.sleep(for: Self.guestUpdateCheckInterval)
+            }
+        }
+    }
+
+    /// 经运行中的代理把客户机更新到 App 当前的版本。
+    func updateGuest(_ name: String) {
+        guard case .available(let pending) = guestUpdates[name], let bundle = try? library.bundle(named: name) else { return }
+        guestUpdates[name] = .updating("正在准备…")
+        Task {
+            do {
+                let result = try await GuestUpdate.apply(bundle) { step in
+                    Task { @MainActor [weak self] in
+                        if case .updating = self?.guestUpdates[name] { self?.guestUpdates[name] = .updating(step) }
+                    }
+                }
+                guard case .updating = guestUpdates[name] else { return }
+                guestUpdates[name] = result.rebootRequired ? .rebootRequired : nil
+            } catch {
+                if case .updating = guestUpdates[name] { guestUpdates[name] = .available(pending) }
+                report(error)
+            }
+        }
+    }
+
+    /// 更新后要重启才生效时，请客户机重启。
+    func rebootGuest(_ name: String) {
+        guard guestUpdates[name] == .rebootRequired, let bundle = try? library.bundle(named: name) else { return }
+        guestUpdates[name] = nil
+        Task {
+            do { try await Task.detached { try GuestUpdate.reboot(bundle) }.value } catch {
+                guestUpdates[name] = .rebootRequired
+                report(error)
+            }
+        }
     }
 
     func summary(_ name: String) -> VMSummary? { machines.first { $0.name == name } }

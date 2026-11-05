@@ -194,14 +194,24 @@ enum WindowsUnattend {
     /// OpenSSH Server 是按需功能，需联网下载，所以先等网络可用。用户态网络会被识别为公用网络，
     /// 而系统自带的 sshd 入站规则只对专用网络生效，因此改为对所有网络生效。
     /// PowerShell 的全局配置把控制台输出设为 UTF-8，经 SSH 取回的中文才不乱码。
+    /// 虚拟机的主板时钟是 UTC，Windows 默认当本地时间读。
+    static let utcClock = #"Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation' -Name RealTimeIsUniversal -Value 1 -Type DWord"#
+
+    /// 让 sshd 只认密钥，已是这样时不改；改了要重启 sshd 生效。sshd 取选项第一次出现的值，文件末尾又是 Match 段，所以加在最前。
+    static let sshKeyOnly = #"""
+        $sshdConfig = 'C:\ProgramData\ssh\sshd_config'
+        if ((Test-Path $sshdConfig) -and (@(Get-Content $sshdConfig)[0] -ne 'PasswordAuthentication no')) {
+          Set-Content -Path $sshdConfig -Encoding ascii -Value (@('PasswordAuthentication no') + @(Get-Content $sshdConfig))
+        }
+        """#
+
     static func setupScript(_ o: Options) -> String {
         return #"""
         $ErrorActionPreference = 'Continue'
         Start-Transcript -Path C:\macvm-setup.log -Append
         for ($i = 0; $i -lt 60 -and -not (Test-NetConnection -ComputerName www.microsoft.com -Port 443 -InformationLevel Quiet); $i++) { Start-Sleep 5 }
         powercfg /hibernate off
-        # 虚拟机的主板时钟是 UTC，Windows 默认当本地时间读。
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation' -Name RealTimeIsUniversal -Value 1 -Type DWord
+        \#(utcClock)
         powercfg /change standby-timeout-ac 0
         powercfg /change monitor-timeout-ac 0
         $cap = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
@@ -219,9 +229,7 @@ enum WindowsUnattend {
         }
         Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
         Set-Content -Path $PSHOME\profile.ps1 -Encoding utf8 -Value '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding'
-        # sshd 取选项第一次出现的值，文件末尾又是 Match 段，所以加在最前。
-        $sshdConfig = 'C:\ProgramData\ssh\sshd_config'
-        if (Test-Path $sshdConfig) { Set-Content -Path $sshdConfig -Encoding ascii -Value (@('PasswordAuthentication no') + @(Get-Content $sshdConfig)) }
+        \#(sshKeyOnly)
         Restart-Service sshd
         \#(o.productKey.map { "cscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ipk \($0)\ncscript //nologo $env:SystemRoot\\System32\\slmgr.vbs /ato" } ?? "")
         \#(o.installAgent ? AgentInstaller.windowsPrepareDirectory : "")
@@ -241,6 +249,19 @@ enum WindowsUnattend {
 }
 
 public enum PowerShell {
+    /// 经代理 `exec` 以 Windows PowerShell 运行 `script`。标准错误接到管道时 PowerShell 把错误与进度写成 CLIXML，
+    /// 所以关掉进度、把终止错误的消息原样写到标准错误并以 1 退出；控制台代码页设成 UTF-8，子进程的中文输出才不乱码。
+    static func exec(_ script: String) -> AgentProtocol.ExecRequest {
+        let wrapped = """
+        $ProgressPreference = 'SilentlyContinue'
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        trap { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+        \(script)
+        """
+        return .init(argv: ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                            "-EncodedCommand", AgentInstaller.powerShellBase64(wrapped)])
+    }
+
     /// 单引号字面量：内容原样，不展开变量与转义。
     public static func quote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "''") + "'"

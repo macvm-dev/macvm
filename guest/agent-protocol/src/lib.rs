@@ -144,6 +144,9 @@ pub struct Info {
     /// 本代理在这个客户机上支持的可选能力，如 `FEATURE_UI`。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
+    /// 代理可执行文件的 SHA-256（小写十六进制），宿主据此判断客户机里的代理是否与随 App 分发的相同；读不到自身时省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exe_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
