@@ -19,7 +19,7 @@ PATH="$TOOLCHAIN_BIN:${CARGO_HOME:-$HOME/.cargo}/bin:$PATH" cargo-xwin xwin buil
 
 mkdir -p "$out"
 # macOS 版装成 App 包：客户机「登录项」里按包名显示为 MacVM Agent，不显示签名的开发者名。
-# 这里 ad-hoc 签好整个包，scripts/bundle-app.sh 正式签名时重签。
+# 按 SIGN_IDENTITY 签好整个包（默认 ad-hoc），scripts/bundle-app.sh 组装 App 时用 App 的身份重签。
 app="$out/MacVM Agent.app"
 rm -rf "$app" "$out/macvm-agent-darwin"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -28,7 +28,12 @@ cp "$root/packaging/agent/Info.plist" "$app/Contents/Info.plist"
 version=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' Cargo.toml)
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 cp "$root/packaging/icon/AppIcon.icns" "$app/Contents/Resources/"
-codesign -f -s - --timestamp=none "$app"
+sign_identity=${SIGN_IDENTITY:--}
+if [ "$sign_identity" = - ]; then
+  codesign -f -s - --timestamp=none "$app"
+else
+  codesign -f -s "$sign_identity" --options runtime --timestamp=none "$app"
+fi
 cp target/aarch64-unknown-linux-musl/release/macvm-agent "$out/macvm-agent-linux"
 cp target/aarch64-pc-windows-msvc/release/macvm-agent.exe "$out/macvm-agent-windows.exe"
 ls -ld "$out"/macvm-agent-* "$app"

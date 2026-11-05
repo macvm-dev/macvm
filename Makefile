@@ -5,6 +5,10 @@ CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 # 钥匙串里唯一的 Developer ID Application 证书，零张或多张时为空；用到时才查。
 DEVELOPER_ID   = $(shell security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"$$/\1/p' | awk '{ n++; id = $$0 } END { if (n == 1) print id }')
+# 开发构建（sign、run、agent）的签名身份：没传 SIGN_IDENTITY（命令行与环境变量都没有）时用 DEVELOPER_ID，没有才 ad-hoc。
+# ad-hoc 签名没有团队 ID：launchd 按 cdhash 认网络辅助程序，客户机按 cdhash 记代理的辅助功能与屏幕录制授权，每次重新构建都要重来；
+# 客户机「登录项」也认不出代理所属的 App 包，只显示可执行文件名。
+DEV_IDENTITY   = $(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID),-),$(SIGN_IDENTITY))
 # swift build 链接时不把 SDK 路径交给 clang，二进制记下的 SDK 版本会退成部署目标，
 # 系统据此按旧版外观（兼容模式）显示 App；显式传 -isysroot 让它记成实际使用的 SDK。
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
@@ -17,14 +21,14 @@ build:
 
 # VZ 拒绝没有 virtualization entitlement 的进程，开发时每次构建后都要重签。
 sign: build
-	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/macvm
-	codesign -f -s "$(SIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) $(BIN)/MacVMApp
+	@id='$(DEV_IDENTITY)'; set -e; \
+	codesign -f -s "$$id" --entitlements $(ENTITLEMENTS) $(BIN)/macvm; \
+	codesign -f -s "$$id" --entitlements $(ENTITLEMENTS) $(BIN)/MacVMApp
 
 # 按 CONFIG（默认 debug）组装 App 并在前台运行，日志打在终端，Ctrl-C 退出。
 # 组装进 .build 而不是 dist，不覆盖发布产物；直接运行可执行文件而不用 open，免得 LaunchServices 转去激活已在运行的同 bundle ID 的 App。
-# 没传 SIGN_IDENTITY（命令行与环境变量都没有）时用 DEVELOPER_ID，没有才 ad-hoc：ad-hoc 签名时 launchd 按 cdhash 认网络辅助程序，每次重新构建都得重新注册。
 run:
-	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID),-),$(SIGN_IDENTITY))" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 	.build/MacVM.app/Contents/MacOS/MacVM
 
 test: test-swift test-guest
@@ -42,7 +46,7 @@ lint-guest:
 	scripts/lint-guest.sh
 
 agent:
-	scripts/build-agent.sh
+	SIGN_IDENTITY="$(DEV_IDENTITY)" scripts/build-agent.sh
 
 boot:
 	scripts/build-boot.sh
