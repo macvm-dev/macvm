@@ -123,16 +123,16 @@ struct LibraryView: View {
         case .stopped, .suspended:
             Button(vm.state == .suspended ? "继续" : "启动") { open(vm) }.disabled(model.activity[vm.name] != nil)
         case .running:
-            Button("显示") { open(vm) }.disabled(!model.canDisplay(vm.name))
+            Button("显示") { open(vm) }
             Button("关机") { Task { await model.stop(vm.name) } }
         }
         Divider()
         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: vm.path)]) }
     }
 
-    /// 双击行：停着的启动，运行中且能显示画面的打开窗口。
+    /// 双击行：停着的启动，运行中的打开窗口；显示不了画面时窗口里说明原因。
     private func open(_ vm: VMSummary) {
-        let canOpen = vm.state == .running ? model.canDisplay(vm.name) : model.activity[vm.name] == nil
+        let canOpen = vm.state == .running || model.activity[vm.name] == nil
         if canOpen { openWindow(id: "machine", value: vm.name) }
     }
 

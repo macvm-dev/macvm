@@ -245,10 +245,10 @@ struct MachineDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(model.activity[vm.name] != nil)
             case .running:
-                if model.canDisplay(vm.name) {
-                    Button { openWindow(id: "machine", value: vm.name) } label: { Label("显示", systemImage: "macwindow") }
-                        .buttonStyle(.borderedProminent)
-                }
+                // 显示不了画面时按钮照样在：窗口里说明虚拟机在别的进程运行、关机后才能在这里打开。
+                Button { openWindow(id: "machine", value: vm.name) } label: { Label("显示", systemImage: "macwindow") }
+                    .buttonStyle(.borderedProminent)
+                    .help(model.canDisplay(vm.name) ? "显示画面" : "在后台进程中运行，VZ 的画面只能在运行它的进程里显示；关机后在这里重新启动即可显示")
                 if model.canSuspend(vm.name) {
                     Button { Task { await model.suspend(vm.name) } } label: { Label("挂起", systemImage: "pause.fill") }
                 }
