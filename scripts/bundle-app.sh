@@ -38,8 +38,12 @@ if [ -n "${PROVISIONING_PROFILE:-}" ]; then
 fi
 
 # ad-hoc 签名没有 Team ID，开 hardened runtime 后库校验会拒绝加载自带 QEMU 的库，所以只在正式签名时开。
+# 公证要求可信时间戳；只有 release 构建去取，开发构建不必每个文件都连一次时间戳服务器。
 SIGN_OPTIONS=(--timestamp=none)
-[ "$SIGN_IDENTITY" = "-" ] || SIGN_OPTIONS=(--options runtime --timestamp)
+if [ "$SIGN_IDENTITY" != "-" ]; then
+  SIGN_OPTIONS=(--options runtime)
+  if [ "$CONFIG" = release ]; then SIGN_OPTIONS+=(--timestamp); else SIGN_OPTIONS+=(--timestamp=none); fi
+fi
 sign() { codesign -f "${SIGN_OPTIONS[@]}" -s "$SIGN_IDENTITY" --entitlements "$ENTITLEMENTS" "$1"; }
 # 库与辅助程序不带权限。
 sign_plain() { codesign -f "${SIGN_OPTIONS[@]}" -s "$SIGN_IDENTITY" "$1"; }

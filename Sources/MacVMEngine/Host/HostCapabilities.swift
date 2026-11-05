@@ -21,8 +21,8 @@ public struct HostCapabilities: Codable, Sendable {
     public let downloadPath: String
     public let templatePath: String
 
-    /// 网络辅助程序已启用、获允许并在响应。会等它回应，不要在主线程调用。
-    public static func networkHelperRunning() -> Bool { BridgeSession.ping() != nil }
+    /// 网络辅助程序已启用、获允许并在 `timeout` 秒内响应。会等它回应，不要在主线程调用。
+    public static func networkHelperRunning(timeout: Double = 2) -> Bool { BridgeSession.ping(timeout: timeout) != nil }
 
     /// `probeNetworkHelper` 为 false 时不问网络辅助程序，`bridgedNetworking` 为 false：问它要经 XPC 等回应，可能拉起守护进程。
     public static func current(probeNetworkHelper: Bool = true) -> HostCapabilities {

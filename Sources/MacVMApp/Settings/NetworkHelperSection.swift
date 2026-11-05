@@ -4,7 +4,7 @@ import MacVMModel
 import ServiceManagement
 import SwiftUI
 
-/// 网络辅助程序 macvm-netd 的启用与停用。只有 App 能注册它：`SMAppService` 按主 bundle 找 launchd plist。
+/// 网络辅助程序 macvm-netd 的启用与停用。
 struct NetworkHelperSection: View {
     @State private var status = Self.service.status
     /// 辅助进程是否响应 ping；未启用或首次查询还没完成时为 nil。
@@ -12,13 +12,9 @@ struct NetworkHelperSection: View {
     @State private var confirmingReenable = false
     @State private var error: String?
 
-    private static var service: SMAppService { .daemon(plistName: NetworkHelper.launchdPlistName) }
+    private static var service: SMAppService { NetworkHelperRegistration.service }
 
-    /// 从没注册过的守护进程 `status` 也是 `.notFound`，要看包里有没有 plist 才分得清是不是没打包。
-    private static var bundled: Bool {
-        FileManager.default.fileExists(atPath: Bundle.main.bundleURL
-            .appending(path: "Contents/Library/LaunchDaemons/\(NetworkHelper.launchdPlistName)").path)
-    }
+    private static var bundled: Bool { NetworkHelperRegistration.bundled }
 
     var body: some View {
         Section {
@@ -79,30 +75,28 @@ struct NetworkHelperSection: View {
 
     private func enable() {
         error = nil
-        do { try Self.service.register() } catch {
-            // 首次注册时系统要用户去系统设置里允许，register 以「需要批准」报错，状态随之变成 requiresApproval。
-            if Self.service.status != .requiresApproval { self.error = "启用失败：\(error.localizedDescription)" }
+        do { try NetworkHelperRegistration.enable() } catch {
+            self.error = "启用失败：\(error.localizedDescription)"
         }
         Task { await refresh() }
         if Self.service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
     }
 
-    /// launchd 按注册时的签名拉起守护进程；包里的 macvm-netd 换了签名（如重新构建 ad-hoc 签名的 App）后拉不起来，要重新注册。
     private func reenable() {
         error = nil
         Task {
-            do { try await Self.service.unregister() } catch {
+            do { try await NetworkHelperRegistration.reregister() } catch {
                 self.error = "重新启用失败：\(error.localizedDescription)"
-                return await refresh()
             }
-            enable()
+            await refresh()
+            if Self.service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         }
     }
 
     private func disable() {
         error = nil
         Task {
-            do { try await Self.service.unregister() } catch {
+            do { try await NetworkHelperRegistration.disable() } catch {
                 self.error = "停用失败：\(error.localizedDescription)"
             }
             await refresh()

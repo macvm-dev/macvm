@@ -3,6 +3,8 @@ SIGN_IDENTITY ?= -
 ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
+# 钥匙串里唯一的 Developer ID Application 证书，零张或多张时为空；用到时才查。
+DEVELOPER_ID   = $(shell security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"$$/\1/p' | awk '{ n++; id = $$0 } END { if (n == 1) print id }')
 # swift build 链接时不把 SDK 路径交给 clang，二进制记下的 SDK 版本会退成部署目标，
 # 系统据此按旧版外观（兼容模式）显示 App；显式传 -isysroot 让它记成实际使用的 SDK。
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
@@ -20,8 +22,9 @@ sign: build
 
 # 按 CONFIG（默认 debug）组装 App 并在前台运行，日志打在终端，Ctrl-C 退出。
 # 组装进 .build 而不是 dist，不覆盖发布产物；直接运行可执行文件而不用 open，免得 LaunchServices 转去激活已在运行的同 bundle ID 的 App。
+# 没传 SIGN_IDENTITY（命令行与环境变量都没有）时用 DEVELOPER_ID，没有才 ad-hoc：ad-hoc 签名时 launchd 按 cdhash 认网络辅助程序，每次重新构建都得重新注册。
 run:
-	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID),-),$(SIGN_IDENTITY))" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 	.build/MacVM.app/Contents/MacOS/MacVM
 
 test: test-swift test-guest
@@ -50,16 +53,12 @@ qemu:
 app:
 	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 
-# 产出公证过的 dist/MacVM.app 与 dist/MacVM.dmg。公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用钥匙串里唯一的 Developer ID Application 证书，有零张或多张就停下。
+# 产出公证过的 dist/MacVM.app 与 dist/MacVM.dmg。公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用 DEVELOPER_ID，没有就停下。
 release:
-	@id='$(SIGN_IDENTITY)'; \
-	if [ "$$id" = "-" ]; then \
-	  ids=$$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"$$/\1/p'); \
-	  if [ $$(printf '%s' "$$ids" | grep -c .) -ne 1 ]; then \
-	    echo "找不到唯一的 Developer ID Application 证书，用 make release SIGN_IDENTITY=\"Developer ID Application: …\" 指定" >&2; \
-	    printf '%s\n' "$$ids" >&2; exit 1; \
-	  fi; \
-	  id=$$ids; \
+	@id='$(if $(filter -,$(SIGN_IDENTITY)),$(DEVELOPER_ID),$(SIGN_IDENTITY))'; \
+	if [ -z "$$id" ]; then \
+	  echo "找不到唯一的 Developer ID Application 证书，用 make release SIGN_IDENTITY=\"Developer ID Application: …\" 指定" >&2; \
+	  security find-identity -v -p codesigning >&2; exit 1; \
 	fi; \
 	echo "签名身份：$$id"; \
 	set -e; \
