@@ -37,12 +37,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ChildProcesses.terminateAll()
     }
 
-    /// 新建以外的任务（存模板、首次开机配置 SSH）中断后不会续做，退出前要确认；
-    /// 本进程运行的虚拟机先正常关机，全部停下后才退出。
+    /// 本进程运行的虚拟机要停下才能退出：问用户挂起还是关机，能挂起的挂起、其余正常关机，全部停下后才退出。
+    /// 新建以外的任务（存模板、首次开机配置 SSH）中断后不会续做，一并在这里提醒。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // 关机途中再次退出时由进行中的那一轮答复，这一次不另起。
+        // 停机途中再次退出时由进行中的那一轮答复，这一次不另起。
         guard !shuttingDown else { return .terminateCancel }
         let running = model.runners.keys.sorted()
+        let suspendable = running.filter { model.canSuspend($0) }
         let creating = model.resumableCreations
         let other = model.creatingNames.filter { !creating.contains($0) }
         var notes: [String] = []
@@ -52,31 +53,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !other.isEmpty {
             notes.append("\(other.joined(separator: "、")) 有进行中的任务，退出会中断，不会自动继续。")
         }
-        if !notes.isEmpty {
-            if !running.isEmpty {
-                notes.append("\(running.joined(separator: "、")) 会先关机再退出。")
-            }
-            let alert = NSAlert()
+        guard !running.isEmpty || !notes.isEmpty else { return .terminateNow }
+
+        let alert = NSAlert()
+        if running.isEmpty {
             alert.messageText = "要退出 MacVM 吗？"
-            alert.informativeText = notes.joined(separator: "\n\n")
-            alert.addButton(withTitle: "取消")
             alert.addButton(withTitle: "退出")
-            NSApp.activate()
-            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        } else {
+            alert.messageText = running.count == 1 ? "「\(running[0])」还在运行" : "还有 \(running.count) 台虚拟机在运行"
+            notes.insert(Self.stopNote(running: running, suspendable: suspendable), at: 0)
+            if !suspendable.isEmpty { alert.addButton(withTitle: "挂起并退出") }
+            alert.addButton(withTitle: suspendable.isEmpty ? "关机并退出" : "全部关机并退出")
         }
+        alert.informativeText = notes.joined(separator: "\n\n")
+        alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+        NSApp.activate()
+        let choice = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        guard choice < alert.buttons.count - 1 else { return .terminateCancel }
         guard !running.isEmpty else { return .terminateNow }
+        let suspend = choice == 0 && !suspendable.isEmpty ? suspendable : []
         shuttingDown = true
-        Task { await shutDownThenTerminate() }
+        Task { await stopThenTerminate(suspending: suspend) }
         return .terminateLater
     }
 
+    /// 提示里说明各台虚拟机退出时会怎样。
+    private static func stopNote(running: [String], suspendable: [String]) -> String {
+        let others = running.filter { !suspendable.contains($0) }
+        if others.isEmpty {
+            return "挂起会保存当前状态，下次开机从这里接着运行；关机要等客户机自己关好。"
+        }
+        if suspendable.isEmpty {
+            return "\(others.joined(separator: "、")) 不支持挂起，退出前要等客户机正常关机。"
+        }
+        return "挂起时 \(suspendable.joined(separator: "、")) 保存当前状态，下次开机接着运行；\(others.joined(separator: "、")) 不支持挂起，会正常关机。"
+    }
+
+    /// 先挂起 `suspending` 里的虚拟机（挂起失败的改为关机），再让其余的正常关机。
     /// 客户机可能停在「是否保存」之类的对话框上迟迟不关机，每等满 `shutdownWait` 问一次是继续等、断电还是不退出了。
-    private func shutDownThenTerminate() async {
+    private func stopThenTerminate(suspending: [String]) async {
         defer { shuttingDown = false }
+        await model.suspendForQuit(suspending)
         model.requestStopAll()
         while !(await model.waitUntilAllStopped(timeout: Self.shutdownWait)) {
             let alert = NSAlert()
-            alert.messageText = "\(model.runners.keys.sorted().joined(separator: "、")) 还没关机"
+            alert.messageText = "\(model.runners.keys.sorted().joined(separator: "、")) 还没停下"
             alert.informativeText = "客户机可能在等你保存文档或确认关机，可以到它的窗口里处理后继续等。断电退出会丢失客户机里没保存的内容。"
             alert.addButton(withTitle: "继续等待")
             alert.addButton(withTitle: "断电并退出")

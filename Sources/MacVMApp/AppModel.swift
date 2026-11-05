@@ -364,6 +364,16 @@ final class AppModel {
     /// 每台虚拟机这一轮「正在关机」的超时任务；状态撤掉时取消，免得到点时撤掉之后新一轮的。
     @ObservationIgnored private var stoppingTimers: [String: Task<Void, Never>] = [:]
 
+    /// 退出前逐台挂起本进程运行的 `names`；挂起失败的留着运行，由随后的关机处理。
+    func suspendForQuit(_ names: [String]) async {
+        for name in names {
+            guard let runner = runners[name] else { continue }
+            setActivity(name, "正在挂起…")
+            try? await runner.suspend()
+            setActivity(name, nil)
+        }
+    }
+
     /// 让本进程运行的每台虚拟机正常关机；请求不了的（还在开机等）留给 `forceStopAll`。
     func requestStopAll() {
         for (name, runner) in runners where (try? runner.requestStop()) != nil {
