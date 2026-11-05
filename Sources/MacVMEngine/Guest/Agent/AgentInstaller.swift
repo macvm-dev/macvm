@@ -8,7 +8,11 @@ public enum AgentInstaller {
     static let windowsDirectory = #"C:\ProgramData\macvm"#
     static let windowsPath = windowsDirectory + #"\macvm-agent.exe"#
     static let windowsTaskName = "macvm-agent"
+    /// macOS 版代理 App 包的 bundle ID，也是 LaunchAgent 的标签。
     static let launchAgentLabel = "cn.barey.macvm.agent"
+    static let macOSAppName = "MacVM Agent.app"
+    /// 代理 App 包在客户机用户主目录下的位置：不放进「应用程序」，免得用户当成普通 App 打开。
+    static let macOSAppDirectory = "Library/Application Support/macvm"
     /// macOS 客户机首次开机时 SSH 先于图形登录就绪，登录会话建好前 `launchctl bootstrap gui/<uid>` 会失败；
     /// 安装脚本最多等这么多秒。登录过程会自行加载 `~/Library/LaunchAgents` 里的代理，加载上了也算装好。
     static let macOSLoginWait = 120
@@ -16,7 +20,7 @@ public enum AgentInstaller {
     public static func binary(for os: GuestOS) -> URL? {
         switch os {
         case .linux: GuestFiles.locate("macvm-agent-linux")
-        case .macOS: GuestFiles.locate("macvm-agent-darwin")
+        case .macOS: GuestFiles.locate(macOSAppName)
         case .windows: GuestFiles.locate("macvm-agent-windows.exe")
         }
     }
@@ -111,6 +115,7 @@ public enum AgentInstaller {
 
     /// 经 SSH 安装到已运行的客户机：Linux 装为 systemd 服务（root），macOS 装为登录会话里的 LaunchAgent，
     /// Windows 装为登录时运行的计划任务；后两者在交互会话里运行，才能访问剪贴板。
+    /// macOS 的 LaunchAgent 关联代理 App 包，客户机「登录项」里显示为包名而不是签名的开发者名。
     /// 用 qemu 引擎的 Windows 在自带 QEMU 带 3D 时一并放进 viogpu3d 驱动包，返回是否放了。
     @discardableResult
     public static func installOverSSH(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> Bool {
@@ -141,7 +146,8 @@ public enum AgentInstaller {
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0"><dict>
             <key>Label</key><string>\(launchAgentLabel)</string>
-            <key>ProgramArguments</key><array><string>/Users/\(user)/.local/bin/macvm-agent</string></array>
+            <key>ProgramArguments</key><array><string>/Users/\(user)/\(macOSAppDirectory)/\(macOSAppName)/Contents/MacOS/macvm-agent</string></array>
+            <key>AssociatedBundleIdentifiers</key><array><string>\(launchAgentLabel)</string></array>
             <key>RunAtLoad</key><true/>
             <key>KeepAlive</key><true/>
             <key>ProcessType</key><string>Interactive</string>
@@ -149,8 +155,15 @@ public enum AgentInstaller {
             """
             script = """
             set -e
-            mkdir -p ~/.local/bin ~/Library/LaunchAgents
-            cat > ~/.local/bin/macvm-agent.new && chmod 0755 ~/.local/bin/macvm-agent.new && mv ~/.local/bin/macvm-agent.new ~/.local/bin/macvm-agent
+            dir="$HOME/\(macOSAppDirectory)"
+            mkdir -p "$dir" ~/Library/LaunchAgents
+            staging=$(mktemp -d "$dir/.install.XXXXXX")
+            trap 'rm -rf "$staging"' EXIT
+            tar -x -f - -C "$staging"
+            rm -rf "$dir/\(macOSAppName)"
+            mv "$staging/\(macOSAppName)" "$dir/"
+            rm -f ~/.local/bin/macvm-agent
+            /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dir/\(macOSAppName)"
             cat > ~/Library/LaunchAgents/\(launchAgentLabel).plist <<'PLIST'
             \(plist)
             PLIST
@@ -196,6 +209,15 @@ public enum AgentInstaller {
             // 令牌经标准输入传，不进客户机的命令行。
             try await Subprocess.run("/usr/bin/ssh", ssh + ["sudo sh -c '\(AgentToken.linuxInstallCommand())'"], stdin: AgentToken.url(bundle))
             tokenDelivered = true
+        }
+        if config.os == .macOS {
+            // App 包是目录，打成 tar 经标准输入传；不带 AppleDouble 等扩展属性文件，免得混进包里破坏签名。
+            let archive = FileManager.default.temporaryDirectory.appending(path: "macvm-agent-\(UUID().uuidString).tar")
+            defer { try? FileManager.default.removeItem(at: archive) }
+            try await Subprocess.run("/usr/bin/tar", ["--no-mac-metadata", "-c", "-f", archive.path,
+                                                      "-C", binary.deletingLastPathComponent().path, binary.lastPathComponent])
+            try await Subprocess.run("/usr/bin/ssh", ssh + [script], stdin: archive)
+            return false
         }
         try await Subprocess.run("/usr/bin/ssh", ssh + [script], stdin: binary)
         return false

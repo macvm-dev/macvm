@@ -16,7 +16,7 @@
 | `guest/agent` | 客户机代理 macvm-agent；`agent-platform` 是各系统的实现，`agent-protocol` 是协议类型与黄金样例（`fixtures`） |
 | `guest/boot` | UEFI 引导程序 macvm-boot：在 VZ 上启动 Windows 用的帧缓冲垫片 |
 | `qemu` | App 自带 QEMU 的源码清单、补丁与 SPICE 显示库（`make qemu` 编译，产物在 `.build/qemu`） |
-| `packaging` | Info.plist、entitlements、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物） |
+| `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物） |
 | `scripts` | Makefile 调用的脚本 |
 | `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
 
