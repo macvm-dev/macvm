@@ -44,9 +44,6 @@ struct StatusMenu: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 Text("MacVM").font(.system(size: 14, weight: .semibold))
                 HStack(spacing: 5) {
