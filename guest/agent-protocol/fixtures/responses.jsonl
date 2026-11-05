@@ -5,3 +5,4 @@
 {"ok":true,"size":48213}
 {"ok":false,"error":"在客户机「系统设置 › 隐私与安全性 › 辅助功能」里允许 MacVM Agent","code":"permission"}
 {"ok":true,"info":{"version":"0.1.0","os":"macos","hostname":"mac","ipv4":["192.168.64.4"],"mem_total":8589934592,"mem_available":4294967296,"uptime_ms":60000,"features":["ui"],"exe_sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"}}
+{"ok":false,"error":"授权已生效，正在重启以载入授权，几秒后重试","code":"restarting"}

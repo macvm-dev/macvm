@@ -151,19 +151,30 @@ public enum AgentProtocol {
         public let error: String?
         public let info: Info?
         public let text: String?
-        /// 失败时机器可读的原因，`permission` 表示客户机没给代理所需的权限。
+        /// 失败时机器可读的原因：`permission` 表示客户机没给代理所需的权限，`restarting` 表示代理随即重启、稍后重试即可。
         public let code: String?
         /// 响应行之后紧跟的正文字节数。
         public let size: Int?
 
-        /// 失败的响应转成 `MacVMError`：缺权限时为 `permissionDenied`，其余为 `engine`；代理没给原因时用 `fallback`。
+        /// 失败的响应转成错误：缺权限时为 `permissionDenied`，代理随即重启时为 `Restarting`，其余为 `engine`；代理没给原因时用 `fallback`。
         func checked(_ fallback: String = "未知错误") throws -> Response {
             guard ok else {
                 let message = error ?? fallback
-                throw code == "permission" ? MacVMError.permissionDenied(message) : MacVMError.engine("客户机代理：\(message)")
+                switch code {
+                case "permission": throw MacVMError.permissionDenied(message)
+                case "restarting": throw Restarting(message: message)
+                default: throw MacVMError.engine("客户机代理：\(message)")
+                }
             }
             return self
         }
+    }
+
+    /// 代理回完响应就退出、由客户机的服务管理器重新拉起；等新代理上线后重试同一请求。
+    struct Restarting: Error {
+        let message: String
+
+        var engineError: MacVMError { .engine("客户机代理：\(message)") }
     }
 
     /// `cursor-watch` 之后逐行推送的客户机光标；`bgra` 为 Base64 的逐像素 B G R A（非预乘），自上而下。

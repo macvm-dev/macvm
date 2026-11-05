@@ -341,7 +341,7 @@ fn require(grant: Grant) -> io::Result<()> {
             thread::sleep(RESTART_DELAY);
             std::process::exit(0);
         });
-        return Err(io::Error::new(io::ErrorKind::Interrupted, "授权已生效，正在重启以载入授权，几秒后重试"));
+        return Err(io::Error::other(macvm_agent_protocol::Restarting("授权已生效，正在重启以载入授权，几秒后重试")));
     }
     if !PROMPTED[grant as usize].swap(true, Ordering::Relaxed) {
         grant.held(true);

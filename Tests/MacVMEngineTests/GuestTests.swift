@@ -90,6 +90,8 @@ struct AgentRequestTests {
         #expect(responses.contains { $0.info?.exeSHA256?.count == 64 })
         let denied = try #require(responses.first { $0.code == "permission" })
         #expect(throws: MacVMError.permissionDenied(denied.error ?? "")) { try denied.checked() }
+        let restarting = try #require(responses.first { $0.code == "restarting" })
+        #expect(throws: AgentProtocol.Restarting.self) { try restarting.checked() }
     }
 
     @Test func uiSnapshotFixturesDecode() throws {

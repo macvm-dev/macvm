@@ -19,6 +19,20 @@ pub const MAX_BODY: u64 = 64 << 20;
 pub const FEATURE_UI: &str = "ui";
 /// `Response::code`：代理缺少客户机系统授予的权限（如 macOS 的辅助功能、屏幕录制）。
 pub const CODE_PERMISSION: &str = "permission";
+/// `Response::code`：代理回完这个响应就退出，由客户机的服务管理器重新拉起；宿主等新代理上线后重试同一请求。
+pub const CODE_RESTARTING: &str = "restarting";
+
+/// 带着它的 `io::Error` 转成的失败响应带 `CODE_RESTARTING`。
+#[derive(Debug)]
+pub struct Restarting(pub &'static str);
+
+impl std::fmt::Display for Restarting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Restarting {}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "kebab-case")]
@@ -175,10 +189,16 @@ impl Response {
         Self { ok: false, error: Some(message.into()), ..Default::default() }
     }
 
-    /// 失败响应；`PermissionDenied` 带上 `CODE_PERMISSION`。
+    /// 失败响应；`PermissionDenied` 带上 `CODE_PERMISSION`，`Restarting` 带上 `CODE_RESTARTING`。
     pub fn from_error(e: &io::Error) -> Self {
-        let code = (e.kind() == io::ErrorKind::PermissionDenied).then(|| CODE_PERMISSION.to_string());
-        Self { code, ..Self::error(e.to_string()) }
+        let code = if e.kind() == io::ErrorKind::PermissionDenied {
+            Some(CODE_PERMISSION)
+        } else if e.get_ref().is_some_and(|inner| inner.is::<Restarting>()) {
+            Some(CODE_RESTARTING)
+        } else {
+            None
+        };
+        Self { code: code.map(str::to_string), ..Self::error(e.to_string()) }
     }
 }
 
@@ -341,6 +361,8 @@ mod tests {
         let resp = Response::from_error(&io::Error::new(io::ErrorKind::PermissionDenied, "x"));
         assert_eq!(resp.code.as_deref(), Some(CODE_PERMISSION));
         assert_eq!(Response::from_error(&io::Error::other("x")).code, None);
+        let restarting = Response::from_error(&io::Error::other(Restarting("r")));
+        assert_eq!((restarting.code.as_deref(), restarting.error.as_deref()), (Some(CODE_RESTARTING), Some("r")));
     }
 
     #[test]
