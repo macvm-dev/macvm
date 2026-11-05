@@ -17,7 +17,7 @@ struct Tune: AsyncParsableCommand {
           animations    关闭窗口与 Dock 动画
           transparency  打开减少透明度与减少动态效果；SSH 没有完全磁盘访问权限时会失败，
                         可在客户机的 系统设置 > 辅助功能 > 显示 里手动打开
-        spotlight、sleep、updates 要 sudo，用包内保存的客户机密码（install-macos 创建的虚拟机都有）。
+        spotlight、sleep、updates 要 sudo，用包内保存的客户机密码（macvm create --os macos 创建的虚拟机都有）。
         --revert 把所选各项恢复为系统默认。
         """
     )

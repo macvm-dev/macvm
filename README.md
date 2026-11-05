@@ -74,7 +74,7 @@ macvm ssh dev
 **macOS**：下载最新 IPSW，无人值守安装并开通 SSH。
 
 ```sh
-macvm install-macos mac
+macvm create mac --os macos
 ```
 
 **Windows**：先从[微软官网](https://www.microsoft.com/software-download/windows11arm64)下载 Windows 11 ARM64 ISO。

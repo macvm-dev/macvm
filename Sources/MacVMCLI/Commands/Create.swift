@@ -7,6 +7,9 @@ struct Create: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "创建虚拟机。",
         discussion: """
+        macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、
+        自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名，再执行 macvm tune 的全部项（--no-tune 跳过）。
+          macvm create mac --os macos
         Windows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。
           macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso
         Linux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。
@@ -88,14 +91,28 @@ struct Create: AsyncParsableCommand {
     @Flag(help: "后台运行时把客户机控制台输出写进 run.log。")
     var console = false
 
+    @Option(help: "macOS：本地 IPSW 文件，省略时下载本机支持的最新版本。")
+    var ipsw: String?
+
+    @Option(help: "macOS：显示分辨率，默认 1920x1200。")
+    var resolution: String?
+
+    @Flag(help: "macOS：装完不开机配置 SSH、代理与调优。")
+    var noProvision = false
+
+    @Flag(help: "macOS：开通后不执行 macvm tune。")
+    var noTune = false
+
     func run() async throws {
         try await Output.run(json: global.json, human: { (s: VMSummary) in "已创建 \(s.name)：\(s.path)" }) {
             if let template { return try await createFromTemplate(template) }
             if let user { try GuestAccount.validate(user: user) }
             if let password { try GuestAccount.validate(password: password) }
-            guard os.usesEFI else {
-                throw MacVMError.invalidConfig("macOS 客户机请用 macvm install-macos 创建")
-            }
+            if os == .macOS { return try await createMacOS() }
+            let macOnly: [(String, Bool)] = [
+                ("--ipsw", ipsw != nil), ("--resolution", resolution != nil), ("--no-provision", noProvision), ("--no-tune", noTune),
+            ]
+            if let option = macOnly.first(where: \.1)?.0 { throw MacVMError.invalidConfig("\(option) 只用于 macOS 客户机") }
             if os == .windows {
                 if image != nil || desktop != nil { throw MacVMError.invalidConfig("--image 与 --desktop 只用于 Linux 客户机") }
                 if let network, network != "nat" { throw MacVMError.invalidConfig("Windows 用 NAT 网络安装，装好后再用 macvm set --network 改") }
@@ -142,7 +159,8 @@ struct Create: AsyncParsableCommand {
             ("--image", image != nil), ("--desktop", desktop != nil), ("--manual-install", manualInstall), ("--user", user != nil),
             ("--password", password != nil), ("--iso", !installMedia.isEmpty), ("--share", !share.isEmpty), ("--rosetta", rosetta),
             ("--headless", headless != nil), ("--virtio-win", virtioWin != nil), ("--product-key", productKey != nil),
-            ("--no-install", noInstall), ("--console", console),
+            ("--no-install", noInstall), ("--console", console), ("--ipsw", ipsw != nil), ("--resolution", resolution != nil),
+            ("--no-provision", noProvision), ("--no-tune", noTune),
         ]
         if let option = conflicting.first(where: \.1)?.0 {
             throw MacVMError.invalidConfig("\(option) 不能与 --template 同用：系统、账户与设备都沿用模板")
@@ -176,6 +194,80 @@ struct Create: AsyncParsableCommand {
             _ = try await Start.launch(bundle, timeout: 120)
         }
         say("Ubuntu 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
+    }
+
+    /// 网络与共享目录不在安装时设置：首次开机经 NAT 下的客户机 IP 开通 SSH，装好后用 `macvm set` 改。
+    @MainActor
+    private func createMacOS() async throws -> VMSummary {
+        let unsupported: [(String, Bool)] = [
+            ("--image", image != nil), ("--desktop", desktop != nil), ("--manual-install", manualInstall), ("--iso", !installMedia.isEmpty),
+            ("--rosetta", rosetta), ("--headless", headless != nil), ("--virtio-win", virtioWin != nil),
+            ("--product-key", productKey != nil), ("--no-install", noInstall), ("--console", console), ("--engine qemu", engine == .qemu),
+        ]
+        if let option = unsupported.first(where: \.1)?.0 { throw MacVMError.invalidConfig("\(option) 不用于 macOS 客户机") }
+        if let network, network != "nat" { throw MacVMError.invalidConfig("macOS 用 NAT 网络安装，装好后再用 macvm set --network 改") }
+        if !share.isEmpty { throw MacVMError.invalidConfig("macOS 安装时不挂共享目录，装好后再用 macvm set --add-share 加") }
+        try Self.validateDefaultUser(user)
+        let user = user ?? NSUserName()
+        let resolution = resolution ?? "1920x1200"
+        guard let (width, height) = Display.parse(resolution) else {
+            throw MacVMError.invalidConfig("分辨率格式应为 宽x高：\(resolution)")
+        }
+        let interactive = interactive
+        let options = MacOSInstaller.Options(
+            name: name,
+            source: ipsw.map { .file(URL(filePath: ($0 as NSString).expandingTildeInPath)) } ?? .latest,
+            cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
+            user: user, password: password,
+            display: DisplayConfig(width: width, height: height, pixelsPerInch: 144),
+            showProgress: interactive
+        )
+        var lastPercent = -1
+        let bundle = try await MacOSInstaller.install(options) { phase in
+            guard interactive else { return }
+            switch phase {
+            case .downloading: FileHandle.standardError.write(Data("下载 IPSW…\n".utf8))
+            case .installing(let f):
+                let percent = Int(f * 100)
+                if percent != lastPercent {
+                    lastPercent = percent
+                    FileHandle.standardError.write(Data("\r安装 macOS：\(percent)%".utf8))
+                }
+            }
+        }
+        if interactive { FileHandle.standardError.write(Data("\n".utf8)) }
+        SSHConfigCommand.refresh()
+        guard !noProvision, let pw = GuestCredentials.password(for: bundle) else { return try VMStatus.summary(of: bundle) }
+
+        say("首次开机并配置 SSH（可能需要几分钟）…")
+        try await MacOSInstaller.firstBoot { _ = try await Start.launch(bundle, timeout: 120) }
+        let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: name, flags: ["--tcp", "--timeout", "600"])
+        try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: pw, proxyCommand: proxy, timeout: 900)
+        do {
+            try await MacOSProvisioning.setHostNameAndTimeZone(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
+        } catch {
+            warn("设置主机名与时区失败：\((error as? MacVMError)?.message ?? error.localizedDescription)")
+        }
+        if AgentInstaller.binary(for: .macOS) != nil {
+            _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
+        }
+        // 调优失败不算安装失败，原因写到标准错误，可稍后单独运行 macvm tune。
+        if !noTune {
+            say("调优客户机…")
+            do {
+                let report = try await MacOSTuning.run(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
+                say(Tune.render(name, report))
+            } catch {
+                warn("调优失败：\((error as? MacVMError)?.message ?? error.localizedDescription)，可稍后运行 macvm tune \(name)")
+            }
+        }
+        say("macOS 已就绪：macvm ssh \(name)；用户 \(user)，密码见 \(GuestCredentials.passwordURL(bundle).path)")
+        return try VMStatus.summary(of: bundle)
+    }
+
+    /// 不影响结果的问题：`--json` 时也写到标准错误。
+    private func warn(_ text: String) {
+        FileHandle.standardError.write(Data((text + "\n").utf8))
     }
 
     private func createWindows() async throws -> VMSummary {

@@ -19,6 +19,7 @@
 | `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物） |
 | `scripts` | Makefile 调用的脚本 |
 | `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
+| `skills` | 给其他应用与 agent 用的技能：`macvm` 教它们用 CLI 操作虚拟机 |
 
 `MacVMEngine` 按关注点分子目录：
 
@@ -57,7 +58,7 @@
 ## CLI 契约
 
 - 所有命令支持 `--json`，输出一行 `JSONEnvelope`；错误码与退出码在 `MacVMError` 定义，已发布的值不能改。
-- 改命令或选项时同步更新 `docs/cli.md`。
+- 改命令或选项时同步更新 `docs/cli.md`，以及 `skills/macvm` 里讲到它的地方。
 
 ## 注释
 
