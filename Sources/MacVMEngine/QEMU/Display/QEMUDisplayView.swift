@@ -64,6 +64,7 @@ public final class QEMUDisplayView: NSView {
         guestFit = nil
         requestedGuestSize = nil
         requestedGuestScale = nil
+        agentOnline = false
         endScaleTransition()
         cursorWatchRetry?.invalidate()
         cursorWatchRetry = nil
@@ -82,6 +83,14 @@ public final class QEMUDisplayView: NSView {
                 let resized = framebufferSize != size
                 framebufferSize = size
                 if resized { rebuildGuestCursor() }
+                // 代理上线后客户机自己换回了别的分辨率（Windows 登录时恢复上次保存的显示模式）：再请求一次窗口大小。
+                // 开机过程中固件与引导程序本来就要切几次分辨率，那时插手只会让画面一再重置；次数有限，客户机不接受这个尺寸时不来回切。
+                if resized, agentOnline, let requested = requestedGuestSize, requested != (Int(size.width), Int(size.height)),
+                   scaleTransition == nil, guestReverts < Self.maxGuestReverts {
+                    guestReverts += 1
+                    requestedGuestSize = nil
+                    scheduleGuestFit()
+                }
                 if let transition = scaleTransition, !transition.scaleSent, transition.size == (Int(size.width), Int(size.height)) {
                     sendTransitionScale()
                 }
@@ -171,6 +180,8 @@ public final class QEMUDisplayView: NSView {
         watcher.onClose = { [weak self] retry in
             guard let self else { return }
             cursorWatcher = nil
+            // 推送中断多半是客户机在重启或注销，下次开机过程中不纠正分辨率。
+            if retry { agentOnline = false }
             // 推送中断时代理可能已经退出，客户机里的系统光标还是透明的，先用箭头顶上，直到代理重新推送或明确不推。
             arrowUntilAgentReturns = retry && (agentCursorActive || arrowUntilAgentReturns)
             if agentCursorActive {
@@ -200,6 +211,8 @@ public final class QEMUDisplayView: NSView {
 
     /// 代理（重新）上线：客户机可能刚开机或重启过，画面连接没断但分辨率与缩放比例可能已回到开机时的值，重新核对一遍。
     private func agentCameOnline() {
+        agentOnline = true
+        guestReverts = 0
         requestedGuestSize = nil
         requestedGuestScale = nil
         scheduleGuestFit()
@@ -290,6 +303,7 @@ public final class QEMUDisplayView: NSView {
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         if guestCursorImage != nil, displayScale != guestCursorScale { rebuildGuestCursor() }
+        guestReverts = 0
         scheduleGuestFit()
     }
 
@@ -298,6 +312,11 @@ public final class QEMUDisplayView: NSView {
     private var guestFit: Timer?
     private var requestedGuestSize: (Int, Int)?
     private var requestedGuestScale: Int?
+    /// 代理上线或窗口改大小以来，客户机自己改回别的分辨率后重新请求的次数。
+    private var guestReverts = 0
+    /// 代理在线：客户机已开机并登录，之后它自己改分辨率才要纠正。
+    private var agentOnline = false
+    private static let maxGuestReverts = 3
     private var preferenceObserver: (any NSObjectProtocol)?
     /// 拖动窗口时每帧都在变，停下来这么久再请客户机切换。
     private static let guestFitDelay: TimeInterval = 0.4
