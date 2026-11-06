@@ -4,7 +4,7 @@ import MacVMEngine
 import MacVMModel
 
 struct List: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "ls", abstract: "列出虚拟机。")
+    static let configuration = CommandConfiguration(commandName: "ls", abstract: String(l10n: "List VMs."))
 
     @OptionGroup var global: GlobalOptions
 
@@ -15,7 +15,7 @@ struct List: AsyncParsableCommand {
     }
 
     static func table(_ rows: [VMSummary]) -> String {
-        guard !rows.isEmpty else { return "还没有虚拟机，用 macvm create 创建。" }
+        guard !rows.isEmpty else { return String(l10n: "No VMs yet. Create one with macvm create.") }
         let header = ["NAME", "OS", "STATE", "CPU", "MEMORY", "IP"]
         let body = rows.map { [$0.name, $0.os.rawValue, $0.state.rawValue, "\($0.cpuCount)", ByteSize.format($0.memorySize), $0.ipAddress ?? "-"] }
         return textTable(header: header, rows: body)

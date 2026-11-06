@@ -27,7 +27,7 @@ fn send(inputs: &[INPUT]) -> io::Result<()> {
     if sent as usize == inputs.len() {
         Ok(())
     } else {
-        Err(io::Error::new(io::ErrorKind::PermissionDenied, "输入被系统拦截：目标窗口的权限更高，或当前在安全桌面上"))
+        Err(io::Error::new(io::ErrorKind::PermissionDenied, "Windows blocked the input: the target window runs with higher privileges, or the secure desktop is showing"))
     }
 }
 
@@ -91,7 +91,7 @@ impl Injector for Injection {
     }
 
     fn key(&mut self, key: Key, down: bool) -> io::Result<()> {
-        let (vk, extended) = virtual_key(key).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("Windows 上没有这个键：{key:?}")))?;
+        let (vk, extended) = virtual_key(key).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("No such key on Windows: {key:?}")))?;
         let mut flags = if down { 0 } else { KEYEVENTF_KEYUP };
         if extended {
             flags |= KEYEVENTF_EXTENDEDKEY;

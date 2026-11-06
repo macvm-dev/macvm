@@ -6,19 +6,19 @@ import MacVMModel
 struct TemplateCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "template",
-        abstract: "管理模板：把已关机的虚拟机存为模板，再用 macvm create <名> --template <模板> 从它新建。",
-        discussion: "模板存在模板目录（App 设置里可改）。APFS 同卷时零拷贝；由模板新建的虚拟机获得新的机器标识与 MAC，云镜像虚拟机会以新主机名重新初始化。",
+        abstract: String(l10n: "Manage templates for creating VMs."),
+        discussion: String(l10n: "Save a shut-down VM as a template, then create VMs from it with macvm create <name> --template <template>. Templates are stored in the templates folder, which you can change in the app's settings. On the same APFS volume nothing is actually copied. VMs created from a template get a new machine identifier and MAC address, and those from cloud images are re-initialized with a new hostname."),
         subcommands: [Save.self, List.self, Remove.self]
     )
 
     struct Save: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "把已关机的虚拟机存为模板（不含快照）。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Save a shut-down VM as a template, without its snapshots."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var vm: String
-        @Argument(help: "模板名称，缺省与虚拟机同名。") var name: String?
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var vm: String
+        @Argument(help: ArgumentHelp(String(l10n: "Template name (default: the VM name)."))) var name: String?
 
         func run() async throws {
-            try await Output.run(json: global.json, human: { (t: TemplateSummary) in "已存为模板 \(t.name)：\(t.path)" }) {
+            try await Output.run(json: global.json, human: { (t: TemplateSummary) in String(l10n: "Saved template \(t.name): \(t.path)") }) {
                 let template = try await VMTemplate.save(VMLibrary.default.bundle(named: vm), as: name ?? vm)
                 return try VMTemplate.summary(of: template)
             }
@@ -26,7 +26,7 @@ struct TemplateCommand: AsyncParsableCommand {
     }
 
     struct List: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "ls", abstract: "列出模板。")
+        static let configuration = CommandConfiguration(commandName: "ls", abstract: String(l10n: "List templates."))
         @OptionGroup var global: GlobalOptions
 
         func run() async throws {
@@ -34,7 +34,7 @@ struct TemplateCommand: AsyncParsableCommand {
         }
 
         static func table(_ rows: [TemplateSummary]) -> String {
-            guard !rows.isEmpty else { return "还没有模板，用 macvm template save 创建。" }
+            guard !rows.isEmpty else { return String(l10n: "No templates yet. Create one with macvm template save.") }
             let header = ["NAME", "OS", "ENGINE", "CPU", "MEMORY", "DISK"]
             let body = rows.map {
                 [$0.name, $0.os.rawValue, $0.engine.rawValue, "\($0.cpuCount)", ByteSize.format($0.memorySize), $0.diskSize.map(ByteSize.format) ?? "-"]
@@ -44,12 +44,12 @@ struct TemplateCommand: AsyncParsableCommand {
     }
 
     struct Remove: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "rm", abstract: "删除模板。由它新建的虚拟机不受影响。")
+        static let configuration = CommandConfiguration(commandName: "rm", abstract: String(l10n: "Delete a template. VMs created from it aren't affected."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "模板名称。") var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "Template name."))) var name: String
 
         func run() async throws {
-            try await Output.run(json: global.json, human: { (_: Empty) in "已删除模板 \(name)" }) {
+            try await Output.run(json: global.json, human: { (_: Empty) in String(l10n: "Deleted template \(name)") }) {
                 try VMTemplate.delete(named: name)
                 return Empty()
             }

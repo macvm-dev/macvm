@@ -189,11 +189,11 @@ public enum AgentProtocol {
                         self = .filesPut(.desktop)
                     }
                 case "clipboard": self = .filesPut(.clipboard)
-                case let to: throw DecodingError.dataCorruptedError(forKey: .to, in: c, debugDescription: "未知目标 \(to)")
+                case let to: throw DecodingError.dataCorruptedError(forKey: .to, in: c, debugDescription: "Unknown target \(to)")
                 }
             case "files-get": self = .filesGet(paths: try c.decode([String].self, forKey: .paths))
             case "drag-files": self = .dragFiles
-            case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
+            case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "Unknown operation \(op)")
             }
         }
     }
@@ -234,13 +234,13 @@ public enum AgentProtocol {
         public let serial: Int64?
 
         /// 失败的响应转成错误：缺权限时为 `permissionDenied`，代理随即重启时为 `Restarting`，其余为 `engine`；代理没给原因时用 `fallback`。
-        func checked(_ fallback: String = "未知错误") throws -> Response {
+        func checked(_ fallback: String = String(l10n: "Unknown error")) throws -> Response {
             guard ok else {
                 let message = error ?? fallback
                 switch code {
                 case "permission": throw MacVMError.permissionDenied(message)
                 case "restarting": throw Restarting(message: message)
-                default: throw MacVMError.engine("客户机代理：\(message)")
+                default: throw MacVMError.engine(String(l10n: "Guest agent: \(message)"))
                 }
             }
             return self
@@ -251,7 +251,7 @@ public enum AgentProtocol {
     struct Restarting: Error {
         let message: String
 
-        var engineError: MacVMError { .engine("客户机代理：\(message)") }
+        var engineError: MacVMError { .engine(String(l10n: "Guest agent: \(message)")) }
     }
 
     /// `cursor-watch` 之后逐行推送的客户机光标；`bgra` 为 Base64 的逐像素 B G R A（非预乘），自上而下。

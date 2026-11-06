@@ -153,7 +153,7 @@ public enum ControlClient {
 
     private static func exchange(_ request: ControlRequest, over socket: UnixSocket, exact: Bool) throws -> ControlResponse {
         guard let response = try socket.exchange(request, as: ControlResponse.self, exact: exact) else {
-            throw MacVMError.io("控制连接被关闭")
+            throw MacVMError.io(String(l10n: "The control connection was closed"))
         }
         return response
     }

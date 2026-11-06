@@ -28,7 +28,7 @@ public struct VMLibrary: Sendable {
               name.unicodeScalars.allSatisfy(allowed.contains),
               !name.hasPrefix("."), !name.hasPrefix("-")
         else {
-            throw MacVMError.invalidConfig("名称须为 1–40 个字母、数字或 . _ -，且不以 . 或 - 开头：\(name)")
+            throw MacVMError.invalidConfig(String(l10n: "Name must be 1–40 letters, digits, . _ or -, not starting with . or -: \(name)"))
         }
     }
 

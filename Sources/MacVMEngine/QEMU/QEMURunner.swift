@@ -33,7 +33,7 @@ public final class QEMURunner: MachineRunner {
         self.display = display
         config = try bundle.loadConfig()
         if config.graphicsAcceleration, !qemu.direct3D {
-            throw MacVMError.unsupported("\(config.name) 装了 3D 显卡驱动，需要 App 自带的 QEMU（macOS 27 起）；当前的 QEMU 没有 3D，Windows 开机即崩溃")
+            throw MacVMError.unsupported(String(l10n: "\(config.name) has the 3D graphics driver installed and needs the QEMU that comes with MacVM (macOS 27 or later); this QEMU has no 3D support, so Windows would crash at startup"))
         }
         try qemu.ensureVars(for: bundle)
         // 主板 UUID 由它算出，包里没有时补建。
@@ -46,7 +46,7 @@ public final class QEMURunner: MachineRunner {
     public var supportsLiveShares: Bool { false }
 
     public func updateShares(_ shares: [ShareConfig]) throws {
-        throw MacVMError.unsupported("QEMU 引擎不支持共享目录")
+        throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support shared folders"))
     }
 
     // MARK: - 磁盘映像
@@ -67,7 +67,7 @@ public final class QEMURunner: MachineRunner {
         try checkAttachable(url)
         // 按 raw 接入，ASIF 的容器字节会原样露给客户机，客户机一写就毁了映像。
         guard url.pathExtension.lowercased() != "asif" else {
-            throw MacVMError.unsupported("QEMU 引擎不能接入 ASIF 映像")
+            throw MacVMError.unsupported(String(l10n: "The QEMU engine can't attach ASIF images"))
         }
         lastHotPlugSerial += 1
         let serial = lastHotPlugSerial
@@ -84,7 +84,7 @@ public final class QEMURunner: MachineRunner {
                 throw error
             }
         } catch {
-            throw MacVMError.engine("接入 \(url.lastPathComponent) 失败：\((error as? MacVMError)?.message ?? error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't attach \(url.lastPathComponent): \((error as? MacVMError)?.message ?? error.localizedDescription)"))
         }
         let image = AttachedImage(id: UUID(), url: url, readOnly: readOnly)
         hotPlugged.append((image, serial))
@@ -100,7 +100,7 @@ public final class QEMURunner: MachineRunner {
         do {
             try await qmp.execute("device_del", ["id": Self.deviceID(entry.serial)])
         } catch {
-            throw MacVMError.engine("推出 \(entry.image.url.lastPathComponent) 失败：\((error as? MacVMError)?.message ?? error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't eject \(entry.image.url.lastPathComponent): \((error as? MacVMError)?.message ?? error.localizedDescription)"))
         }
         hotPlugged.removeAll { $0.image.id == id }
         // 设备从总线上摘下之后块设备才不再被占用，在那之前 blockdev-del 会失败。
@@ -108,7 +108,7 @@ public final class QEMURunner: MachineRunner {
             if (try? await qmp.execute("blockdev-del", ["node-name": Self.nodeName(entry.serial)])) != nil { return }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        throw MacVMError.engine("\(entry.image.url.lastPathComponent) 已从客户机拔下，但 QEMU 没释放它的块设备，文件仍被占用，关机后才能再接入或改动")
+        throw MacVMError.engine(String(l10n: "\(entry.image.url.lastPathComponent) was removed from the guest, but QEMU is still holding the file; shut down the virtual machine before attaching or changing it again"))
     }
 
     @discardableResult
@@ -118,7 +118,7 @@ public final class QEMURunner: MachineRunner {
         if bundle.hasSavedState, recovery {
             // 冷启动会写磁盘，留着的状态与磁盘从此不一致。
             try? FileManager.default.removeItem(at: bundle.savedStateURL)
-            outcome = .restoreFailed("以恢复模式启动，不使用挂起状态")
+            outcome = .restoreFailed(String(l10n: "Starting in recovery mode; the suspended state won't be restored"))
         } else if bundle.hasSavedState {
             restoring = true
             restoreExited = false
@@ -174,11 +174,11 @@ public final class QEMURunner: MachineRunner {
     /// NAT 下经 QEMU 转发到 Unix socket 的端口，只有 `QEMUCommand.forwardedPorts`；桥接下直连客户机 IP 上的任意端口。
     nonisolated static func connectToGuest(_ bundle: VMBundle, _ config: VMConfig, port: UInt32) throws -> UnixSocket {
         if config.networks.first?.mode == .bridged {
-            guard let ip = GuestAddress.current(bundle, config) else { throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址") }
+            guard let ip = GuestAddress.current(bundle, config) else { throw MacVMError.io(String(l10n: "\(bundle.name)'s IP address isn't known yet")) }
             return try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle, config: config)
         }
         guard QEMUCommand.forwardedPorts.contains(port) else {
-            throw MacVMError.unsupported("QEMU 引擎在 NAT 网络下只转发客户机端口 \(QEMUCommand.forwardedPorts.map(String.init).joined(separator: "、"))")
+            throw MacVMError.unsupported(String(l10n: "With NAT networking, the QEMU engine only forwards guest ports \(QEMUCommand.forwardedPorts.map(String.init).joinedAsList())"))
         }
         let socket = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
         if port == AgentProtocol.port { try AgentToken.authenticate(socket, bundle: bundle, bridged: false) }
@@ -205,7 +205,7 @@ public final class QEMURunner: MachineRunner {
 
     /// 暂停后把内存与设备状态迁移到包内文件，然后退出 QEMU；下次 `start` 以 `-incoming` 读回。
     public func suspend() async throws {
-        guard config.supportsSuspend else { throw MacVMError.unsupported("该虚拟机的配置不支持挂起") }
+        guard config.supportsSuspend else { throw MacVMError.unsupported(String(l10n: "This virtual machine's configuration doesn't support suspending")) }
         guard !qemu.usesVirgl else { throw QEMUInstallation.virglSuspendError }
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
         try requireNoAttachedImages()
@@ -242,10 +242,10 @@ public final class QEMURunner: MachineRunner {
         do {
             surface = try await qmp.execute("x-macvm-display-surface")
         } catch MacVMError.engine(let message) where message.hasSuffix(Self.noScanoutMessage) {
-            throw MacVMError.engine("客户机现在没有显卡画面输出（闲置息屏，或开机早期还在固件画面），唤醒后再截")
+            throw MacVMError.engine(String(l10n: "The guest isn't showing anything right now (its display is asleep, or it's still on the firmware screen during startup); wake it and try again"))
         }
         guard let id = (surface["iosurface"] as? NSNumber)?.uint32Value else {
-            throw MacVMError.engine("QEMU 没有给出画面的 IOSurface")
+            throw MacVMError.engine(String(l10n: "QEMU didn't provide an IOSurface for the display"))
         }
         try IOSurfaceImage.writePNG(surfaceID: id, to: url)
     }
@@ -253,7 +253,7 @@ public final class QEMURunner: MachineRunner {
     /// 自带的 QEMU 把尺寸告诉客户机（与调整显示窗口大小的效果相同），客户机的显卡驱动决定是否跟随：
     /// Windows 的 viogpu3d 由它的分辨率服务切换，Linux 由桌面环境切换。
     public func resizeDisplay(width: Int, height: Int) throws {
-        guard qemu.bundleRoot != nil else { throw MacVMError.unsupported("Homebrew 的 QEMU 不支持运行中调整显示尺寸") }
+        guard qemu.bundleRoot != nil else { throw MacVMError.unsupported(String(l10n: "Homebrew's QEMU can't resize the display while the virtual machine is running")) }
         guard let qmp else { throw MacVMError.notRunning(bundle.name) }
         Task { _ = try? await qmp.execute("x-macvm-set-display-size", ["width": width, "height": height]) }
     }
@@ -270,7 +270,7 @@ public final class QEMURunner: MachineRunner {
         let qmpPath = QEMUCommand.qmpSocket(bundle).path
         // 能连上说明上一个 QEMU 还在运行（持有锁的进程已不在）；删掉它的 socket 会让它再也无法管理。
         if (try? UnixSocket.connect(to: qmpPath)) != nil {
-            throw MacVMError.engine("\(bundle.name) 上次的 QEMU 进程仍在运行，先结束它（ps 中 -name \(bundle.name) 的 qemu-system-aarch64）")
+            throw MacVMError.engine(String(l10n: "An earlier QEMU process for \(bundle.name) is still running; quit it first (look for qemu-system-aarch64 with -name \(bundle.name) in ps)"))
         }
         for path in [QEMUCommand.qmpSocket(bundle), QEMUCommand.vncSocket(bundle), QEMUCommand.spiceSocket(bundle)] + QEMUCommand.forwardedPorts.map({ QEMUCommand.portSocket(bundle, port: $0) }) {
             unlink(path.path)
@@ -305,7 +305,7 @@ public final class QEMURunner: MachineRunner {
         }
         do { try process.run() } catch {
             closeBridge()
-            throw MacVMError.engine("无法启动 QEMU：\(error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't start QEMU: \(error.localizedDescription)"))
         }
         self.process = process
         stateLabel = "starting"
@@ -315,7 +315,7 @@ public final class QEMURunner: MachineRunner {
             client = try await QMPClient.connect(to: qmpPath, timeout: 15) { [process = Unchecked(value: process)] in process.value.isRunning }
         } catch {
             let detail = stderr.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw detail.isEmpty ? error : MacVMError.engine("QEMU 启动失败：\(detail)")
+            throw detail.isEmpty ? error : MacVMError.engine(String(l10n: "QEMU didn't start: \(detail)"))
         }
         client.onEvent = { [weak self] event, _ in
             Task { @MainActor in self?.handle(event: event) }
@@ -338,7 +338,7 @@ public final class QEMURunner: MachineRunner {
             switch info["status"] as? String {
             case "completed": return
             case "failed", "cancelled":
-                throw MacVMError.engine("迁移失败：\(info["error-desc"] as? String ?? "未知原因")")
+                throw MacVMError.engine(String(l10n: "Couldn't save or restore the virtual machine state: \(info["error-desc"] as? String ?? String(l10n: "unknown reason"))"))
             default: try await Task.sleep(for: .milliseconds(100))
             }
         }
@@ -384,7 +384,7 @@ public final class QEMURunner: MachineRunner {
             restoreExited = true
             return
         }
-        finish(status == 0 ? .guestShutdown : .error("QEMU 退出码 \(status)"))
+        finish(status == 0 ? .guestShutdown : .error(String(l10n: "QEMU exited with code \(status)")))
     }
 
     private func finish(_ reason: MachineStopReason) { stopLatch.fire(reason) }
@@ -404,7 +404,7 @@ public final class QEMURunner: MachineRunner {
         gpuDriverSync = Task.detached {
             let payload: WindowsGPUDriver.Payload
             do { payload = try WindowsGPUDriver.Payload(contentsOf: zip) } catch {
-                FileHandle.standardError.write(Data("macvm: 为 \(name) 读取显卡驱动包失败：\(error)\n".utf8))
+                FileHandle.standardError.write(Data("macvm: reading the graphics driver package for \(name) failed: \(error)\n".utf8))
                 return
             }
             // 代理在客户机登录后才启动，开机慢时要等好几分钟。
@@ -412,15 +412,15 @@ public final class QEMURunner: MachineRunner {
                 do {
                     if try WindowsGPUDriver.push(payload, connect: { try Self.connectToGuest(bundle, config, port: AgentProtocol.port) }) {
                         let rebooting = Self.askAgentToShutDown(bundle, config, reboot: true)
-                        let next = rebooting ? "正在重启客户机" : "重启客户机失败，请手动重启"
-                        FileHandle.standardError.write(Data("macvm: 已为 \(name) 更新显卡驱动，\(next)\n".utf8))
+                        let next = rebooting ? "restarting the guest" : "restarting the guest failed; restart it manually"
+                        FileHandle.standardError.write(Data("macvm: updated the graphics driver for \(name); \(next)\n".utf8))
                     }
                     return
                 } catch is WindowsGPUDriver.AgentNotReady {
                     try? await Task.sleep(for: Self.agentWaitInterval)
                     if Task.isCancelled { return }
                 } catch {
-                    FileHandle.standardError.write(Data("macvm: 为 \(name) 推送显卡驱动失败：\(error)\n".utf8))
+                    FileHandle.standardError.write(Data("macvm: pushing the graphics driver to \(name) failed: \(error)\n".utf8))
                     return
                 }
             }

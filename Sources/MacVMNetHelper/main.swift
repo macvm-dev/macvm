@@ -16,11 +16,11 @@ final class Session: NSObject, NetworkHelperService, @unchecked Sendable {
 
     func openBridge(interface: String, macAddress: String, reply: @escaping @Sendable (FileHandle?, String?) -> Void) {
         queue.async { [self] in
-            guard bridge == nil else { return reply(nil, "这条连接上已经建过桥接") }
-            guard let mac = ARPSnoop.parseMAC(macAddress) else { return reply(nil, "MAC 地址无效：\(macAddress)") }
+            guard bridge == nil else { return reply(nil, "A bridge was already created on this connection") }
+            guard let mac = ARPSnoop.parseMAC(macAddress) else { return reply(nil, "Invalid MAC address: \(macAddress)") }
             let available = Bridge.interfaces()
             guard available.contains(interface) else {
-                return reply(nil, "\(interface) 不能桥接，可用：\(available.joined(separator: ", "))")
+                return reply(nil, "\(interface) can't be bridged; available: \(available.joined(separator: ", "))")
             }
             let client = connection?.remoteObjectProxy as? any NetworkHelperClient
             let proxy = UncheckedClient(value: client)

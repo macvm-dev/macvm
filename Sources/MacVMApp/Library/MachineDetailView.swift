@@ -22,26 +22,26 @@ struct MachineDetailView: View {
     private func guestUpdateRow(_ update: AppModel.GuestUpdateState) -> some View {
         switch update {
         case .available(let pending):
-            LabeledContent("客户机") {
+            LabeledContent("Guest") {
                 HStack(spacing: 8) {
-                    Text("有可用更新").foregroundStyle(.secondary)
-                    Button("更新") { model.updateGuest(vm.name) }.controlSize(.small)
+                    Text("Update available").foregroundStyle(.secondary)
+                    Button("Update") { model.updateGuest(vm.name) }.controlSize(.small)
                 }
             }
-            .help((["与 App 自带的版本不同，更新经客户机代理完成："] + (pending.agent ? ["· 客户机代理（会重启一次）"] : [])
+            .help(([String(l10n: "Doesn't match the version included with MacVM. Updating goes through the guest agent and includes:")] + (pending.agent ? [String(l10n: "· Guest agent (restarts once)")] : [])
                    + pending.changes.map { "· \($0)" }).joined(separator: "\n"))
         case .updating(let step):
-            LabeledContent("客户机") {
+            LabeledContent("Guest") {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text(step).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
             }
         case .rebootRequired:
-            LabeledContent("客户机") {
+            LabeledContent("Guest") {
                 HStack(spacing: 8) {
-                    Text("重启后生效").foregroundStyle(.secondary)
-                    Button("重启") { model.rebootGuest(vm.name) }.controlSize(.small)
+                    Text("Restart to apply").foregroundStyle(.secondary)
+                    Button("Restart") { model.rebootGuest(vm.name) }.controlSize(.small)
                 }
             }
         }
@@ -55,80 +55,80 @@ struct MachineDetailView: View {
             }
             Section {
                 if let config, config.os != .macOS {
-                    Picker("引擎", selection: Binding(get: { config.engine }, set: { model.setEngine(vm.name, to: $0) })) {
-                        Text("VZ（占用低）").tag(Engine.vz)
-                        Text("QEMU（声音、挂起）").tag(Engine.qemu)
+                    Picker("Engine", selection: Binding(get: { config.engine }, set: { model.setEngine(vm.name, to: $0) })) {
+                        Text("VZ (lower overhead)").tag(Engine.vz)
+                        Text("QEMU (sound, suspend)").tag(Engine.qemu)
                     }
                     .disabled(!editable || !config.installMedia.isEmpty)
                     if config.engine == .qemu || config.os == .linux {
-                        Toggle("高分辨率（Retina）", isOn: Binding(get: { config.display.retina }, set: { model.setRetina(vm.name, $0) }))
+                        Toggle("High Resolution (Retina)", isOn: Binding(get: { config.display.retina }, set: { model.setRetina(vm.name, $0) }))
                             .help(config.os == .windows
-                                  ? "窗口里的分辨率按屏幕像素而不是点数，更清晰；Windows 同时把缩放比例调到相同倍数。运行中切换立即生效。"
+                                  ? "Uses screen pixels instead of points for the window resolution, for a sharper image. Windows adjusts its scaling to match. Takes effect right away, even while running."
                                   : config.guestAgent
-                                  ? "窗口里的分辨率按屏幕像素而不是点数，更清晰；客户机代理同时把 GNOME 的缩放调到相同倍数。运行中切换立即生效。"
-                                  : "窗口里的分辨率按屏幕像素而不是点数，更清晰；Retina 屏上界面会变成一半大，要在客户机里把缩放调到 200%。运行中切换立即生效。")
+                                  ? "Uses screen pixels instead of points for the window resolution, for a sharper image. The guest agent adjusts GNOME scaling to match. Takes effect right away, even while running."
+                                  : "Uses screen pixels instead of points for the window resolution, for a sharper image. On a Retina display, everything looks half as big, so set scaling to 200% in the guest. Takes effect right away, even while running.")
                     }
                 }
                 if let config, editable {
-                    NumberField(title: "处理器", unit: "核",
+                    NumberField(title: "Processors", unit: config.cpuCount == 1 ? "core" : "cores",
                                 value: Binding(get: { config.cpuCount }, set: { model.setCPUCount(vm.name, $0) }),
                                 invalid: .constant(false), range: ResourceRange.cpuCount)
-                    NumberField(title: "内存", unit: "GB",
+                    NumberField(title: "Memory", unit: "GB",
                                 value: Binding(get: { Int(config.memorySize >> 30) }, set: { model.setMemory(vm.name, gigabytes: $0) }),
                                 invalid: .constant(false), range: ResourceRange.memoryGB)
                 } else {
-                    LabeledContent("处理器", value: "\(vm.cpuCount) 核")
-                    LabeledContent("内存", value: DisplaySize.format(vm.memorySize))
+                    LabeledContent("Processors", value: String(l10n: "\(vm.cpuCount) cores"))
+                    LabeledContent("Memory", value: DisplaySize.format(vm.memorySize))
                 }
                 if let config, let net = config.networks.first {
                     networkPicker(net)
                 }
                 if let config, config.supportsAudio {
-                    Toggle("声音", isOn: Binding(get: { config.audio }, set: { model.setAudio(vm.name, $0) }))
+                    Toggle("Sound", isOn: Binding(get: { config.audio }, set: { model.setAudio(vm.name, $0) }))
                         .disabled(!editable)
                 }
                 if let config, config.supportsMicrophone {
-                    Toggle("麦克风", isOn: Binding(get: { config.microphone }, set: { model.setMicrophone(vm.name, $0) }))
+                    Toggle("Microphone", isOn: Binding(get: { config.microphone }, set: { model.setMicrophone(vm.name, $0) }))
                         .disabled(!editable)
-                        .help("把主机麦克风接给客户机，开机时主机会请求麦克风权限")
+                        .help("Connects your Mac's microphone to the guest. macOS asks for microphone permission when the virtual machine starts")
                 }
                 if let config {
-                    Toggle("同步剪贴板", isOn: Binding(get: { config.clipboard }, set: { model.setClipboard(vm.name, $0) }))
+                    Toggle("Sync Clipboard", isOn: Binding(get: { config.clipboard }, set: { model.setClipboard(vm.name, $0) }))
                         .disabled(config.clipboardChangeNeedsStop && !editable)
                         .help(config.os == .linux
-                              ? "宿主与客户机互通文本剪贴板，客户机里要有 spice-vdagent；关机后才能修改。客户机里的程序都能读到宿主上复制的内容"
-                              : "宿主与客户机互通文本剪贴板：点进虚拟机窗口时把宿主剪贴板交给客户机，离开时取回客户机的。客户机里的程序都能读到宿主上复制的内容")
+                              ? "Shares copied text between the host and guest. Requires spice-vdagent in the guest and can only be changed while shut down. Any app in the guest can read what you copy on the host"
+                              : "Shares copied text between the host and guest. The host clipboard goes to the guest when you click in the virtual machine window, and the guest clipboard comes back when you leave it. Any app in the guest can read what you copy on the host")
                 }
                 if let config {
-                    Toggle("空闲后锁屏", isOn: Binding(get: { config.screenLock }, set: { model.setScreenLock(vm.name, $0) }))
+                    Toggle("Lock Screen When Idle", isOn: Binding(get: { config.screenLock }, set: { model.setScreenLock(vm.name, $0) }))
                         .disabled(!config.guestAgent)
                         .help(config.guestAgent
-                              ? "客户机空闲、显示器休眠后锁屏，回来要输密码；关掉后客户机不锁屏。运行中改了立即生效"
-                              : "要先装上客户机代理")
+                              ? "Locks the guest screen when it's idle and the display sleeps, so a password is needed to get back in. When off, the guest never locks. Takes effect right away, even while running"
+                              : "Requires the guest agent")
                 }
                 if let diskSize {
-                    LabeledContent("磁盘") {
+                    LabeledContent("Disk") {
                         HStack(spacing: 10) {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(DisplaySize.format(diskSize.logical))
-                                Text("已占用 \(DisplaySize.format(diskSize.physical))").font(.caption).foregroundStyle(.tertiary)
+                                Text("\(DisplaySize.format(diskSize.physical)) used").font(.caption).foregroundStyle(.tertiary)
                             }
                             if editable, config != nil {
-                                Button("扩容…") { growingDisk = true }.controlSize(.small)
+                                Button("Resize…") { growingDisk = true }.controlSize(.small)
                             }
                         }
                     }
                 }
             } header: {
-                Text("硬件")
+                Text("Hardware")
             } footer: {
                 if let lockedReason {
                     Text(lockedReason).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Section("访问") {
+            Section("Access") {
                 if let ip = vm.ipAddress {
-                    CopyableRow(title: "IP 地址", value: ip)
+                    CopyableRow(title: "IP Address", value: ip)
                 }
                 if config?.guestUser != nil {
                     CopyableRow(title: "SSH", value: model.sshCommand(vm.name))
@@ -136,7 +136,7 @@ struct MachineDetailView: View {
                 if let update = model.guestUpdates[vm.name] {
                     guestUpdateRow(update)
                 }
-                LabeledContent("位置") {
+                LabeledContent("Location") {
                     HStack(spacing: 6) {
                         Text((vm.path as NSString).abbreviatingWithTildeInPath)
                             .lineLimit(1).truncationMode(.middle)
@@ -145,7 +145,7 @@ struct MachineDetailView: View {
                         Button { revealInFinder() } label: { Image(systemName: "arrow.right.circle.fill") }
                             .buttonStyle(.borderless)
                             .foregroundStyle(.secondary)
-                            .help("在 Finder 中显示")
+                            .help("Show in Finder")
                     }
                 }
             }
@@ -162,22 +162,22 @@ struct MachineDetailView: View {
         .sheet(isPresented: $growingDisk, onDismiss: { loadDiskSize(model.config(of: vm.name)) }) {
             if let config, let diskSize { DiskGrowSheet(vmName: vm.name, config: config, currentSize: diskSize.logical) }
         }
-        .confirmationDialog("删除「\(vm.name)」？", isPresented: $confirmingDelete) {
-            Button("删除", role: .destructive) { model.delete(vm.name) }
+        .confirmationDialog("Delete “\(vm.name)”?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) { model.delete(vm.name) }
         } message: {
-            Text("磁盘与快照会一并删除，无法撤销。")
+            Text("Its disks and snapshots will also be deleted. This can't be undone.")
         }
-        .alert("克隆为", isPresented: $showingClone) {
-            TextField("名称", text: $cloneName)
-            Button("克隆") { Task { await model.clone(vm.name, as: cloneName) } }
-            Button("取消", role: .cancel) {}
+        .alert("Clone As", isPresented: $showingClone) {
+            TextField("Name", text: $cloneName)
+            Button("Clone") { Task { await model.clone(vm.name, as: cloneName) } }
+            Button("Cancel", role: .cancel) {}
         }
-        .alert("存为模板", isPresented: $showingSaveTemplate) {
-            TextField("模板名称", text: $templateName)
-            Button("存为模板") { Task { await model.saveTemplate(vm.name, as: templateName) } }
-            Button("取消", role: .cancel) {}
+        .alert("Save as Template", isPresented: $showingSaveTemplate) {
+            TextField("Template Name", text: $templateName)
+            Button("Save as Template") { Task { await model.saveTemplate(vm.name, as: templateName) } }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("快照不随模板保存。新建虚拟机时可从模板创建。")
+            Text("Snapshots aren't included in the template. You can create new virtual machines from it.")
         }
     }
 
@@ -189,8 +189,8 @@ struct MachineDetailView: View {
 
     private var lockedReason: String? {
         switch vm.state {
-        case .running: "关机后可修改处理器、内存、网络、声音、麦克风与磁盘容量。"
-        case .suspended: "已挂起：继续运行并关机后才能修改。"
+        case .running: String(l10n: "Shut down to change processors, memory, network, sound, microphone, and disk size.")
+        case .suspended: String(l10n: "Suspended. To make changes, resume it and then shut it down.")
         case .stopped: nil
         }
     }
@@ -198,11 +198,12 @@ struct MachineDetailView: View {
     /// 选项按本机当前可桥接的网卡列出；配置里的网卡不在其中（如拔掉的扩展坞网口）时也列出，免得选择变成空白。
     private func networkPicker(_ net: NetworkConfig) -> some View {
         let current = net.mode == .bridged ? NetworkChoice.bridged(net.interface) : .nat
-        var bridges = bridgeInterfaces.map { (choice: NetworkChoice.bridged($0.identifier), label: "桥接：\($0.name)（\($0.identifier)）") }
+        var bridges = bridgeInterfaces.map { (choice: NetworkChoice.bridged($0.identifier), label: String(l10n: "Bridged: \($0.name) (\($0.identifier))")) }
         if case .bridged(let id) = current, !bridges.contains(where: { $0.choice == current }) {
-            bridges.append((current, "桥接：\(id ?? "第一块可桥接的网卡")"))
+            let interface = id ?? String(l10n: "first available interface")
+            bridges.append((current, String(l10n: "Bridged: \(interface)")))
         }
-        return Picker("网络", selection: Binding(get: { current }, set: { choice in
+        return Picker("Network", selection: Binding(get: { current }, set: { choice in
             switch choice {
             case .nat: model.setNetwork(vm.name, .nat, interface: nil)
             case .bridged(let id): model.setNetwork(vm.name, .bridged, interface: id)
@@ -212,7 +213,7 @@ struct MachineDetailView: View {
             ForEach(bridges, id: \.choice) { Text($0.label).tag($0.choice) }
         }
         .disabled(!editable)
-        .help("桥接让客户机直接接入主机所在的局域网，要先在设置里启用网络辅助程序")
+        .help("Bridged networking connects the guest directly to your Mac's local network. To use it, enable the network helper in Settings")
     }
 
     private enum NetworkChoice: Hashable {
@@ -242,41 +243,41 @@ struct MachineDetailView: View {
     @ViewBuilder private func controls(_ config: VMConfig?) -> some View {
         HStack(spacing: 8) {
             if model.isCreating(vm.name) {
-                Button("取消创建", role: .destructive) { model.cancelCreation(vm.name) }
+                Button("Cancel Creation", role: .destructive) { model.cancelCreation(vm.name) }
             }
             switch vm.state {
             case .stopped, .suspended:
                 Button { openWindow(id: "machine", value: vm.name) } label: {
-                    Label(vm.state == .suspended ? "继续" : "启动", systemImage: "play.fill")
+                    Label(vm.state == .suspended ? "Resume" : "Start", systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.activity[vm.name] != nil)
             case .running:
                 // 显示不了画面时按钮照样在：窗口里说明虚拟机在别的进程运行、关机后才能在这里打开。
-                Button { openWindow(id: "machine", value: vm.name) } label: { Label("显示", systemImage: "macwindow") }
+                Button { openWindow(id: "machine", value: vm.name) } label: { Label("Show", systemImage: "macwindow") }
                     .buttonStyle(.borderedProminent)
-                    .help(model.canDisplay(vm.name) ? "显示画面" : "在后台进程中运行，VZ 的画面只能在运行它的进程里显示；关机后在这里重新启动即可显示")
+                    .help(model.canDisplay(vm.name) ? "Show Display" : "Running in a background process. Only that process can show a VZ virtual machine's screen; shut it down and start it here to see it")
                 if model.canSuspend(vm.name) {
-                    Button { Task { await model.suspend(vm.name) } } label: { Label("挂起", systemImage: "pause.fill") }
+                    Button { Task { await model.suspend(vm.name) } } label: { Label("Suspend", systemImage: "pause.fill") }
                 }
                 // 点按钮本身正常关机，下拉里才是强制断电。
                 Menu {
-                    Button("强制断电", role: .destructive) { Task { await model.stop(vm.name, force: true) } }
+                    Button("Force Power Off", role: .destructive) { Task { await model.stop(vm.name, force: true) } }
                 } label: {
-                    Label("关机", systemImage: "power")
+                    Label("Shut Down", systemImage: "power")
                 } primaryAction: {
                     Task { await model.stop(vm.name) }
                 }
                 .fixedSize()
             }
             Menu {
-                Button("克隆…") { cloneName = vm.name + "-copy"; showingClone = true }
+                Button("Clone…") { cloneName = vm.name + "-copy"; showingClone = true }
                     .disabled(vm.state == .running || busy)
-                Button("存为模板…") { templateName = vm.name; showingSaveTemplate = true }
+                Button("Save as Template…") { templateName = vm.name; showingSaveTemplate = true }
                     .disabled(!editable)
-                Button("在 Finder 中显示") { revealInFinder() }
+                Button("Show in Finder") { revealInFinder() }
                 Divider()
-                Button("删除…", role: .destructive) { confirmingDelete = true }
+                Button("Delete…", role: .destructive) { confirmingDelete = true }
                     .disabled(vm.state == .running || busy)
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
@@ -284,7 +285,7 @@ struct MachineDetailView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("更多操作")
+            .help("More Actions")
         }
         // 按钮按理想宽度排，空间不够时由左侧的名字截断。
         .fixedSize()
@@ -322,7 +323,7 @@ struct StatusLine: View {
 
 /// 等宽显示、可选中，悬停时出现复制按钮。
 struct CopyableRow: View {
-    let title: String
+    let title: LocalizedStringKey
     let value: String
     @State private var hovering = false
     @State private var copied = false
@@ -342,7 +343,7 @@ struct CopyableRow: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
                 .opacity(hovering || copied ? 1 : 0)
-                .help("复制")
+                .help("Copy")
             }
         }
         .onHover { hovering = $0 }

@@ -107,9 +107,9 @@ public enum AgentUpdate {
     static func replace(_ bundle: VMBundle) async throws -> Bool {
         let config = try bundle.loadConfig()
         guard let binary = AgentInstaller.binary(for: config.os), let expected = bundledSHA256(for: config.os) else {
-            throw MacVMError.io("找不到 \(config.os.rawValue) 版客户机代理，先运行 make agent")
+            throw MacVMError.io(String(l10n: "Couldn't find the \(config.os.rawValue) guest agent; run make agent first"))
         }
-        guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法更新代理") }
+        guard let user = config.guestUser else { throw MacVMError.unsupported(String(l10n: "\(config.name)'s login user is unknown, so the guest agent can't be updated")) }
         try GuestAccount.validate(user: user)
         let current = try AgentClient.info(bundle)
         guard current.exeSHA256 != expected else { return false }
@@ -132,12 +132,12 @@ public enum AgentUpdate {
         let (code, output) = try AgentClient.run(bundle, request: request, input: input)
         if let code, code != 0 {
             let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw MacVMError.engine("更新客户机代理失败（退出码 \(code)）" + (detail.isEmpty ? "" : "：\(detail)"))
+            throw MacVMError.engine(String(l10n: "Couldn't update the guest agent (exit code \(code))") + (detail.isEmpty ? "" : String(l10n: ": \(detail)")))
         }
         let online = try await VMStatus.poll(timeout: restartTimeout, interval: 1) {
             (try? AgentClient.info(bundle, timeout: 2))?.exeSHA256 == expected
         }
-        guard online else { throw MacVMError.timeout("客户机代理已更新，但 \(Int(restartTimeout)) 秒内没有以新版本上线") }
+        guard online else { throw MacVMError.timeout(String(l10n: "The guest agent was updated, but the new version didn't respond within \(Int(restartTimeout)) seconds")) }
         return true
     }
 

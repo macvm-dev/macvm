@@ -5,17 +5,17 @@ import MacVMModel
 
 struct Update: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "把运行中的虚拟机里的代理与客户机设置更新到 App 当前的版本。",
-        discussion: """
-        经客户机代理完成，不需要 SSH：先换代理（代理重启一次），再补做建机之后安装流程新增的设置（如 Windows 的 virtio 驱动）。
-        有的设置要重启客户机生效，加 --reboot 时随即重启；换了 Windows 的 3D 显卡驱动时总会重启。--check 只列出待做的更新。
-        """
+        abstract: String(l10n: "Bring a running VM's guest agent and guest settings up to date with this version of the app."),
+        discussion: String(l10n: """
+        Works through the guest agent; SSH isn't needed. The agent is replaced first (it restarts once), then any setup the installer has gained since the VM was created is applied, such as Windows virtio drivers.
+        Some settings take effect only after the guest restarts; add --reboot to restart it right away. Updating the Windows 3D graphics driver always restarts the guest. Use --check to list pending updates without applying them.
+        """)
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
-    @Flag(help: "只列出待做的更新，不执行。") var check = false
-    @Flag(help: "设置要重启才生效时随即重启客户机。") var reboot = false
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Flag(help: ArgumentHelp(String(l10n: "List pending updates without applying them."))) var check = false
+    @Flag(help: ArgumentHelp(String(l10n: "Restart the guest right away if an update needs it."))) var reboot = false
 
     func run() async throws {
         let bundle = try VMLibrary.default.bundle(named: name)
@@ -36,15 +36,15 @@ struct Update: AsyncParsableCommand {
     }
 
     static func render(_ name: String, _ p: GuestUpdate.Pending) -> String {
-        guard !p.isEmpty else { return "\(name) 已是最新" }
-        return (["\(name) 有可用更新："] + (p.agent ? ["- 客户机代理"] : []) + p.changes.map { "- \($0)" }).joined(separator: "\n")
+        guard !p.isEmpty else { return String(l10n: "\(name) is up to date") }
+        return ([String(l10n: "Updates available for \(name):")] + (p.agent ? ["- " + String(l10n: "Guest agent")] : []) + p.changes.map { "- \($0)" }).joined(separator: "\n")
     }
 
     static func render(_ name: String, _ r: GuestUpdate.Result, rebooted: Bool) -> String {
-        guard r.agentUpdated || !r.applied.isEmpty else { return "\(name) 已是最新" }
-        var lines = ["已更新 \(name)："] + (r.agentUpdated ? ["- 客户机代理"] : []) + r.applied.map { "- \($0)" }
-        if r.rebooting { lines.append("3D 显卡驱动也已更新，正在重启客户机") }
-        if r.rebootRequired { lines.append(rebooted ? "正在重启客户机，部分设置重启后生效" : "部分设置要重启客户机后生效") }
+        guard r.agentUpdated || !r.applied.isEmpty else { return String(l10n: "\(name) is up to date") }
+        var lines = [String(l10n: "Updated \(name):")] + (r.agentUpdated ? ["- " + String(l10n: "Guest agent")] : []) + r.applied.map { "- \($0)" }
+        if r.rebooting { lines.append(String(l10n: "The 3D graphics driver was also updated; restarting the guest")) }
+        if r.rebootRequired { lines.append(rebooted ? String(l10n: "Restarting the guest so that some settings can take effect") : String(l10n: "Some settings take effect after you restart the guest")) }
         return lines.joined(separator: "\n")
     }
 }

@@ -5,17 +5,17 @@ extension VMConfig {
     /// 安装中的虚拟机依赖 QEMU 的光驱启动与按键，不能换。
     public mutating func switchEngine(to engine: Engine) throws {
         guard engine != self.engine else { return }
-        if engine == .qemu, os == .macOS { throw MacVMError.unsupported("macOS 客户机只能用 vz 引擎") }
-        if engine == .qemu, !shares.isEmpty { throw MacVMError.unsupported("QEMU 引擎不支持共享目录，先移除 \(name) 的共享目录") }
-        if engine == .qemu, rosetta { throw MacVMError.unsupported("QEMU 引擎不支持 Rosetta，\(name) 开着 Rosetta，只能用 vz 引擎") }
+        if engine == .qemu, os == .macOS { throw MacVMError.unsupported(String(l10n: "macOS guests can only use the vz engine")) }
+        if engine == .qemu, !shares.isEmpty { throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support shared folders; remove \(name)'s shared folders first")) }
+        if engine == .qemu, rosetta { throw MacVMError.unsupported(String(l10n: "\(name) uses Rosetta, which the QEMU engine doesn't support, so it can only use the vz engine")) }
         if engine == .qemu { _ = try QEMUInstallation.require() }
         if engine == .vz, graphicsAcceleration {
-            throw MacVMError.unsupported("\(name) 装了 3D 显卡驱动，只能用 qemu 引擎运行：VZ 下没有 3D，Windows 开机即崩溃")
+            throw MacVMError.unsupported(String(l10n: "\(name) has the 3D graphics driver installed, so it can only use the qemu engine; VZ has no 3D support, and Windows would crash at startup"))
         }
         if engine == .vz, os == .windows, !WindowsSupport.isAvailable {
-            throw MacVMError.unsupported("当前 macOS 不支持用 vz 运行 Windows")
+            throw MacVMError.unsupported(String(l10n: "This version of macOS can't run Windows with the vz engine"))
         }
-        guard installMedia.isEmpty else { throw MacVMError.invalidConfig("安装尚未完成，不能切换引擎") }
+        guard installMedia.isEmpty else { throw MacVMError.invalidConfig(String(l10n: "Can't switch engines until installation finishes")) }
         self.engine = engine
     }
 }

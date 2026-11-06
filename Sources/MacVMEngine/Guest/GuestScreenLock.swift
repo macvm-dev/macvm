@@ -8,14 +8,14 @@ public enum GuestScreenLock {
     /// 或客户机里的命令失败时抛错。阻塞的 socket 往返，不要在主线程上调用。
     public static func apply(_ bundle: VMBundle, config: VMConfig) throws {
         guard config.guestAgent else {
-            throw MacVMError.unsupported("\(config.name) 没有装客户机代理，锁屏设置要等装上代理后才能写进客户机")
+            throw MacVMError.unsupported(String(l10n: "The guest agent isn't installed in \(config.name); install it to apply screen lock settings"))
         }
         let (request, input) = try command(locks: config.screenLock, os: config.os, bundle: bundle)
         let (code, output) = try AgentClient.run(bundle, request: request, input: input, timeout: commandTimeout)
         guard code == 0 else {
             let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            let status = code.map { "退出码 \($0)" } ?? "代理中途断开"
-            throw MacVMError.engine("设置 \(config.name) 的客户机锁屏失败（\(status)）" + (detail.isEmpty ? "" : "：\(detail)"))
+            let status = code.map { String(l10n: "exit code \($0)") } ?? String(l10n: "the guest agent disconnected")
+            throw MacVMError.engine(String(l10n: "Couldn't set the screen lock in \(config.name) (\(status))") + (detail.isEmpty ? "" : String(l10n: ": \(detail)")))
         }
     }
 
@@ -46,7 +46,7 @@ public enum GuestScreenLock {
         case .macOS:
             // sysadminctl 要当前用户的登录密码，经标准输入送进去，不出现在客户机的进程参数里。
             guard let password = GuestCredentials.password(for: bundle) else {
-                throw MacVMError.unsupported("\(bundle.name) 没有保存客户机密码，macOS 改锁屏设置要用登录密码")
+                throw MacVMError.unsupported(String(l10n: "No guest password is saved for \(bundle.name); changing the screen lock on macOS needs the login password"))
             }
             let script = """
             IFS= read -r password

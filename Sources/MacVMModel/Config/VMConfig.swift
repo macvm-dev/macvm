@@ -133,7 +133,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         audio != booted.audio || microphone != booted.microphone
     }
 
-    public static let audioChangedSinceBootError = MacVMError.unsupported("开机后改过声音或麦克风设置，挂起后无法恢复，请关机：下次开机按新设置启动")
+    public static let audioChangedSinceBootError = MacVMError.unsupported(String(l10n: "Sound or microphone settings changed after startup, so the suspended virtual machine can't resume. Shut it down; it'll use the new settings the next time it starts."))
 
     /// 能否挂起。VZ 下通用平台（Linux、Windows）带 USB 控制器或 USB 设备时恢复会报 invalid argument，
     /// 而 `validateSaveRestoreSupport()` 并不拦截，因此在这里排除。
@@ -158,7 +158,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public static func decode(_ data: Data) throws -> VMConfig {
         let config = try JSONDecoder().decode(VMConfig.self, from: data)
         guard config.version <= currentVersion else {
-            throw MacVMError.invalidConfig("config.json 版本 \(config.version) 高于本程序支持的 \(currentVersion)")
+            throw MacVMError.invalidConfig(String(l10n: "config.json version \(config.version) is newer than this version of MacVM supports (\(currentVersion))"))
         }
         return config
     }
@@ -282,18 +282,18 @@ extension VMConfig {
 
     /// 添加共享目录；`tag` 为 nil 时由目录名生成。目录不存在、已共享，或 `tag` 已被占用、超长时报错。
     public mutating func addShare(hostPath: String, tag: String? = nil, readOnly: Bool = false) throws {
-        guard supportsShares else { throw MacVMError.unsupported("\(name) 不支持共享目录：只有 VZ 引擎的 macOS、Linux 客户机可以") }
+        guard supportsShares else { throw MacVMError.unsupported(String(l10n: "\(name) doesn't support shared folders; only macOS and Linux guests using the vz engine do")) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: hostPath, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw MacVMError.invalidConfig("共享目录不存在：\(hostPath)")
+            throw MacVMError.invalidConfig(String(l10n: "Shared folder doesn't exist: \(hostPath)"))
         }
-        guard !shares.contains(where: { $0.hostPath == hostPath }) else { throw MacVMError.invalidConfig("已共享：\(hostPath)") }
+        guard !shares.contains(where: { $0.hostPath == hostPath }) else { throw MacVMError.invalidConfig(String(l10n: "This folder is already shared: \(hostPath)")) }
         let taken = Set(shares.map(\.tag))
         if let tag {
             guard !tag.isEmpty, tag.utf8.count <= ShareConfig.maxTagBytes else {
-                throw MacVMError.invalidConfig("共享名称应为 1 到 \(ShareConfig.maxTagBytes) 字节：\(tag)")
+                throw MacVMError.invalidConfig(String(l10n: "Share name must be 1 to \(ShareConfig.maxTagBytes) bytes: \(tag)"))
             }
-            guard !taken.contains(tag) else { throw MacVMError.invalidConfig("共享名称已被占用：\(tag)") }
+            guard !taken.contains(tag) else { throw MacVMError.invalidConfig(String(l10n: "Share name already in use: \(tag)")) }
         }
         shares.append(ShareConfig(hostPath: hostPath, tag: tag ?? ShareConfig.tag(for: hostPath, os: os, taken: taken), readOnly: readOnly))
     }
@@ -302,7 +302,7 @@ extension VMConfig {
     public mutating func removeShare(_ pathOrTag: String) throws {
         let before = shares.count
         shares.removeAll { $0.hostPath == pathOrTag || $0.tag == pathOrTag }
-        guard shares.count < before else { throw MacVMError.invalidConfig("没有这个共享目录：\(pathOrTag)") }
+        guard shares.count < before else { throw MacVMError.invalidConfig(String(l10n: "No shared folder matches \(pathOrTag)")) }
     }
 }
 

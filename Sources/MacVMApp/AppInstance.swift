@@ -19,11 +19,11 @@ enum AppInstance {
                 return
             }
         } catch {
-            FileHandle.standardError.write(Data("无法取得单实例锁：\(error.localizedDescription)\n".utf8))
+            FileHandle.standardError.write(Data("Could not acquire the single-instance lock: \(error.localizedDescription)\n".utf8))
             return
         }
         let pid = ProcessLock.holder(at: url) ?? -1
-        FileHandle.standardError.write(Data("MacVM 已在运行（pid \(pid)），本进程退出\n".utf8))
+        FileHandle.standardError.write(Data("MacVM is already running (pid \(pid)); exiting\n".utf8))
         if pid > 0, let other = NSRunningApplication(processIdentifier: pid) {
             other.activate(options: [.activateAllWindows])
         }

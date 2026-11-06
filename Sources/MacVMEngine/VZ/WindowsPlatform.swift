@@ -8,7 +8,7 @@ extension ConfigBuilder {
     func configureWindowsPlatform(_ vz: VZVirtualMachineConfiguration) throws {
         let platform = try genericPlatform()
         guard PrivateVZ.setPMUEmulation(true, on: platform) else {
-            throw MacVMError.unsupported("当前 macOS 的 Virtualization.framework 不提供 PMU 模拟，无法运行 Windows")
+            throw MacVMError.unsupported(String(l10n: "Windows needs PMU emulation, which Virtualization.framework doesn't provide on this version of macOS"))
         }
         vz.platform = platform
         vz.bootLoader = try efiBootLoader()
@@ -28,7 +28,7 @@ public enum WindowsSupport {
     public static let displaySize = (width: 1024, height: 768)
 
     public static var fixedDisplayError: MacVMError {
-        .unsupported("VZ 下 Windows 的分辨率固定为 \(displaySize.width)x\(displaySize.height)，画面随窗口缩放；需要其他分辨率请用 qemu 引擎")
+        .unsupported(String(l10n: "With the vz engine, Windows runs at a fixed \(displaySize.width)x\(displaySize.height) and scales with the window; switch to the qemu engine for other resolutions"))
     }
 
     static func bootImageURL(_ bundle: VMBundle) -> URL { bundle.url.appending(path: bootImageName) }
@@ -48,7 +48,7 @@ public enum WindowsSupport {
         let exists = FileManager.default.fileExists(atPath: image.path)
         if !exists || (digest != nil && digest != (try? String(contentsOf: digestURL, encoding: .utf8))) {
             guard let loader, let digest else {
-                throw MacVMError.io("找不到 macvm-boot.efi，先运行 make boot")
+                throw MacVMError.io(String(l10n: "Couldn't find macvm-boot.efi; run make boot first"))
             }
             let staging = FileManager.default.temporaryDirectory.appending(path: "macvm-vzboot-\(UUID().uuidString)", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: staging.appending(path: "EFI/BOOT"), withIntermediateDirectories: true)

@@ -65,17 +65,17 @@ public enum VMFactory {
     public static func createEFIGuest(_ options: Options, in library: VMLibrary = .default) async throws -> VMBundle {
         precondition(options.os.usesEFI)
         if options.os == .windows, !WindowsSupport.isAvailable {
-            throw MacVMError.unsupported("当前 macOS 不支持运行 Windows 客户机")
+            throw MacVMError.unsupported(String(l10n: "This version of macOS doesn't support Windows guests"))
         }
         if options.image != nil || options.desktop != nil, options.os != .linux {
-            throw MacVMError.invalidConfig("云镜像与桌面版只用于 Linux 客户机")
+            throw MacVMError.invalidConfig(String(l10n: "Cloud images and desktop editions are only for Linux guests"))
         }
         if options.image != nil, options.desktop != nil {
-            throw MacVMError.invalidConfig("云镜像与桌面版只能选一个")
+            throw MacVMError.invalidConfig(String(l10n: "Choose either a cloud image or a desktop edition, not both"))
         }
         let autoinstall = options.autoinstalls
         if autoinstall, AgentInstaller.binary(for: .linux) == nil {
-            throw MacVMError.io("找不到 Linux 版客户机代理，先运行 make agent：自动安装要靠它判断装完")
+            throw MacVMError.io(String(l10n: "Couldn't find the Linux guest agent, which automated installation uses to tell when it's done; run make agent first"))
         }
         try ensureNameAvailable(options.name, in: library)
         // 先下载镜像再建包，下载中断不会留下半成品虚拟机。
@@ -128,7 +128,7 @@ public enum VMFactory {
 
             let media = try installMedia.map { path -> String in
                 let url = URL(filePath: (path as NSString).expandingTildeInPath).standardizedFileURL
-                guard FileManager.default.fileExists(atPath: url.path) else { throw MacVMError.invalidConfig("安装介质不存在：\(url.path)") }
+                guard FileManager.default.fileExists(atPath: url.path) else { throw MacVMError.invalidConfig(String(l10n: "Installation media not found: \(url.path)")) }
                 return url.path
             }
             let config = VMConfig(
@@ -169,7 +169,7 @@ public enum VMFactory {
         do {
             if let creationToken {
                 do { try Data(creationToken.utf8).write(to: bundle.creationMarkerURL) } catch {
-                    throw MacVMError.io("写入 \(bundle.creationMarkerURL.path) 失败：\(error.localizedDescription)")
+                    throw MacVMError.io(String(l10n: "Couldn't write \(bundle.creationMarkerURL.path): \(error.localizedDescription)"))
                 }
             }
             return try await body(bundle)
@@ -188,7 +188,7 @@ public enum VMFactory {
         } catch CocoaError.fileWriteFileExists {
             throw MacVMError.alreadyExists(name)
         } catch {
-            throw MacVMError.io("创建 \(url.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't create \(url.path): \(error.localizedDescription)"))
         }
         return VMBundle(url: url)
     }
@@ -196,7 +196,7 @@ public enum VMFactory {
     public static func delete(_ bundle: VMBundle) throws {
         if BundleLock.holder(of: bundle) != nil { throw MacVMError.alreadyRunning(bundle.name) }
         do { try FileManager.default.removeItem(at: bundle.url) } catch {
-            throw MacVMError.io("删除 \(bundle.url.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't delete \(bundle.url.path): \(error.localizedDescription)"))
         }
     }
 }

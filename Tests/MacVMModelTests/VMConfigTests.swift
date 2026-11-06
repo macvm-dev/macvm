@@ -99,7 +99,7 @@ struct OutputContractTests {
     @Test func failureEnvelopeShape() throws {
         struct R: Encodable, Sendable {}
         let data = try JSONEnvelope<R>.failure(.vmNotFound("x")).encoded()
-        #expect(String(decoding: data, as: UTF8.self) == #"{"error":{"code":"vm_not_found","message":"虚拟机不存在：x"},"schemaVersion":1}"#)
+        #expect(String(decoding: data, as: UTF8.self) == #"{"error":{"code":"vm_not_found","message":"Virtual machine not found: x"},"schemaVersion":1}"#)
     }
 
     @Test func shareTagForLinuxIsASCIIAndUnique() {

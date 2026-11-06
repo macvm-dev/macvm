@@ -47,7 +47,7 @@ final class GuestFileDrag: NSObject {
         let urls = Self.fileURLs(info.draggingPasteboard)
         guard hasAgent, !urls.isEmpty else { return false }
         let target: AgentProtocol.PutTarget = fraction.map { .drop(x: $0.x, y: $0.y) } ?? .desktop
-        let title = urls.count == 1 ? "正在把「\(urls[0].lastPathComponent)」复制到虚拟机…" : "正在把 \(urls.count) 个项目复制到虚拟机…"
+        let title = urls.count == 1 ? String(l10n: "Copying “\(urls[0].lastPathComponent)” to the virtual machine…") : String(l10n: "Copying \(urls.count) items to the virtual machine…")
         let bundle = bundle
         GuestTransferActivity(vmName: bundle.name, title: title).run { progress in
             try GuestFileTransfer.requireSupport(bundle)
@@ -152,7 +152,7 @@ extension GuestFileDrag: NSFilePromiseProviderDelegate {
             return
         }
         let bundle = bundle
-        let activity = GuestTransferActivity(vmName: bundle.name, title: "正在从虚拟机复制「\(Self.name(of: file.path))」…")
+        let activity = GuestTransferActivity(vmName: bundle.name, title: String(l10n: "Copying “\(Self.name(of: file.path))” from the virtual machine…"))
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var failure: (any Error)?
         DispatchQueue.main.async {

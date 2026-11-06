@@ -32,7 +32,7 @@ pub fn ui_action(element: &str, action: ElementAction, value: Option<&str>) -> i
 pub fn ui_element_bounds(element: &str) -> io::Result<[i32; 4]> {
     helper(&HelperRequest::Bounds { element: element.into() })?
         .bounds
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("元素 {element} 没有位置")))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("Element {element} has no position")))
 }
 
 pub fn ui_input(events: &[InputEvent]) -> io::Result<()> {
@@ -97,7 +97,7 @@ fn helper(request: &HelperRequest) -> io::Result<HelperReply> {
         .iter()
         .find(|s| s.active)
         .or(sessions.first())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "客户机没有已登录的图形会话"))?;
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No one is logged in to a graphical session in the guest"))?;
     let exe = std::env::current_exe()?;
     let mut child = Command::new("runuser")
         .args(["-u", &session.user, "--", "env"])
@@ -121,7 +121,7 @@ fn helper(request: &HelperRequest) -> io::Result<HelperReply> {
     let status = child.wait()?;
     exchanged?;
     let reply: HelperReply = serde_json::from_slice(&out)
-        .map_err(|_| io::Error::other(format!("无障碍查询子进程异常退出（{status}）")))?;
+        .map_err(|_| io::Error::other(format!("The accessibility query process exited unexpectedly ({status})")))?;
     match reply.error {
         Some(message) => Err(io::Error::new(kind_from(reply.kind.as_deref()), message)),
         None => Ok(reply),
@@ -163,7 +163,7 @@ fn handle(request: &HelperRequest) -> io::Result<HelperReply> {
             if !atspi.screen_coordinates(&obj.bus) {
                 return Err(io::Error::new(
                     io::ErrorKind::Unsupported,
-                    "Wayland 下应用不知道窗口在屏幕上的位置，拿不到元素坐标：改用 ui act，或按截图上的坐标点击",
+                    "Element coordinates aren't available under Wayland because apps don't know where their windows are on screen; use ui act instead, or click at coordinates from a screenshot",
                 ));
             }
             HelperReply { bounds: atspi.extents(&obj)?, ..Default::default() }
@@ -217,7 +217,7 @@ impl Obj {
     }
 
     fn parse(id: &str) -> io::Result<Self> {
-        let slash = id.find('/').filter(|&i| i > 0).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("元素编号无效：{id}")))?;
+        let slash = id.find('/').filter(|&i| i > 0).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("Invalid element ID: {id}")))?;
         Ok(Self { bus: id[..slash].into(), path: id[slash..].into() })
     }
 
@@ -281,7 +281,7 @@ const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
 impl Atspi {
     /// 打开会话的无障碍支持（at-spi 把它同步进 gsettings，之后启动的应用都会导出无障碍树），再连上无障碍总线。
     fn connect() -> io::Result<Self> {
-        let address = std::env::var("DBUS_SESSION_BUS_ADDRESS").map_err(|_| io::Error::new(io::ErrorKind::NotFound, "没有会话总线地址"))?;
+        let address = std::env::var("DBUS_SESSION_BUS_ADDRESS").map_err(|_| io::Error::new(io::ErrorKind::NotFound, "DBUS_SESSION_BUS_ADDRESS isn't set"))?;
         let mut session = Bus::connect(&address)?;
         let _ = session.call(
             "org.a11y.Bus",
@@ -291,7 +291,7 @@ impl Atspi {
             &[Value::Str("org.a11y.Status".into()), Value::Str("IsEnabled".into()), Value::Variant(Box::new(Value::Bool(true)))],
         );
         let reply = session.call("org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus", "GetAddress", &[])?;
-        let a11y = reply.first().and_then(Value::str).ok_or_else(|| io::Error::other("无障碍总线没有地址"))?;
+        let a11y = reply.first().and_then(Value::str).ok_or_else(|| io::Error::other("Couldn't get the accessibility bus address"))?;
         let wayland = std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
         let scale = if wayland { primary_monitor_scale(&mut session).unwrap_or(1.0) } else { 1.0 };
         Ok(Self { bus: Bus::connect(a11y)?, wayland, scale })
@@ -307,7 +307,7 @@ impl Atspi {
     }
 
     fn first(&mut self, obj: &Obj, interface: &str, member: &str, args: &[Value]) -> io::Result<Value> {
-        self.call(obj, interface, member, args)?.into_iter().next().ok_or_else(|| io::Error::other(format!("{member} 没有返回值")))
+        self.call(obj, interface, member, args)?.into_iter().next().ok_or_else(|| io::Error::other(format!("{member} returned no value")))
     }
 
     fn children(&mut self, obj: &Obj) -> io::Result<Vec<Obj>> {
@@ -488,7 +488,7 @@ impl Atspi {
         let index = names
             .iter()
             .find_map(|n| available.iter().position(|a| a == n))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("元素 {} 没有动作 {}", obj.id(), names[0])))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("Element {} has no action {}", obj.id(), names[0])))?;
         self.call(obj, ACTION, "DoAction", &[Value::I32(index as i32)]).map(|_| ())
     }
 
@@ -516,12 +516,12 @@ impl Atspi {
                 }
             }
             ElementAction::SetValue => {
-                let value = value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "set-value 需要 value"))?;
+                let value = value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "set-value needs a value"))?;
                 let interfaces = self.interfaces(obj);
                 if interfaces.iter().any(|i| i == EDITABLE_TEXT) {
                     self.call(obj, EDITABLE_TEXT, "SetTextContents", &[Value::Str(value.into())]).map(|_| ())
                 } else if interfaces.iter().any(|i| i == VALUE) {
-                    let n: f64 = value.parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, format!("这个元素的值是数字：{value}")))?;
+                    let n: f64 = value.parse().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, format!("This element takes a number, not {value}")))?;
                     self.call(
                         obj,
                         "org.freedesktop.DBus.Properties",
@@ -530,7 +530,7 @@ impl Atspi {
                     )
                     .map(|_| ())
                 } else {
-                    Err(io::Error::new(io::ErrorKind::Unsupported, format!("元素 {} 不能设值", obj.id())))
+                    Err(io::Error::new(io::ErrorKind::Unsupported, format!("Element {} doesn't accept a value", obj.id())))
                 }
             }
         }
@@ -548,7 +548,7 @@ fn find_app(apps: &[(Obj, UiApp)], query: &str) -> io::Result<(Obj, UiApp)> {
     apps.iter()
         .find(|(_, a)| Some(a.pid) == pid || a.name.eq_ignore_ascii_case(query) || process_name(a.pid).is_some_and(|n| n.eq_ignore_ascii_case(query)))
         .cloned()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("没有找到带窗口的应用 {query}")))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("No app with a window matches {query}")))
 }
 
 #[cfg(test)]

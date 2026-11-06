@@ -46,20 +46,20 @@ impl<'a> Receiver<'a> {
     fn run(&mut self, conn: &mut impl Read) -> io::Result<()> {
         loop {
             let Some((kind, payload)) = proto::read_file_frame(conn)? else {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "连接在文件流结束前关闭"));
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Connection closed before the file stream ended"));
             };
             match kind {
                 FileFrame::Entry => {
                     if self.open.is_some() {
-                        return Err(invalid("文件内容不足就开始了下一项"));
+                        return Err(invalid("The next entry started before the previous file's content was complete"));
                     }
-                    let entry: FileEntry = serde_json::from_slice(&payload).map_err(|e| invalid(&format!("无法解析文件条目：{e}")))?;
+                    let entry: FileEntry = serde_json::from_slice(&payload).map_err(|e| invalid(&format!("Couldn't parse the file entry: {e}")))?;
                     self.create(entry)?;
                 }
                 FileFrame::Data => self.write(&payload)?,
                 FileFrame::End => {
                     if self.open.is_some() {
-                        return Err(invalid("文件内容不足就结束了"));
+                        return Err(invalid("The file stream ended before the file's content was complete"));
                     }
                     for (path, mode) in self.dir_modes.iter().rev() {
                         set_mode(path, *mode | 0o700);
@@ -72,7 +72,7 @@ impl<'a> Receiver<'a> {
     }
 
     fn create(&mut self, entry: FileEntry) -> io::Result<()> {
-        let parts = proto::split_entry_path(&entry.path).ok_or_else(|| invalid(&format!("不合法的路径：{}", entry.path)))?;
+        let parts = proto::split_entry_path(&entry.path).ok_or_else(|| invalid(&format!("Invalid path: {}", entry.path)))?;
         let path = if let [name] = parts[..] {
             let name = local_name(name);
             let taken = |n: &str| self.dir.join(n).symlink_metadata().is_ok() || self.renamed.values().any(|p| p.file_name() == Some(n.as_ref()));
@@ -83,7 +83,7 @@ impl<'a> Receiver<'a> {
         } else {
             let parent = parts[..parts.len() - 1].join("/");
             if !self.dirs.contains(&parent) {
-                return Err(invalid(&format!("{} 的上级不是这次收到的目录", entry.path)));
+                return Err(invalid(&format!("The parent of {} isn't a directory sent in this transfer", entry.path)));
             }
             parts[1..].iter().fold(self.renamed[parts[0]].clone(), |p, part| p.join(local_name(part)))
         };
@@ -111,9 +111,9 @@ impl<'a> Receiver<'a> {
     }
 
     fn write(&mut self, data: &[u8]) -> io::Result<()> {
-        let Some((file, left, _)) = self.open.as_mut() else { return Err(invalid("数据帧前没有文件条目")) };
+        let Some((file, left, _)) = self.open.as_mut() else { return Err(invalid("Got a data frame before any file entry")) };
         if data.len() as u64 > *left {
-            return Err(invalid("文件内容超过条目里的大小"));
+            return Err(invalid("The file's content is larger than its entry says"));
         }
         file.write_all(data)?;
         *left -= data.len() as u64;
@@ -223,7 +223,7 @@ fn walk(path: &Path, visit: &mut dyn FnMut(&Path, &fs::Metadata) -> io::Result<(
 }
 
 fn with_path(e: io::Error, path: &Path) -> io::Error {
-    io::Error::new(e.kind(), format!("{}：{e}", path.display()))
+    io::Error::new(e.kind(), format!("{}: {e}", path.display()))
 }
 
 /// 把这些路径发成一段文件流；出错时发 `error` 帧后返回错误。
@@ -239,7 +239,7 @@ pub fn send(conn: &mut impl Write, paths: &[PathBuf]) -> io::Result<()> {
 }
 
 fn send_tree(conn: &mut impl Write, root: &Path) -> io::Result<()> {
-    let name = root.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("{} 没有文件名", root.display())))?;
+    let name = root.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("{} has no file name", root.display())))?;
     let base = root.parent().unwrap_or(root);
     walk(root, &mut |path, meta| {
         let relative: Vec<String> = path.strip_prefix(base).unwrap_or(Path::new(name)).components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
@@ -278,7 +278,7 @@ fn send_content(conn: &mut impl Write, mut file: File, size: u64) -> io::Result<
         let want = buf.len().min(left as usize);
         let n = file.read(&mut buf[..want])?;
         if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "文件在复制途中变短了"));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "The file got smaller while it was being copied"));
         }
         proto::write_file_frame(conn, FileFrame::Data, &buf[..n])?;
         left -= n as u64;

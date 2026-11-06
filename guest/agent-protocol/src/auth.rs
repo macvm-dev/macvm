@@ -30,7 +30,7 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
 }
 
 fn mac(token: &str, challenge: &str) -> Hmac<Sha256> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(token.as_bytes()).expect("HMAC 接受任意长度的密钥");
+    let mut mac = Hmac::<Sha256>::new_from_slice(token.as_bytes()).expect("HMAC accepts keys of any length");
     mac.update(challenge.as_bytes());
     mac
 }

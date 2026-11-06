@@ -28,7 +28,7 @@ public enum ControlRequest: Codable, Sendable, Equatable {
         case "resume": self = .resume
         case "screenshot": self = .screenshot(path: try c.decode(String.self, forKey: .path))
         case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
-        case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "未知操作 \(op)")
+        case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "Unknown operation \(op)")
         }
     }
 
@@ -82,7 +82,7 @@ public struct ControlResponse: Codable, Sendable, Equatable {
     /// 失败响应还原成的错误，成功时为 nil：`errorCode` 是 `MacVMError.code` 的取值时还原成同一个 case，否则按 `MacVMError.engine` 报。
     var failure: MacVMError? {
         guard !ok else { return nil }
-        let message = self.message ?? "未知错误"
+        let message = self.message ?? String(l10n: "Unknown error")
         guard let kind = MacVMError.catalog.first(where: { $0.code == errorCode }) else { return .engine(message) }
         // 以名字为参数的 case 会给 `message` 加固定前缀，还原时去掉，免得再加一遍。
         let prefix = kind.message

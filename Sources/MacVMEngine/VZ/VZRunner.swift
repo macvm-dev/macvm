@@ -23,7 +23,7 @@ public final class VZRunner: NSObject, MachineRunner {
     /// `bridges` 是 `BridgeSession.openAll` 为本包配置打开的桥接。
     init(bundle: VMBundle, console: ConfigBuilder.Console = .none, bridges: [BridgeSession]) throws {
         guard VZVirtualMachine.isSupported else {
-            throw MacVMError.unsupported("本机不支持虚拟化（需要 Apple Silicon，且进程签名带 com.apple.security.virtualization）")
+            throw MacVMError.unsupported(String(l10n: "This Mac doesn't support virtualization (it needs Apple silicon and an app signed with the com.apple.security.virtualization entitlement)"))
         }
         stopLatch = StopLatch(bundle: bundle, lock: try BundleLock.acquire(bundle))
         self.bundle = bundle
@@ -33,7 +33,7 @@ public final class VZRunner: NSObject, MachineRunner {
         BridgeSession.clearAddress(of: bundle)
         var pending = bridges.makeIterator()
         builder.openBridge = { _ in
-            guard let session = pending.next() else { throw MacVMError.engine("桥接与配置里的网卡数不符") }
+            guard let session = pending.next() else { throw MacVMError.engine(String(l10n: "The number of bridges doesn't match the number of network adapters in the configuration")) }
             return session.fileHandle
         }
         vzConfiguration = try builder.build()
@@ -89,7 +89,7 @@ public final class VZRunner: NSObject, MachineRunner {
     /// 客户机里 `My Shared Files` 下的目录随之增减。
     public func updateShares(_ shares: [ShareConfig]) throws {
         guard let device = automountShareDevice else {
-            throw MacVMError.unsupported("\(bundle.name) 运行中不能改共享目录，关机后再改")
+            throw MacVMError.unsupported(String(l10n: "Shut down \(bundle.name) before changing its shared folders"))
         }
         device.share = try ConfigBuilder.macOSShare(shares, in: bundle)
     }
@@ -105,7 +105,7 @@ public final class VZRunner: NSObject, MachineRunner {
 
     public func attachImage(_ url: URL, readOnly: Bool) async throws -> AttachedImage {
         guard let controller = virtualMachine.usbControllers.first else {
-            throw MacVMError.unsupported("\(bundle.name) 没有 USB 控制器，不能接入磁盘映像")
+            throw MacVMError.unsupported(String(l10n: "\(bundle.name) has no USB controller, so you can't attach disk images to it"))
         }
         guard virtualMachine.state == .running || virtualMachine.state == .paused else { throw MacVMError.notRunning(bundle.name) }
         try checkAttachable(url)
@@ -114,7 +114,7 @@ public final class VZRunner: NSObject, MachineRunner {
         do {
             try await controller.attach(device: device)
         } catch {
-            throw MacVMError.engine("接入 \(url.lastPathComponent) 失败：\(describeEngineError(error))")
+            throw MacVMError.engine(String(l10n: "Couldn't attach \(url.lastPathComponent): \(describeEngineError(error))"))
         }
         let image = AttachedImage(id: device.uuid, url: url, readOnly: readOnly)
         hotPlugged.append((image, device))
@@ -131,7 +131,7 @@ public final class VZRunner: NSObject, MachineRunner {
         do {
             try await controller.detach(device: device)
         } catch {
-            throw MacVMError.engine("推出 \(image.url.lastPathComponent) 失败：\(describeEngineError(error))")
+            throw MacVMError.engine(String(l10n: "Couldn't eject \(image.url.lastPathComponent): \(describeEngineError(error))"))
         }
         hotPlugged.removeAll { $0.image.id == id }
     }
@@ -161,7 +161,7 @@ public final class VZRunner: NSObject, MachineRunner {
         var outcome = MachineStartOutcome.coldBoot
         if bundle.hasSavedState, recovery {
             try? FileManager.default.removeItem(at: bundle.savedStateURL)
-            outcome = .restoreFailed("以恢复模式启动，不使用挂起状态")
+            outcome = .restoreFailed(String(l10n: "Starting in recovery mode; the suspended state won't be restored"))
         } else if bundle.hasSavedState {
             do {
                 try await restore()
@@ -271,7 +271,7 @@ public final class VZRunner: NSObject, MachineRunner {
 
     private func pressPowerButton() throws {
         do { try virtualMachine.requestStop() } catch {
-            throw MacVMError.engine("请求关机失败：\(error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't request a shutdown: \(error.localizedDescription)"))
         }
     }
 
@@ -314,7 +314,7 @@ public final class VZRunner: NSObject, MachineRunner {
     /// 保存或断电失败时删掉状态文件，原先在运行的恢复运行：虚拟机还会继续写磁盘，留下的状态已不可用。
     public func suspend() async throws {
         guard canSuspend else {
-            throw MacVMError.unsupported("该虚拟机的配置不支持挂起")
+            throw MacVMError.unsupported(String(l10n: "This virtual machine's configuration doesn't support suspending"))
         }
         if let saved = try? bundle.loadConfig(), saved.audioDiffers(from: config) { throw VMConfig.audioChangedSinceBootError }
         try requireNoAttachedImages()
@@ -343,34 +343,34 @@ public final class VZRunner: NSObject, MachineRunner {
                 try FileManager.default.removeItem(at: marker)
             }
         } catch {
-            throw MacVMError.io("写入 \(marker.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't write \(marker.path): \(error.localizedDescription)"))
         }
     }
 
     /// 连接客户机内监听的 vsock 端口。返回的连接须保持引用直到用完。
     public func connectToGuest(port: UInt32) async throws -> VZVirtioSocketConnection {
         guard let device = virtualMachine.socketDevices.first as? VZVirtioSocketDevice else {
-            throw MacVMError.unsupported("虚拟机没有 vsock 设备")
+            throw MacVMError.unsupported(String(l10n: "The virtual machine has no vsock device"))
         }
         do {
             return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Unchecked<VZVirtioSocketConnection>, any Error>) in
                 device.connect(toPort: port) { c.resume(with: $0.map(Unchecked.init)) }
             }.value
         } catch {
-            throw MacVMError.notRunning("客户机 vsock 端口 \(port) 无人监听")
+            throw MacVMError.notRunning(String(l10n: "Nothing is listening on guest vsock port \(port)"))
         }
     }
 
     /// VZ 没有截取画面的接口，画面只存在于 `VZVirtualMachineView` 里。
     public func screenshot(to url: URL) async throws {
-        throw MacVMError.unsupported("VZ 引擎不支持截屏")
+        throw MacVMError.unsupported(String(l10n: "The VZ engine doesn't support screenshots"))
     }
 
     /// Windows 没有 VZ 能用的 vsock 驱动，改经网络连客户机 IP 上的同号 TCP 端口。
     public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
         if config.os == .windows {
             guard let ip = guestIP else {
-                throw MacVMError.io("尚未取得 \(bundle.name) 的 IP 地址")
+                throw MacVMError.io(String(l10n: "\(bundle.name)'s IP address isn't known yet"))
             }
             let bundle = bundle, config = config
             let fd = try await Task.detached { try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle, config: config).duplicateDescriptor() }.value
@@ -383,9 +383,9 @@ public final class VZRunner: NSObject, MachineRunner {
     /// 改变显示输出尺寸。
     public func resizeDisplay(width: Int, height: Int) throws {
         guard config.os != .windows else { throw WindowsSupport.fixedDisplayError }
-        guard let display = virtualMachine.graphicsDevices.first?.displays.first else { throw MacVMError.unsupported("\(bundle.name) 没有显示设备") }
+        guard let display = virtualMachine.graphicsDevices.first?.displays.first else { throw MacVMError.unsupported(String(l10n: "\(bundle.name) has no display device")) }
         do { try display.reconfigure(sizeInPixels: CGSize(width: width, height: height)) } catch {
-            throw MacVMError.engine("调整显示尺寸失败：\(error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't resize the display: \(error.localizedDescription)"))
         }
     }
 

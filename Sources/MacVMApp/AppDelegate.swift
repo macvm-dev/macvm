@@ -1,5 +1,6 @@
 import AppKit
 import MacVMEngine
+import MacVMModel
 
 /// 关掉所有窗口后 App 不退出，留在菜单栏继续运行（本进程的虚拟机也不停）。
 /// 菜单栏图标显示时，Dock 图标随窗口出现和消失；图标隐藏时 Dock 图标一直保留，否则没有入口能再打开窗口。
@@ -49,38 +50,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let other = model.creatingNames.filter { !creating.contains($0) }
         var notes: [String] = []
         if !creating.isEmpty {
-            notes.append("\(creating.joined(separator: "、")) 还在创建，退出会中断创建，下次打开 MacVM 时自动继续，已下载的部分不用重下。")
+            notes.append(String(l10n: "Quitting interrupts creating \(creating.formatted(.list(type: .and))). Creation resumes the next time you open MacVM, and anything already downloaded won't be downloaded again."))
         }
         if !other.isEmpty {
-            notes.append("\(other.joined(separator: "、")) 有进行中的任务，退出会中断，不会自动继续。")
+            notes.append(String(l10n: "Quitting interrupts tasks in progress for \(other.formatted(.list(type: .and))). They won't resume automatically."))
         }
         guard !running.isEmpty || !notes.isEmpty else { return .terminateNow }
 
         let alert = NSAlert()
         var actions: [QuitAction] = []
         if running.isEmpty {
-            alert.messageText = "要退出 MacVM 吗？"
-            alert.addButton(withTitle: "退出")
+            alert.messageText = String(l10n: "Quit MacVM?")
+            alert.addButton(withTitle: String(l10n: "Quit"))
             actions.append(.shutDown)
         } else {
-            alert.messageText = running.count == 1 ? "「\(running[0])」还在运行" : "还有 \(running.count) 台虚拟机在运行"
+            alert.messageText = running.count == 1 ? String(l10n: "“\(running[0])” is still running") : String(l10n: "\(running.count) virtual machines are still running")
             var stopNotes: [String] = []
             if !background.isEmpty {
                 stopNotes.append(backgroundNote(running: running, background: background, suspendable: suspendable))
-                alert.addButton(withTitle: "转到后台并退出")
+                alert.addButton(withTitle: String(l10n: "Move to Background and Quit"))
                 actions.append(.background)
             }
             stopNotes.append(Self.stopNote(running: running, suspendable: suspendable))
             notes.insert(contentsOf: stopNotes, at: 0)
             if !suspendable.isEmpty {
-                alert.addButton(withTitle: "挂起并退出")
+                alert.addButton(withTitle: String(l10n: "Suspend and Quit"))
                 actions.append(.suspend)
             }
-            alert.addButton(withTitle: suspendable.isEmpty ? "关机并退出" : "全部关机并退出")
+            alert.addButton(withTitle: suspendable.isEmpty ? String(l10n: "Shut Down and Quit") : String(l10n: "Shut Down All and Quit"))
             actions.append(.shutDown)
         }
         alert.informativeText = notes.joined(separator: "\n\n")
-        alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+        alert.addButton(withTitle: String(l10n: "Cancel")).keyEquivalent = "\u{1b}"
         NSApp.activate()
         let choice = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
         guard actions.indices.contains(choice) else { return .terminateCancel }
@@ -103,16 +104,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 提示里说明转到后台时各台虚拟机会怎样。
     private func backgroundNote(running: [String], background: [String], suspendable: [String]) -> String {
-        let subject = background.count == running.count ? "虚拟机" : background.joined(separator: "、")
-        var note = "转到后台时\(subject)先挂起几秒，再交给后台进程接着运行，MacVM 退出后也不停。"
+        let subject = background.count == running.count ? String(l10n: "the virtual machines") : background.formatted(.list(type: .and))
+        var note = String(l10n: "Moving to the background suspends \(subject) for a few seconds while a background process takes over. That process keeps running after MacVM quits.")
         if background.contains(where: { model.config(of: $0)?.engine == .vz }) {
-            note += "VZ 虚拟机的画面只能在运行它的进程里显示，之后要关机再从 MacVM 启动才能看到画面。"
+            note += String(l10n: " Only the process running a VZ virtual machine can show its screen, so to see it again, shut it down and start it in MacVM.")
         }
         let rest = running.filter { !background.contains($0) }
         let restSuspended = rest.filter { suspendable.contains($0) }
         let restStopped = rest.filter { !suspendable.contains($0) }
-        if !restSuspended.isEmpty { note += "\(restSuspended.joined(separator: "、")) 不能转到后台，会挂起。" }
-        if !restStopped.isEmpty { note += "\(restStopped.joined(separator: "、")) 不能转到后台，会正常关机。" }
+        if !restSuspended.isEmpty { note += String(l10n: " \(restSuspended.formatted(.list(type: .and))) can't move to the background and will be suspended.") }
+        if !restStopped.isEmpty { note += String(l10n: " \(restStopped.formatted(.list(type: .and))) can't move to the background and will shut down normally.") }
         return note
     }
 
@@ -120,12 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func stopNote(running: [String], suspendable: [String]) -> String {
         let others = running.filter { !suspendable.contains($0) }
         if others.isEmpty {
-            return "挂起会保存当前状态，下次开机从这里接着运行；关机要等客户机自己关好。"
+            return String(l10n: "Suspending saves the current state so the next start picks up where it left off. Shutting down waits for the guest to shut down on its own.")
         }
         if suspendable.isEmpty {
-            return "\(others.joined(separator: "、")) 不支持挂起，退出前要等客户机正常关机。"
+            return String(l10n: "\(others.formatted(.list(type: .and))) can't be suspended. MacVM waits for the guest to shut down before quitting.")
         }
-        return "挂起时 \(suspendable.joined(separator: "、")) 保存当前状态，下次开机接着运行；\(others.joined(separator: "、")) 不支持挂起，会正常关机。"
+        return String(l10n: "Suspending saves the current state of \(suspendable.formatted(.list(type: .and))) so the next start picks up where it left off. \(others.formatted(.list(type: .and))) can't be suspended and will shut down normally.")
     }
 
     /// 先把 `background` 里的虚拟机转到后台、挂起 `suspending` 里的（挂起失败的改为关机），再让其余的正常关机。
@@ -135,10 +136,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let failed = await model.moveToBackgroundForQuit(background)
         if !failed.isEmpty {
             let alert = NSAlert()
-            alert.messageText = "\(failed.map(\.name).joined(separator: "、")) 没能转到后台"
-            alert.informativeText = failed.map { "\($0.name)：\($0.reason)" }.joined(separator: "\n")
-                + "\n\n挂起状态已保存，没在后台运行起来的下次开机从这里接着运行。"
-            alert.addButton(withTitle: "好")
+            alert.messageText = String(l10n: "Couldn't move \(failed.map(\.name).formatted(.list(type: .and))) to the background")
+            alert.informativeText = failed.map { String(l10n: "\($0.name): \($0.reason)") }.joined(separator: "\n")
+                + "\n\n" + String(l10n: "The suspended state is saved, so any that didn't start in the background will resume at the next start.")
+            alert.addButton(withTitle: String(l10n: "OK"))
             NSApp.activate()
             alert.runModal()
         }
@@ -146,11 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.requestStopAll()
         while !(await model.waitUntilAllStopped(timeout: Self.shutdownWait)) {
             let alert = NSAlert()
-            alert.messageText = "\(model.runners.keys.sorted().joined(separator: "、")) 还没停下"
-            alert.informativeText = "客户机可能在等你保存文档或确认关机，可以到它的窗口里处理后继续等。断电退出会丢失客户机里没保存的内容。"
-            alert.addButton(withTitle: "继续等待")
-            alert.addButton(withTitle: "断电并退出")
-            alert.addButton(withTitle: "不退出")
+            alert.messageText = String(l10n: "Still waiting for \(model.runners.keys.sorted().formatted(.list(type: .and))) to shut down")
+            alert.informativeText = String(l10n: "The guest may be waiting for you to save a document or confirm the shutdown. You can handle it in the virtual machine's window and keep waiting. Powering off loses any unsaved work in the guest.")
+            alert.addButton(withTitle: String(l10n: "Keep Waiting"))
+            alert.addButton(withTitle: String(l10n: "Power Off and Quit"))
+            alert.addButton(withTitle: String(l10n: "Don't Quit"))
             NSApp.activate()
             switch alert.runModal() {
             case .alertFirstButtonReturn:

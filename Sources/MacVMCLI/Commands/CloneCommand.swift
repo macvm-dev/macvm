@@ -6,16 +6,16 @@ import MacVMModel
 struct CloneCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clone",
-        abstract: "克隆一台已停止的虚拟机。",
-        discussion: "APFS 上零拷贝，秒级完成；新虚拟机获得新的机器标识与 MAC，云镜像虚拟机会以新主机名重新初始化。"
+        abstract: String(l10n: "Clone a stopped VM."),
+        discussion: String(l10n: "On APFS nothing is actually copied, so cloning takes seconds. The clone gets a new machine identifier and MAC address, and if the VM was created from a cloud image, the clone is re-initialized with a new hostname.")
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "源虚拟机。") var source: String
-    @Argument(help: "新虚拟机名称。") var name: String
+    @Argument(help: ArgumentHelp(String(l10n: "VM to clone."))) var source: String
+    @Argument(help: ArgumentHelp(String(l10n: "Name of the new VM."))) var name: String
 
     func run() async throws {
-        try await Output.run(json: global.json, human: { (s: VMSummary) in "已克隆为 \(s.name)" }) {
+        try await Output.run(json: global.json, human: { (s: VMSummary) in String(l10n: "Cloned as \(s.name)") }) {
             let bundle = try await VMClone.clone(VMLibrary.default.bundle(named: source), as: name)
             SSHConfigCommand.refresh()
             return try VMStatus.summary(of: bundle)

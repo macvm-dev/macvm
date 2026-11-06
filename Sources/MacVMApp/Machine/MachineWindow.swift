@@ -27,7 +27,7 @@ struct MachineWindow: View {
     /// 正在把别的进程运行的虚拟机接到本进程，期间它短暂停在挂起状态，窗口不因此关闭。
     @State private var takingOver = false
     /// 启动提示的文字，挂起的虚拟机是从存档恢复。
-    @State private var startingTitle = "正在启动…"
+    @State private var startingTitle = String(l10n: "Starting…")
     /// 本窗口的开机是从挂起状态恢复的（含接管别的进程运行的）：客户机已在运行，显示器休眠时不出新帧，不必久等第一帧。
     @State private var restoring = false
     /// 窗口显示客户机画面期间经代理同步剪贴板；没有画面或客户机不经代理同步时为 nil。
@@ -46,9 +46,9 @@ struct MachineWindow: View {
     /// 进行中的挂起、关机或首次开机配置，在画面顶部一直显示到结束。
     /// 首次登录建用户目录期间客户机画面是黑的，靠这条提示说明不是卡住了。
     private var progress: String? {
-        if suspending { return "正在挂起…" }
-        if stopping { return "正在关机…" }
-        if model.isSettingUpGuest(name) { return "首次开机：正在登录并安装客户机代理，画面可能黑一会儿…" }
+        if suspending { return String(l10n: "Suspending…") }
+        if stopping { return String(l10n: "Shutting down…") }
+        if model.isSettingUpGuest(name) { return String(l10n: "Setting up for the first time: signing in and installing the guest agent. The screen may stay black for a while…") }
         return nil
     }
 
@@ -60,7 +60,7 @@ struct MachineWindow: View {
                 VirtualMachineView(runner: vz, firstFrameTimeout: restoring ? Self.restoredFrameTimeout : VZRunner.firstFrameTimeout,
                                    onFirstFrame: awaitingFirstFrame ? { arrived in
                                        withAnimation { awaitingFirstFrame = false }
-                                       if !arrived, restoring { announce("客户机显示器在休眠，移动鼠标或按任意键唤醒") }
+                                       if !arrived, restoring { announce(String(l10n: "The guest display is asleep. Move the mouse or press any key to wake it")) }
                                    } : nil)
                     .overlay {
                         if awaitingFirstFrame { startingView.transition(.opacity) }
@@ -69,19 +69,19 @@ struct MachineWindow: View {
                 QEMUMachineView(bundle: bundle)
             } else if runningElsewhere, failed || !model.canTakeOver(name) {
                 ContentUnavailableView {
-                    Label("在后台进程中运行", systemImage: "terminal")
+                    Label("Running in a Background Process", systemImage: "terminal")
                 } description: {
                     if let failure {
                         Text(failure).textSelection(.enabled)
                     } else {
-                        Text("这台虚拟机由 macvm start 在另一个进程中运行，VZ 的画面只能在运行它的进程里显示；它不能挂起，没法转到这里运行。关机后可在这里重新启动。")
+                        Text("This virtual machine was started with macvm start and is running in another process. Only the process running a VZ virtual machine can show its screen, and this one can't be suspended to move it here. Shut it down, then start it again here.")
                     }
                 } actions: {
-                    Button("关机") { Task { await model.stop(name) } }
+                    Button("Shut Down") { Task { await model.stop(name) } }
                 }
             } else if failed {
                 ContentUnavailableView {
-                    Label("无法启动", systemImage: "exclamationmark.triangle")
+                    Label("Couldn't Start", systemImage: "exclamationmark.triangle")
                 } description: {
                     if let failure { Text(failure).textSelection(.enabled) }
                 }
@@ -128,7 +128,7 @@ struct MachineWindow: View {
         .task(id: name) {
             if runningElsewhere {
                 guard model.canTakeOver(name) else { return }
-                startingTitle = "正在转到 App 里运行…"
+                startingTitle = String(l10n: "Moving into the app…")
                 awaitingFirstFrame = true
                 takingOver = true
                 let taken = await model.takeOver(name)
@@ -139,7 +139,7 @@ struct MachineWindow: View {
                 failure = failed ? model.lastError : nil
                 return
             }
-            if model.summary(name)?.state == .suspended { startingTitle = "正在恢复…" }
+            if model.summary(name)?.state == .suspended { startingTitle = String(l10n: "Resuming…") }
             awaitingFirstFrame = !model.isRunningHere(name)
             let started = await model.start(name)
             restoring = model.wasRestored(name)
@@ -173,8 +173,8 @@ struct MachineWindow: View {
         // 工具栏从窗口打开起就在，虚拟机跑起来之前按钮不可点：按钮晚出现会把标题栏撑高，画面跟着往下跳。
         .toolbar {
             Group {
-                Button { showingImages = true } label: { Label("磁盘映像", systemImage: "opticaldisc") }
-                    .help(model.canAttachImages(name) ? "光盘与磁盘映像" : "只有在本 App 里启动、带 USB 控制器的虚拟机能接入磁盘映像")
+                Button { showingImages = true } label: { Label("Disk Images", systemImage: "opticaldisc") }
+                    .help(model.canAttachImages(name) ? "Discs and Disk Images" : "Disk images can only be attached to virtual machines started in this app that have a USB controller")
                     .disabled(!model.canAttachImages(name))
                     .popover(isPresented: $showingImages, arrowEdge: .bottom) {
                         // 文件选择面板一弹出 popover 就会关闭，所以先关 popover，由窗口弹面板。
@@ -184,30 +184,30 @@ struct MachineWindow: View {
                         }
                     }
                 if let config, config.supportsShares {
-                    Button { showingShares = true } label: { Label("共享目录", systemImage: "folder") }
-                        .help("共享目录")
+                    Button { showingShares = true } label: { Label("Shared Folders", systemImage: "folder") }
+                        .help("Shared Folders")
                 }
                 if let config, config.supportsMicrophone {
                     Button {
                         let on = !config.microphone
-                        if model.setMicrophone(name, on) { announce(on ? "下次开机时接上麦克风" : "下次开机时断开麦克风") }
+                        if model.setMicrophone(name, on) { announce(on ? String(l10n: "The microphone will be connected at the next startup") : String(l10n: "The microphone will be disconnected at the next startup")) }
                     } label: {
-                        Label(config.microphone ? "关闭麦克风" : "打开麦克风", systemImage: config.microphone ? "mic.fill" : "mic.slash")
+                        Label(config.microphone ? "Turn Off Microphone" : "Turn On Microphone", systemImage: config.microphone ? "mic.fill" : "mic.slash")
                     }
-                    .help(config.microphone ? "麦克风：开（下次开机生效）" : "麦克风：关（下次开机生效）")
+                    .help(config.microphone ? "Microphone: On (takes effect at next startup)" : "Microphone: Off (takes effect at next startup)")
                 }
                 if let config, config.supportsAudio {
                     Button {
                         let on = !config.audio
-                        if model.setAudio(name, on) { announce(on ? "下次开机时打开声音" : "下次开机时关闭声音") }
+                        if model.setAudio(name, on) { announce(on ? String(l10n: "Sound will be turned on at the next startup") : String(l10n: "Sound will be turned off at the next startup")) }
                     } label: {
-                        Label(config.audio ? "关闭声音" : "打开声音", systemImage: config.audio ? "speaker.wave.2.fill" : "speaker.slash")
+                        Label(config.audio ? "Turn Off Sound" : "Turn On Sound", systemImage: config.audio ? "speaker.wave.2.fill" : "speaker.slash")
                     }
-                    .help(config.audio ? "声音：开（下次开机生效）" : "声音：关（下次开机生效）")
+                    .help(config.audio ? "Sound: On (takes effect at next startup)" : "Sound: Off (takes effect at next startup)")
                 }
                 if model.canSuspend(name) {
                     if suspending {
-                        busyItem("正在挂起…")
+                        busyItem("Suspending…")
                     } else {
                         Button {
                             suspending = true
@@ -215,15 +215,15 @@ struct MachineWindow: View {
                                 await model.suspend(name)
                                 suspending = false
                             }
-                        } label: { Label("挂起", systemImage: "pause.fill") }
-                        .help("挂起")
+                        } label: { Label("Suspend", systemImage: "pause.fill") }
+                        .help("Suspend")
                     }
                 }
                 if stopping {
-                    busyItem("正在关机…")
+                    busyItem("Shutting down…")
                 } else {
-                    Button { Task { await model.stop(name) } } label: { Label("关机", systemImage: "power") }
-                        .help("关机")
+                    Button { Task { await model.stop(name) } } label: { Label("Shut Down", systemImage: "power") }
+                        .help("Shut Down")
                         .disabled(suspending)
                 }
             }
@@ -270,13 +270,13 @@ extension MachineWindow {
                 .frame(width: 300)
             Button { transfer.progress.cancel() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.borderless)
-                .help("取消复制")
-                .accessibilityLabel("取消复制")
+                .help("Cancel Copy")
+                .accessibilityLabel("Cancel Copy")
         }
     }
 
     /// 工具栏里代替按钮的转圈，占着按钮的位置，其他按钮不跟着挪。
-    fileprivate func busyItem(_ text: String) -> some View {
+    fileprivate func busyItem(_ text: LocalizedStringKey) -> some View {
         ProgressView()
             .controlSize(.small)
             .frame(width: 28, height: 28)
@@ -291,7 +291,7 @@ extension MachineWindow {
     fileprivate func announce(_ text: String) {
         var text = text
         if let runner, runner.canSuspend, let saved = model.config(of: name), saved.audioDiffers(from: runner.config) {
-            text += "；改回之前这次开机不能挂起"
+            text = String(l10n: "\(text). Until you change it back, this session can't be suspended")
         }
         withAnimation { notice = text }
     }
@@ -311,14 +311,14 @@ private struct SharesSheet: View {
                     SharesSection(vmName: name, config: config, editable: editable)
                 }
                 if !editable {
-                    Text("运行中只有在本 App 里启动的 macOS 客户机能实时修改共享目录，其他情况请关机后修改。")
+                    Text("While running, only macOS guests started in this app can change shared folders. For other virtual machines, shut down first.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
             HStack {
                 Spacer()
-                Button("完成") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
             .padding()
         }
@@ -340,20 +340,20 @@ private struct ImagesPopover: View {
         let images = model.attachedImages[name] ?? []
         let busy = model.changingImages.contains(name)
         VStack(alignment: .leading, spacing: 12) {
-            Text("光盘与磁盘映像").font(.headline)
+            Text("Discs and Disk Images").font(.headline)
             if images.isEmpty {
-                Text("没有接入光盘或磁盘映像。").foregroundStyle(.secondary)
+                Text("No discs or disk images attached.").foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(images) { image in row(image, busy: busy) }
                 }
             }
             HStack(spacing: 8) {
-                Button(action: onAttach) { Label("接入磁盘映像…", systemImage: "plus") }
+                Button(action: onAttach) { Label("Attach Disk Image…", systemImage: "plus") }
                 if busy { ProgressView().controlSize(.small) }
             }
             .disabled(busy)
-            Text("映像在客户机里显示为 U 盘。先在客户机里推出，再在这里推出，否则客户机还没写完的数据可能丢失。")
+            Text("Images appear as USB drives in the guest. Eject them in the guest before ejecting them here, or data the guest hasn't finished writing may be lost.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -367,14 +367,14 @@ private struct ImagesPopover: View {
             Image(systemName: "externaldrive").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(image.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
-                Text(image.readOnly ? "只读" : "可读写").font(.caption).foregroundStyle(.secondary)
+                Text(image.readOnly ? "Read-Only" : "Read-Write").font(.caption).foregroundStyle(.secondary)
             }
             .help(image.url.path)
             Spacer()
             Button { Task { await model.ejectImage(name, id: image.id) } } label: { Image(systemName: "eject.fill") }
                 .buttonStyle(.borderless)
-                .help("推出")
-                .accessibilityLabel("推出 \(image.url.lastPathComponent)")
+                .help("Eject")
+                .accessibilityLabel("Eject \(image.url.lastPathComponent)")
                 .disabled(busy)
         }
     }

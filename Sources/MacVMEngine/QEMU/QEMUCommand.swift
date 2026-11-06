@@ -143,7 +143,7 @@ struct QEMUCommand {
                 // `BridgeSession` 的 socket 作为 QEMU 的标准输入交给它：`Process` 只把标准输入输出传给子进程。
                 a += ["-netdev", "dgram,id=net0,local.type=fd,local.str=0"]
             case .vmnetShared, .vmnetHost:
-                throw MacVMError.unsupported("QEMU 引擎不支持 vmnet 网络")
+                throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support vmnet networking"))
             }
             // 固件自带 virtio-net 驱动，不加载网卡的选项 ROM（自带的 QEMU 也没带）。
             a += ["-device", "virtio-net-pci,netdev=net0,romfile=\(net.macAddress.map { ",mac=\(Self.optionValue($0))" } ?? "")"]
@@ -154,7 +154,7 @@ struct QEMUCommand {
             a += ["-audiodev", "coreaudio,id=snd0", "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"]
         }
         if !config.shares.isEmpty {
-            throw MacVMError.unsupported("QEMU 引擎在 macOS 上不支持 virtio-fs 共享目录")
+            throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support virtio-fs shared folders on macOS"))
         }
 
         a += ["-qmp", "unix:\(Self.optionValue(Self.qmpSocket(bundle).path)),server=on,wait=off"]

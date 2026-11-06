@@ -56,12 +56,12 @@ public enum MacVMError: Error, Sendable, Equatable {
 
     public var message: String {
         switch self {
-        case .vmNotFound(let name): "虚拟机不存在：\(name)"
-        case .alreadyExists(let name): "已存在：\(name)"
-        case .alreadyRunning(let name): "虚拟机已在运行：\(name)"
-        case .notRunning(let name): "虚拟机未运行：\(name)"
-        case .snapshotNotFound(let what): "快照不存在：\(what)"
-        case .templateNotFound(let name): "模板不存在：\(name)"
+        case .vmNotFound(let name): String(l10n: "Virtual machine not found: \(name)")
+        case .alreadyExists(let name): String(l10n: "Already exists: \(name)")
+        case .alreadyRunning(let name): String(l10n: "Virtual machine is already running: \(name)")
+        case .notRunning(let name): String(l10n: "Virtual machine isn't running: \(name)")
+        case .snapshotNotFound(let what): String(l10n: "Snapshot not found: \(what)")
+        case .templateNotFound(let name): String(l10n: "Template not found: \(name)")
         case .invalidConfig(let m), .unsupported(let m), .entitlementMissing(let m),
              .timeout(let m), .io(let m), .engine(let m), .permissionDenied(let m): m
         }
@@ -78,27 +78,27 @@ extension MacVMError {
 
     public var summary: String {
         switch self {
-        case .vmNotFound: "虚拟机不存在"
-        case .alreadyExists: "同名虚拟机或模板已存在"
-        case .alreadyRunning: "虚拟机已在运行"
-        case .notRunning: "虚拟机未运行"
-        case .invalidConfig: "配置或参数无效"
-        case .unsupported: "本机或该虚拟机不支持此操作"
-        case .entitlementMissing: "签名缺少所需 entitlement"
-        case .timeout: "等待超时"
-        case .io: "文件或 socket 读写失败"
-        case .engine: "Virtualization.framework 报错"
-        case .snapshotNotFound: "快照不存在"
-        case .templateNotFound: "模板不存在"
-        case .permissionDenied: "客户机未授予代理所需的权限"
+        case .vmNotFound: String(l10n: "VM not found")
+        case .alreadyExists: String(l10n: "A VM or template with this name already exists")
+        case .alreadyRunning: String(l10n: "VM is already running")
+        case .notRunning: String(l10n: "VM is not running")
+        case .invalidConfig: String(l10n: "Invalid configuration or argument")
+        case .unsupported: String(l10n: "Not supported on this Mac or VM")
+        case .entitlementMissing: String(l10n: "Code signature lacks a required entitlement")
+        case .timeout: String(l10n: "Timed out")
+        case .io: String(l10n: "File or socket I/O error")
+        case .engine: String(l10n: "Virtualization.framework error")
+        case .snapshotNotFound: String(l10n: "Snapshot not found")
+        case .templateNotFound: String(l10n: "Template not found")
+        case .permissionDenied: String(l10n: "The guest hasn't granted the agent a required permission")
         }
     }
 }
 
 extension MacVMError {
-    /// 系统调用失败：`what 失败：<strerror(code)>`。
+    /// 系统调用失败：`<what>: <strerror(code)>`。`what` 是一整句失败说明（如 "Couldn't read X"），或系统调用名、路径。
     public static func posix(_ what: String, code: Int32 = errno) -> MacVMError {
-        .io("\(what) 失败：\(String(cString: strerror(code)))")
+        .io(String(l10n: "\(what): \(String(cString: strerror(code)))"))
     }
 }
 

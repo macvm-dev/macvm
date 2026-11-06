@@ -5,20 +5,20 @@ import MacVMModel
 
 struct Run: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "在前台无头运行虚拟机，直到客户机关机。",
-        discussion: "Ctrl-C 请求客户机关机，再按一次立即断电。--console 把客户机控制台（hvc0）接到当前终端。"
+        abstract: String(l10n: "Run a VM headless in the foreground until the guest shuts down."),
+        discussion: String(l10n: "Ctrl-C asks the guest to shut down; press it again to power off immediately. --console connects the guest console (hvc0) to the current terminal.")
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
 
-    @Flag(help: "把客户机 virtio 控制台接到标准输入输出。")
+    @Flag(help: ArgumentHelp(String(l10n: "Connect the guest's virtio console to stdin and stdout.")))
     var console = false
 
-    @Flag(help: "macOS 客户机：进入恢复模式。")
+    @Flag(help: ArgumentHelp(String(l10n: "Start in recovery mode (macOS guests).")))
     var recovery = false
 
-    @Flag(help: "QEMU 引擎：打开 QEMU 自己的窗口显示画面。")
+    @Flag(help: ArgumentHelp(String(l10n: "Show the screen in a QEMU window (QEMU engine).")))
     var display = false
 
     /// 作为后台进程运行：标准输出与标准错误是 `VMBundle.logURL`，启停记录与开了 `VMConfig.serialConsole` 时的控制台输出都写进去。
@@ -29,7 +29,7 @@ struct Run: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        try await Output.run(json: global.json, human: { (r: Result) in detached ? "虚拟机已停止：\(r.reason)" : nil }) {
+        try await Output.run(json: global.json, human: { (r: Result) in detached ? String(l10n: "VM stopped: \(r.reason)") : nil }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             try bundle.requireNotCreating()
             let config = try bundle.loadConfig()
@@ -50,16 +50,16 @@ struct Run: AsyncParsableCommand {
             let signals = SignalHandler(runner: runner)
             defer { signals.cancel() }
 
-            if detached { log("启动 \(name)（pid \(getpid())）") }
+            if detached { log("Starting \(name) (pid \(getpid()))") }
             switch try await runner.start(recovery: recovery) {
-            case .coldBoot: log("已启动")
-            case .restored: log("已从挂起状态恢复")
-            case .restoreFailed(let reason): log("挂起状态无法恢复，已冷启动：\(reason)")
+            case .coldBoot: log("Started")
+            case .restored: log("Resumed from the suspended state")
+            case .restoreFailed(let reason): log("Couldn't resume from the suspended state (\(reason)); did a cold boot instead")
             }
 
             let reason = await runner.waitUntilStopped()
-            if detached { log("已停止：\(reason.label)") }
-            if case .error(let message) = reason { throw MacVMError.engine("虚拟机异常停止：\(message)") }
+            if detached { log("Stopped: \(reason.label)") }
+            if case .error(let message) = reason { throw MacVMError.engine(String(l10n: "The VM stopped unexpectedly: \(message)")) }
             return Result(reason: reason.label)
         }
     }
@@ -87,7 +87,7 @@ final class SignalHandler {
                     guard let self, let runner else { return }
                     if !self.requested, (try? runner.requestStop()) != nil {
                         self.requested = true
-                        FileHandle.standardError.write(Data("\n已请求客户机关机，再按一次 Ctrl-C 立即断电。\n".utf8))
+                        FileHandle.standardError.write(Data(("\n" + String(l10n: "Asked the guest to shut down. Press Ctrl-C again to power off immediately.") + "\n").utf8))
                     } else {
                         Task { try? await runner.forceStop() }
                     }

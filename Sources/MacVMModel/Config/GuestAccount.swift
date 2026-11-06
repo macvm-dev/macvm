@@ -11,21 +11,21 @@ public enum GuestAccount {
               user.first.map(first.contains) == true,
               user.allSatisfy(rest.contains)
         else {
-            throw MacVMError.invalidConfig("用户名须为 1–20 个小写字母、数字或 _ . -，且以字母或 _ 开头：\(user)")
+            throw MacVMError.invalidConfig(String(l10n: "User name must be 1–20 lowercase letters, digits, _ . or -, starting with a letter or _: \(user)"))
         }
         guard !reservedUsers.contains(user) else {
-            throw MacVMError.invalidConfig("用户名 \(user) 是系统保留账户，换一个")
+            throw MacVMError.invalidConfig(String(l10n: "The user name \(user) is reserved by the system; choose another"))
         }
     }
 
     /// 密码存进包内 `guest-password` 后读回时去掉首尾空白，所以首尾不能是空白；换行等控制字符在客户机配置里写不进去。
     public static func validate(password: String) throws {
-        guard !password.isEmpty else { throw MacVMError.invalidConfig("密码不能为空") }
+        guard !password.isEmpty else { throw MacVMError.invalidConfig(String(l10n: "Password can't be empty")) }
         guard password.trimmingCharacters(in: .whitespaces) == password else {
-            throw MacVMError.invalidConfig("密码首尾不能有空格")
+            throw MacVMError.invalidConfig(String(l10n: "Password can't start or end with a space"))
         }
         guard !password.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
-            throw MacVMError.invalidConfig("密码不能含换行等控制字符")
+            throw MacVMError.invalidConfig(String(l10n: "Password can't contain line breaks or other control characters"))
         }
     }
 

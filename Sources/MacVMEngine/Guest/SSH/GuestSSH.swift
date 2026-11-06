@@ -32,7 +32,7 @@ public enum GuestSSH {
             lastError = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             try await Task.sleep(for: .seconds(5))
         }
-        throw MacVMError.timeout("未能登录 \(bundle.name) 装入 SSH 公钥：\(lastError)")
+        throw MacVMError.timeout(String(l10n: "Couldn't log in to \(bundle.name) to install the SSH public key: \(lastError)"))
     }
 
     /// 运行 `process` 并等它退出，返回退出码；任务取消时终止它并抛出 `CancellationError`。

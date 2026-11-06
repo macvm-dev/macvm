@@ -5,26 +5,26 @@ import MacVMModel
 
 struct Exec: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "在客户机里执行命令，退出码与客户机命令一致。",
-        discussion: """
-        虚拟机未运行时自动在后台启动。示例：
+        abstract: String(l10n: "Run a command in the guest and exit with its exit code."),
+        discussion: String(l10n: """
+        Starts the VM in the background if it isn't running. Examples:
           macvm exec dev -- uname -a
           macvm exec dev -t --cwd "$PWD" -- claude
-        """
+        """)
     )
 
-    @Argument(help: "虚拟机名称。") var name: String
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
 
-    @Flag(name: .shortAndLong, help: "分配伪终端（交互程序需要）。")
+    @Flag(name: .shortAndLong, help: ArgumentHelp(String(l10n: "Allocate a pseudo-terminal (needed for interactive programs).")))
     var tty = false
 
-    @Option(help: "在客户机的该目录下执行。")
+    @Option(help: ArgumentHelp(String(l10n: "Working directory in the guest.")))
     var cwd: String?
 
-    @Argument(parsing: .postTerminator, help: "要执行的命令。")
+    @Argument(parsing: .postTerminator, help: ArgumentHelp(String(l10n: "Command to run.")))
     var command: [String] = []
 
-    @Option(help: "以该客户机用户执行（需代理以 root 运行，即 Linux 客户机）。")
+    @Option(help: ArgumentHelp(String(l10n: "Run as this guest user (Linux guests only, where the agent runs as root).")))
     var user: String?
 
     func run() async throws {
@@ -43,7 +43,7 @@ struct Exec: AsyncParsableCommand {
                 throw ExitCode(code)
             }
             if user != nil {
-                throw MacVMError.unsupported("--user 需要客户机代理，\(name) 未安装代理")
+                throw MacVMError.unsupported(String(l10n: "--user needs the guest agent, which isn't installed on \(name)"))
             }
             try await Wait.untilReady(bundle, config: config, timeout: 300)
             let remote = config.os == .windows ? Self.powerShellCommand(command, cwd: cwd) : Self.posixCommand(command, cwd: cwd)
@@ -72,9 +72,9 @@ struct Exec: AsyncParsableCommand {
 }
 
 struct SSH: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "打开客户机的登录 shell。", discussion: "虚拟机未运行时自动在后台启动。")
+    static let configuration = CommandConfiguration(abstract: String(l10n: "Open a login shell in the guest."), discussion: String(l10n: "Starts the VM in the background if it isn't running."))
 
-    @Argument(help: "虚拟机名称。") var name: String
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
 
     func run() async throws {
         try await Output.run(json: false, human: { (_: Empty) in nil }) {
@@ -87,7 +87,7 @@ struct SSH: AsyncParsableCommand {
     /// 用 macvm 专用密钥与 `macvm proxy` 替换当前进程为 ssh，退出码直接是 ssh（即客户机命令）的退出码。
     static func execSSH(config: VMConfig, tty: Bool, remoteCommand: String?) throws -> Never {
         guard let user = config.guestUser else {
-            throw MacVMError.unsupported("不知道 \(config.name) 的登录用户（从安装介质安装的虚拟机需自行配置 SSH）")
+            throw MacVMError.unsupported(String(l10n: "macvm doesn't know the login user for \(config.name) (for VMs installed from installation media, set up SSH yourself)"))
         }
         try SSHConfig.validateLogin(user: user, host: config.name)
         let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: config.name)
@@ -96,6 +96,6 @@ struct SSH: AsyncParsableCommand {
         if let remoteCommand { args += ["--", remoteCommand] }
         let argv = args.map { strdup($0) } + [nil]
         execv("/usr/bin/ssh", argv)
-        throw MacVMError.posix("执行 ssh")
+        throw MacVMError.posix(String(l10n: "Couldn't run ssh"))
     }
 }

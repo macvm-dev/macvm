@@ -47,7 +47,7 @@ public final class GuestTransferActivity: NSObject, @unchecked Sendable {
         switch error {
         case is CancellationError: nil
         case let tooLarge as GuestFileTransfer.TooLarge:
-            "文件共 \(ByteCountFormatter.string(fromByteCount: tooLarge.total, countStyle: .file))，太大了没有复制"
+            String(l10n: "The file is too large to copy (\(ByteCountFormatter.string(fromByteCount: tooLarge.total, countStyle: .file)))")
         case let error as MacVMError: error.message
         default: error.localizedDescription
         }

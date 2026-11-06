@@ -30,7 +30,7 @@ use super::{VIRTIO_GPU, until_nul};
 /// 驱动可能把过小的尺寸放大到它的下限，实际取驱动接受的尺寸。
 pub fn set_display(width: u32, height: u32) -> io::Result<()> {
     let list = adapters();
-    let virtio = list.iter().find(|a| a.virtio).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "没有 virtio-gpu 显示器"))?;
+    let virtio = list.iter().find(|a| a.virtio).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No virtio-gpu display found"))?;
     let others_attached = list.iter().any(|a| !a.virtio && a.flags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP != 0);
     let current = current_size(&virtio.name);
     if virtio.flags & DISPLAY_DEVICE_PRIMARY_DEVICE != 0 && !others_attached && current == Some((width, height)) {
@@ -50,10 +50,10 @@ fn apply_only(luid: LUID, source: u32, width: u32, height: u32) -> io::Result<()
             .iter()
             .find(|p| same_luid(p.sourceInfo.adapterId, luid) && p.sourceInfo.id == source)
             .copied()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "virtio-gpu 显示器不在桌面上"))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "The virtio-gpu display isn't part of the desktop"))?;
         let index = path.sourceInfo.Anonymous.modeInfoIdx as usize;
         let mode = modes.get_mut(index).filter(|m| m.infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
-            .ok_or_else(|| io::Error::other("找不到 virtio-gpu 的源模式"))?;
+            .ok_or_else(|| io::Error::other("Couldn't find the virtio-gpu source mode"))?;
         mode.Anonymous.sourceMode.width = width;
         mode.Anonymous.sourceMode.height = height;
         mode.Anonymous.sourceMode.position.x = 0;
@@ -119,7 +119,7 @@ impl Adapter {
             let status = D3DKMTOpenAdapterFromHdc(&mut open);
             DeleteDC(dc);
             if status < 0 {
-                return Err(io::Error::other(format!("打开显示适配器失败（NTSTATUS {status:#x}）")));
+                return Err(io::Error::other(format!("Couldn't open the display adapter (NTSTATUS {status:#x})")));
             }
             Ok(Self { handle: open.hAdapter, luid: open.AdapterLuid, source_id: open.VidPnSourceId })
         }
@@ -135,7 +135,7 @@ impl Adapter {
             request.PrivateDriverDataSize = size_of::<ViogpuEscape>() as u32;
             D3DKMTEscape(&request)
         };
-        if status < 0 { Err(io::Error::other(format!("显示驱动拒绝了请求（NTSTATUS {status:#x}）"))) } else { Ok(()) }
+        if status < 0 { Err(io::Error::other(format!("The display driver rejected the request (NTSTATUS {status:#x})"))) } else { Ok(()) }
     }
 
     /// 设定驱动的自定义模式，返回驱动实际采用的尺寸。

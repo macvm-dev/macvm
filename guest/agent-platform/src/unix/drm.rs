@@ -174,12 +174,12 @@ fn active_crtc() -> io::Result<Option<(File, Crtc)>> {
     match fallback {
         _ if driver_present => Ok(None),
         Some(found) => Ok(Some(found)),
-        None => Err(io::Error::new(io::ErrorKind::NotFound, "客户机没有正在输出画面的显示器")),
+        None => Err(io::Error::new(io::ErrorKind::NotFound, "No display is active in the guest")),
     }
 }
 
 fn screen_off() -> io::Error {
-    io::Error::other("客户机屏幕关着（闲置息屏），先按键或移动鼠标唤醒")
+    io::Error::other("The guest's screen is off because it's idle; press a key or move the mouse to wake it")
 }
 
 fn crtc_ids(card: &File) -> io::Result<Vec<u32>> {
@@ -271,7 +271,7 @@ pub struct Frame {
 pub fn capture() -> io::Result<Frame> {
     let Some((card, crtc)) = active_crtc()? else { return Err(screen_off()) };
     if renders_on_host(&card) {
-        return Err(io::Error::new(io::ErrorKind::Unsupported, "客户机画面由宿主 GPU 渲染（virgl），客户机里读不到"));
+        return Err(io::Error::new(io::ErrorKind::Unsupported, "The guest's display is rendered on the host GPU (virgl), so it can't be read from inside the guest"));
     }
     let mut fb = FbCmd2 { fb_id: crtc.fb_id, ..Default::default() };
     ioctl(&card, GET_FB2, &mut fb)?;
@@ -287,10 +287,10 @@ pub fn capture() -> io::Result<Frame> {
 
 fn read_frame(card: &File, crtc: &Crtc, fb: &FbCmd2) -> io::Result<Frame> {
     if fb.handles[0] == 0 {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "读不到帧缓冲句柄，代理需要 root"));
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Couldn't read the framebuffer handle; the agent needs to run as root"));
     }
     if fb.flags & FB_MODIFIERS != 0 && fb.modifier[0] != FORMAT_MOD_LINEAR {
-        return Err(io::Error::new(io::ErrorKind::Unsupported, format!("帧缓冲不是线性排布（modifier {:#x}）", fb.modifier[0])));
+        return Err(io::Error::new(io::ErrorKind::Unsupported, format!("The framebuffer isn't linear (modifier {:#x})", fb.modifier[0])));
     }
     // 每像素 4 字节里 R、G、B 的位置。
     let (r, g, b) = match fb.pixel_format {
@@ -298,7 +298,7 @@ fn read_frame(card: &File, crtc: &Crtc, fb: &FbCmd2) -> io::Result<Frame> {
         f if f == fourcc(b"XB24") || f == fourcc(b"AB24") => (0, 1, 2),
         f => {
             let name = String::from_utf8_lossy(&f.to_le_bytes()).into_owned();
-            return Err(io::Error::new(io::ErrorKind::Unsupported, format!("不支持的帧缓冲格式 {name}")));
+            return Err(io::Error::new(io::ErrorKind::Unsupported, format!("Unsupported framebuffer format {name}")));
         }
     };
     let pitch = fb.pitches[0] as usize;
@@ -315,7 +315,7 @@ fn read_frame(card: &File, crtc: &Crtc, fb: &FbCmd2) -> io::Result<Frame> {
         }
     }
     if rgb.len() != width as usize * height as usize * 3 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "帧缓冲比显示模式小"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "The framebuffer is smaller than the display mode"));
     }
     Ok(Frame { width, height, rgb })
 }

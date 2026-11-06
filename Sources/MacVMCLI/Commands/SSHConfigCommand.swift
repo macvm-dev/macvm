@@ -6,16 +6,16 @@ import MacVMModel
 struct SSHConfigCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "ssh-config",
-        abstract: "生成 ssh 配置，让每台虚拟机可用 `ssh <名>` 连接。",
-        discussion: """
-        配置写到 ~/.config/macvm/ssh_config，此后 create / rm 会自动更新它。
-        --install 在 ~/.ssh/config 开头加入 Include，ssh 与读取 ssh 配置的工具（如 runode）即可看到这些主机。
-        """
+        abstract: String(l10n: "Generate an ssh config so you can connect to each VM with `ssh <name>`."),
+        discussion: String(l10n: """
+        Writes the config to ~/.config/macvm/ssh_config; from then on, macvm create and macvm rm keep it up to date.
+        With --install, also adds an Include line to the top of ~/.ssh/config so that ssh and other tools that read it (such as runode) can find these hosts.
+        """)
     )
 
     @OptionGroup var global: GlobalOptions
 
-    @Flag(help: "在 ~/.ssh/config 中加入 Include。")
+    @Flag(help: ArgumentHelp(String(l10n: "Add an Include line to ~/.ssh/config.")))
     var install = false
 
     struct Result: Encodable, Sendable {
@@ -35,9 +35,9 @@ struct SSHConfigCommand: AsyncParsableCommand {
     }
 
     static func render(_ r: Result) -> String {
-        var lines = ["已写入 \(r.path)"]
-        if !r.hosts.isEmpty { lines.append("主机：" + r.hosts.joined(separator: " ")) }
-        if !r.included { lines.append("尚未被 ~/.ssh/config 引用，运行 macvm ssh-config --install 或手动加一行：\(SSHConfig.includeLine)") }
+        var lines = [String(l10n: "Wrote \(r.path)")]
+        if !r.hosts.isEmpty { lines.append(String(l10n: "Hosts: \(r.hosts.joined(separator: " "))")) }
+        if !r.included { lines.append(String(l10n: "~/.ssh/config doesn't include it yet. Run macvm ssh-config --install, or add this line yourself: \(SSHConfig.includeLine)")) }
         return lines.joined(separator: "\n")
     }
 

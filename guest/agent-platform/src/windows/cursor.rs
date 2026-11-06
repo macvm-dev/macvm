@@ -81,7 +81,7 @@ pub fn watch_cursor(alive: impl Fn() -> bool, on_change: impl FnMut(GuestCursor)
     } else if !on_vz() {
         watch_hidden_cursors(alive, on_change)
     } else {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "客户机自绘光标"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "The guest draws its own cursor"))
     }
 }
 
@@ -91,7 +91,7 @@ fn watch_hardware_cursor(alive: impl Fn() -> bool, mut on_change: impl FnMut(Gue
     let mut last: Option<(HCURSOR, bool)> = None;
     while alive() {
         if !HARDWARE_CURSOR_ACTIVE.load(Ordering::Relaxed) {
-            return Err(io::Error::new(io::ErrorKind::Unsupported, "客户机未使用硬件光标"));
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "The guest isn't using a hardware cursor"));
         }
         if let Some((cursor, showing)) = current_cursor()
             && last != Some((cursor, showing))

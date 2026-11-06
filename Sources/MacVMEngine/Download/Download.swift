@@ -27,7 +27,7 @@ enum Download {
         if let free = try DownloadLock(trying: partial) {
             lock = free
         } else {
-            if showProgress { FileHandle.standardError.write(Data("\(target.lastPathComponent) 正由别处下载，等它完成…\n".utf8)) }
+            if showProgress { FileHandle.standardError.write(Data((String(l10n: "Another process is already downloading \(target.lastPathComponent); waiting for it to finish…") + "\n").utf8)) }
             lock = try await DownloadLock.acquire(partial)
         }
         defer { lock.release() }
@@ -42,7 +42,7 @@ enum Download {
         let digest = try await Subprocess.run("/usr/bin/shasum", ["-a", "256", file.path])
         guard digest.split(separator: " ").first.map({ $0.lowercased() == expected.lowercased() }) == true else {
             try? FileManager.default.removeItem(at: file)
-            throw MacVMError.io("\(name) 的 SHA-256 与发布方的不符，已删除，请重试")
+            throw MacVMError.io(String(l10n: "The SHA-256 checksum of \(name) doesn't match the published one, so the file was deleted; try again"))
         }
     }
 
@@ -180,7 +180,7 @@ enum Download {
                                               acceptedExitCodes: [0, curlFileTooLarge])
         let status = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let code = Int(status), (200..<300).contains(code) else {
-            throw MacVMError.io("探测范围请求时服务器回了 HTTP \(status)，已下的内容保留，请稍后重试：\(url.absoluteString)")
+            throw MacVMError.io(String(l10n: "The server returned HTTP \(status) while checking range request support (\(url.absoluteString)). The data downloaded so far was kept; try again later."))
         }
         return code == 206
     }
@@ -212,7 +212,7 @@ enum Download {
         }
         guard size(of: segment) == expected else {
             try? FileManager.default.removeItem(at: segment)
-            throw MacVMError.io("分段下载的字节数不对，服务器可能不支持范围请求：\(url.absoluteString)")
+            throw MacVMError.io(String(l10n: "A segmented download got the wrong number of bytes; the server may not support range requests: \(url.absoluteString)"))
         }
     }
 
@@ -239,9 +239,9 @@ enum Download {
                 let received = files.reduce(Int64(0)) { $0 + size(of: $1) }
                 report?(received, total)
                 if toStderr {
-                    let line = total.map { "\(ByteSize.format(UInt64(received))) / \(ByteSize.format(UInt64($0)))（\(received * 100 / max($0, 1))%）" }
+                    let line = total.map { "\(ByteSize.format(UInt64(received))) / \(ByteSize.format(UInt64($0))) (\(received * 100 / max($0, 1))%)" }
                         ?? ByteSize.format(UInt64(received))
-                    FileHandle.standardError.write(Data("\r下载 \(line)   ".utf8))
+                    FileHandle.standardError.write(Data(("\r" + String(l10n: "Downloading \(line)") + "   ").utf8))
                 }
                 try? await Task.sleep(for: .milliseconds(500))
             }
@@ -279,7 +279,7 @@ final class DownloadLock: Sendable {
         self.path = path
         while true {
             let fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
-            guard fd >= 0 else { throw MacVMError.io("无法创建 \(path)：\(String(cString: strerror(errno)))") }
+            guard fd >= 0 else { throw MacVMError.io(String(l10n: "Couldn't create \(path): \(String(cString: strerror(errno)))")) }
             guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
                 close(fd)
                 return nil

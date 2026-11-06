@@ -106,7 +106,7 @@ pub fn unique_name(name: &str, is_dir: bool, windows_style: bool, exists: impl F
     (2..)
         .map(|n| if windows_style { format!("{stem} ({n}){ext}") } else { format!("{stem} {n}{ext}") })
         .find(|candidate| !exists(candidate))
-        .expect("编号总能找到空位")
+        .expect("a free number always exists")
 }
 
 /// 帧头与载荷一次写出。
@@ -117,7 +117,7 @@ pub fn write_file_frame(w: &mut impl Write, kind: FileFrame, payload: &[u8]) -> 
 /// 对端正常关闭时返回 `Ok(None)`。
 pub fn read_file_frame(r: &mut impl Read) -> io::Result<Option<(FileFrame, Vec<u8>)>> {
     let Some((kind, payload)) = crate::read_raw_frame(r)? else { return Ok(None) };
-    let kind = FileFrame::from_u8(kind).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "未知文件流帧类型"))?;
+    let kind = FileFrame::from_u8(kind).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Unknown file stream frame type"))?;
     Ok(Some((kind, payload)))
 }
 

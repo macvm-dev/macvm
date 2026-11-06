@@ -149,7 +149,7 @@ fn with_devices<T>(f: impl FnOnce(&mut Devices) -> io::Result<T>) -> io::Result<
     if devices.is_none() {
         *devices = Some(Devices::new()?);
     }
-    f(devices.as_mut().expect("刚建好"))
+    f(devices.as_mut().expect("just created"))
 }
 
 /// 先建好虚拟设备：图形会话在它之后启动时一开始就认得它，第一次注入不必等合成器。
@@ -206,7 +206,7 @@ impl Injector for Uinput<'_> {
     }
 
     fn key(&mut self, key: Key, down: bool) -> io::Result<()> {
-        let code = keycode(key).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("Linux 上没有这个键：{key:?}")))?;
+        let code = keycode(key).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("No such key on Linux: {key:?}")))?;
         emit(&mut self.devices.keyboard, &[(EV_KEY, code, i32::from(down))])?;
         thread::sleep(KEY_PAUSE);
         Ok(())

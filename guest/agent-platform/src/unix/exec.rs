@@ -24,7 +24,7 @@ impl Identity {
         // SAFETY: getpwnam 返回指向静态区的指针，立即拷出所需字段。
         let pw = unsafe { libc::getpwnam(cname.as_ptr()) };
         if pw.is_null() {
-            return Err(io::Error::new(io::ErrorKind::NotFound, format!("用户不存在：{name}")));
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("No such user: {name}")));
         }
         // SAFETY: pw 非空，字段由 libc 保证为合法 C 字符串。
         unsafe {
@@ -42,7 +42,7 @@ impl Identity {
         // SAFETY: getuid 无副作用；getpwuid 同 getpwnam。
         let pw = unsafe { libc::getpwuid(libc::getuid()) };
         if pw.is_null() {
-            return Err(io::Error::other("无法确定当前用户"));
+            return Err(io::Error::other("Couldn't determine the current user"));
         }
         // SAFETY: 同上。
         let name = unsafe { cstr((*pw).pw_name) };
@@ -83,7 +83,7 @@ pub fn spawn(o: &ExecOptions) -> io::Result<Spawned> {
         Some(name) => {
             let me = Identity::current()?;
             if me.name != name {
-                return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("代理不是 root，无法以 {name} 执行")));
+                return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("The agent isn't running as root, so it can't run commands as {name}")));
             }
             me
         }
@@ -237,7 +237,7 @@ fn supplementary_groups(name: &std::ffi::CStr, gid: u32) -> io::Result<Vec<libc:
             return Ok(groups);
         }
         if groups.len() >= MAX_GROUPS {
-            return Err(io::Error::other(format!("{} 所在的组过多", name.to_string_lossy())));
+            return Err(io::Error::other(format!("{} belongs to too many groups", name.to_string_lossy())));
         }
         let wanted = usize::try_from(count).unwrap_or(0).max(groups.len() * 2);
         groups.resize(wanted, 0);

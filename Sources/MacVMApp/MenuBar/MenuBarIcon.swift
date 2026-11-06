@@ -1,4 +1,5 @@
 import AppKit
+import MacVMModel
 
 /// App 图标的单色简化版：叠放的两个窗口；后台任务期间前窗里出现下载箭头或进度环。
 @MainActor
@@ -18,8 +19,8 @@ enum MenuBarIcon {
     var label: String {
         switch self {
         case .idle: "MacVM"
-        case .downloading: "MacVM：正在下载"
-        case .working: "MacVM：有任务进行中"
+        case .downloading: String(l10n: "MacVM: Downloading")
+        case .working: String(l10n: "MacVM: Tasks in progress")
         }
     }
 

@@ -236,7 +236,7 @@ impl Response {
 /// 写成功响应行（带 `size`）和紧随其后的正文；超过 `MAX_BODY` 时改写失败响应。
 pub fn write_body(w: &mut impl Write, body: &[u8]) -> io::Result<()> {
     if body.len() as u64 > MAX_BODY {
-        return write_json_line(w, &Response::error(format!("正文过大：{} 字节", body.len())));
+        return write_json_line(w, &Response::error(format!("Body is too large ({} bytes)", body.len())));
     }
     write_json_line(w, &Response { size: Some(body.len() as u64), ..Response::ok() })?;
     w.write_all(body)
@@ -287,7 +287,7 @@ pub fn write_frame(w: &mut impl Write, kind: FrameKind, payload: &[u8]) -> io::R
 /// 对端正常关闭时返回 `Ok(None)`。
 pub fn read_frame(r: &mut impl Read) -> io::Result<Option<(FrameKind, Vec<u8>)>> {
     let Some((kind, payload)) = read_raw_frame(r)? else { return Ok(None) };
-    let kind = FrameKind::from_u8(kind).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "未知帧类型"))?;
+    let kind = FrameKind::from_u8(kind).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Unknown frame type"))?;
     Ok(Some((kind, payload)))
 }
 
@@ -309,7 +309,7 @@ fn read_raw_frame(r: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
     }
     let len = u32::from_le_bytes(header[1..].try_into().unwrap()) as usize;
     if len > MAX_FRAME {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "帧过大"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Frame is too large"));
     }
     let mut payload = vec![0u8; len];
     r.read_exact(&mut payload)?;
@@ -322,14 +322,14 @@ pub fn read_line(r: &mut impl Read) -> io::Result<Vec<u8>> {
     let mut byte = [0u8; 1];
     loop {
         if r.read(&mut byte)? == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "连接在请求行结束前关闭"));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Connection closed before the request line ended"));
         }
         if byte[0] == b'\n' {
             return Ok(line);
         }
         line.push(byte[0]);
         if line.len() > MAX_FRAME {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "请求行过长"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Request line is too long"));
         }
     }
 }

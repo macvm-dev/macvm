@@ -79,8 +79,8 @@ public enum MacOSTuning {
     /// `password` 为 nil 时用包内保存的客户机密码。sudo 认证失败时抛错，此前用户级的项可能已生效。
     public static func run(bundle: VMBundle, config: VMConfig, steps: [Step] = Step.allCases, revert: Bool = false,
                            password: String? = nil, macvmPath: String) async throws -> Report {
-        guard config.os == .macOS else { throw MacVMError.unsupported("只有 macOS 客户机可以调优") }
-        guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 调优") }
+        guard config.os == .macOS else { throw MacVMError.unsupported(String(l10n: "Only macOS guests can be tuned")) }
+        guard let user = config.guestUser else { throw MacVMError.unsupported(String(l10n: "\(config.name)'s login user is unknown, so it can't be tuned over SSH")) }
         let userSteps = steps.filter { !$0.asRoot }, rootSteps = steps.filter(\.asRoot)
 
         var remote: [String] = []
@@ -88,7 +88,7 @@ public enum MacOSTuning {
         var stdin: URL?
         if !rootSteps.isEmpty {
             guard let password = password ?? GuestCredentials.password(for: bundle) else {
-                throw MacVMError.invalidConfig("没有 \(config.name) 的客户机密码，无法 sudo；用 --password 提供")
+                throw MacVMError.invalidConfig(String(l10n: "No guest password is saved for \(config.name), so sudo isn't available; provide one with --password"))
             }
             let file = FileManager.default.temporaryDirectory.appending(path: "macvm-sudo-\(UUID().uuidString)")
             try GuestCredentials.writePrivate(Data((password + "\n").utf8), to: file)

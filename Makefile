@@ -14,7 +14,7 @@ DEV_IDENTITY   = $(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
 SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
-.PHONY: build sign run test test-swift test-guest lint lint-guest agent boot qemu icon app release clean
+.PHONY: build sign run test test-swift test-guest lint lint-guest strings agent boot qemu icon app release clean
 
 build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
@@ -45,6 +45,10 @@ lint:
 
 lint-guest:
 	scripts/lint-guest.sh
+
+# 把源码里的界面文案同步进 packaging/l10n/Localizable.xcstrings，并检查每条都有中文译文。
+strings:
+	SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/sync-strings.sh
 
 agent:
 	SIGN_IDENTITY="$(DEV_IDENTITY)" scripts/build-agent.sh

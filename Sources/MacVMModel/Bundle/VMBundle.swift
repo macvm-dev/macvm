@@ -40,7 +40,7 @@ public struct VMBundle: Sendable, Equatable {
     /// 留着 `creationMarkerURL` 时拒绝：发起方还在创建（安装中的虚拟机占着辅助储存与磁盘），或是中断留下的半成品。
     public func requireNotCreating() throws {
         if FileManager.default.fileExists(atPath: creationMarkerURL.path) {
-            throw MacVMError.unsupported("\(name) 还在创建中或创建中断，不能开机：等 App 建完，或在 App 里继续或放弃这次新建")
+            throw MacVMError.unsupported(String(l10n: "\(name) is still being created, or its creation was interrupted, so it can't start. Wait for MacVM to finish, or resume or discard the creation in MacVM."))
         }
     }
 
@@ -66,16 +66,16 @@ public struct VMBundle: Sendable, Equatable {
     public func loadConfig() throws -> VMConfig {
         let data: Data
         do { data = try Data(contentsOf: configURL) } catch {
-            throw MacVMError.io("读取 \(configURL.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't read \(configURL.path): \(error.localizedDescription)"))
         }
         do { return try VMConfig.decode(data) } catch let e as MacVMError { throw e } catch {
-            throw MacVMError.invalidConfig("解析 \(configURL.path) 失败：\(error)")
+            throw MacVMError.invalidConfig(String(l10n: "Couldn't parse \(configURL.path): \(String(describing: error))"))
         }
     }
 
     public func saveConfig(_ config: VMConfig) throws {
         do { try config.encoded().write(to: configURL, options: .atomic) } catch {
-            throw MacVMError.io("写入 \(configURL.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't write \(configURL.path): \(error.localizedDescription)"))
         }
     }
 
@@ -93,11 +93,11 @@ public enum RuntimeDirectory {
     public static func ensure() throws {
         let path = url.path
         if mkdir(path, 0o700) != 0 && errno != EEXIST {
-            throw MacVMError.posix("创建 \(path)")
+            throw MacVMError.posix(String(l10n: "Couldn't create \(path)"))
         }
         var st = stat()
         guard lstat(path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR, st.st_uid == getuid() else {
-            throw MacVMError.io("\(path) 不是当前用户拥有的目录")
+            throw MacVMError.io(String(l10n: "\(path) isn't a folder owned by the current user"))
         }
         chmod(path, 0o700)
     }

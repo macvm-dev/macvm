@@ -27,10 +27,10 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public static func save(_ bundle: VMBundle, name: String) throws -> Snapshot {
         let dir = try directory(bundle, name)
         if BundleLock.holder(of: bundle) != nil {
-            throw MacVMError.alreadyRunning("\(bundle.name)（先 stop 或 suspend 再做快照）")
+            throw MacVMError.alreadyRunning(String(l10n: "\(bundle.name) (shut it down or suspend it before taking a snapshot)"))
         }
         let config = try bundle.loadConfig()
-        guard !FileManager.default.fileExists(atPath: dir.path) else { throw MacVMError.alreadyExists("快照 \(name)") }
+        guard !FileManager.default.fileExists(atPath: dir.path) else { throw MacVMError.alreadyExists(String(l10n: "snapshot \(name)")) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         do {
             var files = BundleFiles.stateFiles(of: bundle, config: config) + [bundle.configURL.lastPathComponent]
@@ -56,7 +56,7 @@ public struct Snapshot: Codable, Sendable, Equatable {
         let dir = try directory(bundle, name)
         if BundleLock.holder(of: bundle) != nil { throw MacVMError.alreadyRunning(bundle.name) }
         guard FileManager.default.fileExists(atPath: dir.appending(path: metadataFile).path) else {
-            throw MacVMError.snapshotNotFound("\(bundle.name) 的快照 \(name)")
+            throw MacVMError.snapshotNotFound(String(l10n: "\(name) in \(bundle.name)"))
         }
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0 != metadataFile }
         var staged: [(temp: URL, target: URL)] = []
@@ -76,13 +76,13 @@ public struct Snapshot: Codable, Sendable, Equatable {
         // 还原出的磁盘可能带着另一套 SSH 主机密钥，留着旧记录会让直连一直被拒。
         try? FileManager.default.removeItem(at: bundle.knownHostsURL)
         for item in staged {
-            guard rename(item.temp.path, item.target.path) == 0 else { throw MacVMError.posix("还原 \(item.target.lastPathComponent)") }
+            guard rename(item.temp.path, item.target.path) == 0 else { throw MacVMError.posix(String(l10n: "Couldn't restore \(item.target.lastPathComponent)")) }
         }
     }
 
     public static func delete(_ bundle: VMBundle, name: String) throws {
         let dir = try directory(bundle, name)
-        guard FileManager.default.fileExists(atPath: dir.path) else { throw MacVMError.snapshotNotFound("\(bundle.name) 的快照 \(name)") }
+        guard FileManager.default.fileExists(atPath: dir.path) else { throw MacVMError.snapshotNotFound(String(l10n: "\(name) in \(bundle.name)")) }
         try FileManager.default.removeItem(at: dir)
     }
 

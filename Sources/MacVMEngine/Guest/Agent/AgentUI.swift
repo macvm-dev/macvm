@@ -64,7 +64,7 @@ extension AgentProtocol {
                                dx: try c.decodeIfPresent(Int.self, forKey: .dx) ?? 0, dy: try c.decodeIfPresent(Int.self, forKey: .dy) ?? 0)
             case "key": self = .key(try c.decode(String.self, forKey: .keys))
             case "text": self = .text(try c.decode(String.self, forKey: .text))
-            case let type: throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "未知输入事件 \(type)")
+            case let type: throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "Unknown input event \(type)")
             }
         }
     }

@@ -78,7 +78,7 @@ impl Listener {
             }
             let tcp = u16::try_from(port).map_err(io::Error::other).and_then(|p| std::net::TcpListener::bind(("0.0.0.0", p)));
             match (vsock, tcp) {
-                (Err(vsock), Err(tcp)) => Err(io::Error::other(format!("vsock：{vsock}；TCP：{tcp}"))),
+                (Err(vsock), Err(tcp)) => Err(io::Error::other(format!("vsock: {vsock}; TCP: {tcp}"))),
                 (vsock, tcp) => Ok(Self { vsock: vsock.ok(), tcp: tcp.ok() }),
             }
         }

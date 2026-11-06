@@ -18,8 +18,8 @@ struct SnapshotsSection: View {
         Section {
             if snapshots.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("没有快照").foregroundStyle(.secondary)
-                    Text("快照保存磁盘的当前状态，之后可以随时还原。").font(.caption).foregroundStyle(.tertiary)
+                    Text("No Snapshots").foregroundStyle(.secondary)
+                    Text("A snapshot saves the disk's current state so you can go back to it at any time.").font(.caption).foregroundStyle(.tertiary)
                 }
             }
             ForEach(snapshots, id: \.name) { snap in
@@ -27,49 +27,49 @@ struct SnapshotsSection: View {
                     Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary).frame(width: 20)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(snap.name)
-                        Text("\(snap.createdAt.formatted(date: .abbreviated, time: .shortened))\(snap.includesMemory ? " · 含内存" : "")")
+                        Text("\(snap.createdAt.formatted(date: .abbreviated, time: .shortened))\(snap.includesMemory ? String(l10n: " · Includes memory") : "")")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("还原…") { restoring = snap }
+                    Button("Restore…") { restoring = snap }
                         .controlSize(.small)
                         .disabled(locked)
-                        .help(state == .running ? "运行中不能还原，先关机或挂起" : busy ? "任务进行中不能还原" : "")
+                        .help(state == .running ? "Shut down or suspend the virtual machine to restore a snapshot" : busy ? "Can't restore snapshots while a task is in progress" : "")
                     Button { deleting = snap } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                         .disabled(busy)
-                        .help(busy ? "任务进行中不能删除快照" : "删除快照")
+                        .help(busy ? "Can't delete snapshots while a task is in progress" : "Delete Snapshot")
                 }
                 .contextMenu {
-                    Button("还原…") { restoring = snap }.disabled(locked)
-                    Button("删除…", role: .destructive) { deleting = snap }.disabled(busy)
+                    Button("Restore…") { restoring = snap }.disabled(locked)
+                    Button("Delete…", role: .destructive) { deleting = snap }.disabled(busy)
                 }
             }
         } header: {
             HStack {
-                Text("快照")
+                Text("Snapshots")
                 Spacer()
-                Button { newName = Self.defaultName(); naming = true } label: { Label("创建快照", systemImage: "plus") }
+                Button { newName = Self.defaultName(); naming = true } label: { Label("Take Snapshot", systemImage: "plus") }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .disabled(locked)
-                    .help(state == .running ? "运行中不能创建快照，先关机或挂起" : busy ? "任务进行中不能创建快照" : "")
+                    .help(state == .running ? "Shut down or suspend the virtual machine to take a snapshot" : busy ? "Can't take snapshots while a task is in progress" : "")
             }
         }
         .task(id: "\(vmName)-\(state)") { reload() }
-        .alert("快照名称", isPresented: $naming) {
-            TextField("名称", text: $newName)
-            Button("创建") {
+        .alert("Snapshot Name", isPresented: $naming) {
+            TextField("Name", text: $newName)
+            Button("Create") {
                 perform {
                     try model.requireIdle(vmName)
                     _ = try Snapshot.save($0, name: newName)
                 }
             }
-            Button("取消", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("还原到「\(restoring?.name ?? "")」？", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
-            Button("还原", role: .destructive) {
+        .confirmationDialog("Restore Snapshot “\(restoring?.name ?? "")”?", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
+            Button("Restore", role: .destructive) {
                 if let snap = restoring {
                     perform {
                         try model.requireIdle(vmName)
@@ -78,14 +78,14 @@ struct SnapshotsSection: View {
                 }
             }
         } message: {
-            Text("当前未保存为快照的改动会丢失。")
+            Text("Any changes that aren't saved in a snapshot will be lost.")
         }
-        .confirmationDialog("删除快照「\(deleting?.name ?? "")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-            Button("删除", role: .destructive) {
+        .confirmationDialog("Delete Snapshot “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Delete", role: .destructive) {
                 if let snap = deleting { perform { try Snapshot.delete($0, name: snap.name) } }
             }
         } message: {
-            Text("删除后无法恢复。")
+            Text("This can't be undone.")
         }
     }
 

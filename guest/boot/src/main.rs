@@ -23,14 +23,14 @@ const CANDIDATES: [&CStr16; 1] = [cstr16!("\\EFI\\Microsoft\\Boot\\bootmgfw.efi"
 fn main() -> Status {
     let _ = uefi::helpers::init();
     if let Err(e) = gop::install() {
-        println!("macvm-boot: 帧缓冲垫片安装失败：{:?}", e.status());
+        println!("macvm-boot: couldn't install the framebuffer shim: {:?}", e.status());
     }
     for path in CANDIDATES {
         if let Some(status) = try_boot(path) {
             return status;
         }
     }
-    println!("macvm-boot: 没有找到 Windows 引导程序");
+    println!("macvm-boot: couldn't find Windows Boot Manager");
     boot::stall(5_000_000);
     Status::NOT_FOUND
 }

@@ -14,7 +14,7 @@ public enum GuestUI {
         do {
             return try JSONDecoder().decode(AgentProtocol.UISnapshot.self, from: body)
         } catch {
-            throw MacVMError.engine("客户机代理返回的无障碍树无法解析：\(error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't parse the accessibility tree from the guest agent: \(error.localizedDescription)"))
         }
     }
 
@@ -40,7 +40,7 @@ public enum GuestUI {
                 return try hostScreenshot(bundle)
             } catch {
                 if case MacVMError.permissionDenied = agentError { throw agentError }
-                throw MacVMError.engine("\(agentError.localizedDescription)；宿主截屏也失败：\(error.localizedDescription)")
+                throw MacVMError.engine(String(l10n: "\(agentError.localizedDescription); couldn't take a screenshot from the host either: \(error.localizedDescription)"))
             }
         }
     }
@@ -78,10 +78,10 @@ public enum GuestUI {
 
     private static func requireSupport(_ bundle: VMBundle) throws {
         guard try bundle.loadConfig().guestAgent else {
-            throw MacVMError.unsupported("\(bundle.name) 没有安装客户机代理，先运行 macvm agent install \(bundle.name)")
+            throw MacVMError.unsupported(String(l10n: "The guest agent isn't installed in \(bundle.name); run macvm agent install \(bundle.name) first"))
         }
         guard try AgentClient.info(bundle).features?.contains(AgentProtocol.featureUI) == true else {
-            throw MacVMError.unsupported("\(bundle.name) 的客户机代理版本过旧，不支持 UI 自动化，先运行 macvm agent install \(bundle.name) 更新")
+            throw MacVMError.unsupported(String(l10n: "The guest agent in \(bundle.name) is too old for UI automation; update it with macvm agent install \(bundle.name)"))
         }
     }
 }

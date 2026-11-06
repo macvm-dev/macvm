@@ -17,7 +17,7 @@ extension ConfigBuilder {
     func efiBootLoader() throws -> VZEFIBootLoader {
         let loader = VZEFIBootLoader()
         guard FileManager.default.fileExists(atPath: bundle.efiVariableStoreURL.path) else {
-            throw MacVMError.invalidConfig("缺少 EFI 变量存储：\(bundle.efiVariableStoreURL.path)")
+            throw MacVMError.invalidConfig(String(l10n: "Missing EFI variable store: \(bundle.efiVariableStoreURL.path)"))
         }
         loader.variableStore = VZEFIVariableStore(url: bundle.efiVariableStoreURL)
         return loader

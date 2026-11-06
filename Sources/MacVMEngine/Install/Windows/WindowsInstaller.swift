@@ -78,7 +78,7 @@ public enum WindowsInstaller {
     public static func normalizeProductKey(_ key: String) throws -> String {
         let characters = key.uppercased().filter { $0.isLetter || $0.isNumber }
         guard characters.count == 25, characters.allSatisfy({ $0.isASCII }) else {
-            throw MacVMError.invalidConfig("产品密钥应为 25 个字母或数字（XXXXX-XXXXX-XXXXX-XXXXX-XXXXX）")
+            throw MacVMError.invalidConfig(String(l10n: "The product key must be 25 letters or digits (XXXXX-XXXXX-XXXXX-XXXXX-XXXXX)"))
         }
         return stride(from: 0, to: 25, by: 5).map { start in
             String(characters[characters.index(characters.startIndex, offsetBy: start)..<characters.index(characters.startIndex, offsetBy: start + 5)])
@@ -89,7 +89,7 @@ public enum WindowsInstaller {
     public static func create(_ options: Options, in library: VMLibrary = .default) async throws -> VMBundle {
         let qemu = try QEMUInstallation.require()
         try VMFactory.ensureNameAvailable(options.name, in: library)
-        guard FileManager.default.fileExists(atPath: options.iso.path) else { throw MacVMError.invalidConfig("ISO 不存在：\(options.iso.path)") }
+        guard FileManager.default.fileExists(atPath: options.iso.path) else { throw MacVMError.invalidConfig(String(l10n: "ISO not found: \(options.iso.path)")) }
 
         let productKey = try options.productKey.map(normalizeProductKey)
         let locale = try await readLocale(iso: options.iso)
@@ -160,18 +160,18 @@ public enum WindowsInstaller {
     /// 轮询直到首次登录脚本写下完成标记。
     private static func waitUntilSetupComplete(_ bundle: VMBundle, macvmPath: String, timeout: TimeInterval = 3 * 3600) async throws {
         let config = try bundle.loadConfig()
-        guard let user = config.guestUser else { throw MacVMError.invalidConfig("缺少客户机用户") }
+        guard let user = config.guestUser else { throw MacVMError.invalidConfig(String(l10n: "Missing guest user")) }
         try SSHConfig.validateLogin(user: user, host: bundle.name)
         let proxy = SSHConfig.proxyCommand(macvmPath: macvmPath, name: bundle.name, flags: ["--timeout", "10"])
         let deadline = Date().addingTimeInterval(timeout)
         while true {
-            if BundleLock.holder(of: bundle) == nil { throw MacVMError.engine("安装过程中虚拟机意外停止，日志：\(bundle.logURL.path)") }
+            if BundleLock.holder(of: bundle) == nil { throw MacVMError.engine(String(l10n: "The virtual machine stopped unexpectedly during installation; see the log at \(bundle.logURL.path)")) }
             let output = try? await Subprocess.run("/usr/bin/ssh", ["-q", "-T"] + SSHConfig.keyArguments(proxyCommand: proxy) + [
                 "-o", "BatchMode=yes", "-o", "ConnectTimeout=20",
                 "\(user)@\(bundle.name)", "Test-Path \(WindowsUnattend.doneMarker)",
             ])
             if output?.contains("True") == true { return }
-            guard Date() < deadline else { throw MacVMError.timeout("Windows 安装超时") }
+            guard Date() < deadline else { throw MacVMError.timeout(String(l10n: "Windows installation timed out")) }
             try await Task.sleep(for: .seconds(15))
         }
     }
@@ -217,7 +217,7 @@ public enum WindowsInstaller {
             let attrs = try FileManager.default.attributesOfItem(atPath: root.appending(path: "sources/install.wim").path)
             return (attrs[.size] as? UInt64) ?? 0
         }
-        guard wimSize > 0 else { throw MacVMError.invalidConfig("ISO 中没有 sources/install.wim（不支持 install.esd 格式的镜像）") }
+        guard wimSize > 0 else { throw MacVMError.invalidConfig(String(l10n: "The ISO doesn't contain sources/install.wim (install.esd isn't supported)")) }
         try DiskImage.createSparse(at: output, size: wimSize + (1 << 30))
 
         try await DiskMount.withAttachedRaw(output) { device in
@@ -299,7 +299,7 @@ enum DiskMount {
     static func withAttachedRaw<T>(_ image: URL, _ body: (String) async throws -> T) async throws -> T {
         let output = try await Subprocess.run("/usr/bin/hdiutil", ["attach", "-nomount", "-imagekey", "diskimage-class=CRawDiskImage", image.path])
         guard let device = output.split(separator: "\n").first?.split(separator: " ").first.map(String.init), device.hasPrefix("/dev/disk") else {
-            throw MacVMError.io("无法接上 \(image.lastPathComponent)：\(output)")
+            throw MacVMError.io(String(l10n: "Couldn't attach \(image.lastPathComponent) on the host: \(output)"))
         }
         defer { cleanUp("/usr/sbin/diskutil", ["eject", device]) }
         return try await body(device)
@@ -321,12 +321,12 @@ enum DiskMount {
         let list = try await Subprocess.run("/usr/sbin/diskutil", ["list", device])
         guard let line = list.split(separator: "\n").first(where: { $0.contains(name) }),
               let identifier = line.split(separator: " ").last else {
-            throw MacVMError.io("找不到分区 \(name)")
+            throw MacVMError.io(String(l10n: "Couldn't find partition \(name)"))
         }
         let info = try await Subprocess.run("/usr/sbin/diskutil", ["info", String(identifier)])
         guard let mount = info.split(separator: "\n").first(where: { $0.contains("Mount Point:") })?
             .split(separator: ":", maxSplits: 1).last?.trimmingCharacters(in: .whitespaces), !mount.isEmpty else {
-            throw MacVMError.io("分区 \(name) 未挂载")
+            throw MacVMError.io(String(l10n: "Partition \(name) isn't mounted"))
         }
         return URL(filePath: mount, directoryHint: .isDirectory)
     }

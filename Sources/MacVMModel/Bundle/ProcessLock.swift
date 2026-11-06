@@ -26,7 +26,7 @@ public final class ProcessLock: @unchecked Sendable {
     /// 取得锁；已被别的进程持有时返回 nil。
     public static func acquire(at url: URL) throws -> ProcessLock? {
         let fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
-        guard fd >= 0 else { throw MacVMError.posix("打开 \(url.path)") }
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't open \(url.path)")) }
         // 拿不到时稍等重试：别的进程探测持有者时也会短暂占着锁，那不算被持有。
         var attempts = 1
         while flock(fd, LOCK_EX | LOCK_NB) != 0 {

@@ -15,6 +15,12 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Reso
 
 cp packaging/Info.plist "$APP/Contents/Info.plist"
 cp packaging/icon/Assets.car packaging/icon/AppIcon.icns "$APP/Contents/Resources/"
+# 字符串目录编译成各语言的 .lproj。英文是源语言，表里没有英文条目时 xcstringstool 不产出 en.lproj，
+# 但 Bundle 只在列出的语言里挑，缺了它英文用户会被落到中文，所以补一个空的。
+for catalog in packaging/l10n/*.xcstrings; do
+  xcrun xcstringstool compile "$catalog" --output-directory "$APP/Contents/Resources" >/dev/null
+done
+mkdir -p "$APP/Contents/Resources/en.lproj"
 cp "$BIN/MacVMApp" "$APP/Contents/MacOS/MacVM"
 cp "$BIN/macvm" "$APP/Contents/Resources/bin/macvm"
 # 网络辅助程序由 App 经 SMAppService 注册成 launchd 守护进程，路径与 plist 里的 BundleProgram 对应。

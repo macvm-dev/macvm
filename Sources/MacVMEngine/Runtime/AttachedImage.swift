@@ -18,15 +18,15 @@ extension MachineRunner {
     func checkAttachable(_ url: URL) throws {
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
         let own = (config.disks.map(\.path) + config.installMedia).map { bundle.resolve($0).standardizedFileURL.resolvingSymlinksInPath().path }
-        if own.contains(path) { throw MacVMError.invalidConfig("\(url.lastPathComponent) 是 \(bundle.name) 自己的磁盘，不能再接入") }
+        if own.contains(path) { throw MacVMError.invalidConfig(String(l10n: "\(url.lastPathComponent) is already one of \(bundle.name)'s disks")) }
         if attachedImages.contains(where: { $0.url.standardizedFileURL.resolvingSymlinksInPath().path == path }) {
-            throw MacVMError.invalidConfig("\(url.lastPathComponent) 已经接入")
+            throw MacVMError.invalidConfig(String(l10n: "\(url.lastPathComponent) is already attached"))
         }
-        guard FileManager.default.fileExists(atPath: path) else { throw MacVMError.invalidConfig("磁盘映像不存在：\(url.path)") }
+        guard FileManager.default.fileExists(atPath: path) else { throw MacVMError.invalidConfig(String(l10n: "Disk image not found: \(url.path)")) }
     }
 
     /// 热插的映像不在配置里，恢复时组装不出同样的设备，挂起前要先推出。
     func requireNoAttachedImages() throws {
-        guard attachedImages.isEmpty else { throw MacVMError.unsupported("接着磁盘映像时不能挂起，先推出所有磁盘映像") }
+        guard attachedImages.isEmpty else { throw MacVMError.unsupported(String(l10n: "Can't suspend while disk images are attached; eject them first")) }
     }
 }

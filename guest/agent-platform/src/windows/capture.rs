@@ -17,7 +17,7 @@ pub fn png(width: u32, height: u32) -> io::Result<Vec<u8>> {
 /// 屏幕左上角 `width`×`height` 的 B G R X 像素，自上而下。
 fn grab(width: i32, height: i32) -> io::Result<Vec<u8>> {
     if width <= 0 || height <= 0 {
-        return Err(io::Error::other("读不到屏幕尺寸"));
+        return Err(io::Error::other("Couldn't read the screen size"));
     }
     // SAFETY: 依次创建并在返回前释放 DC、DIB；位图数据在 DeleteObject 之前拷出。
     unsafe {

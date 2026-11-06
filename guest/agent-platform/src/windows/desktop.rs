@@ -146,12 +146,12 @@ pub fn connect_desktop_helper() -> io::Result<File> {
         match unsafe { GetLastError() } {
             // SAFETY: name 以 NUL 结尾。
             ERROR_PIPE_BUSY if unsafe { WaitNamedPipeW(name.as_ptr(), PIPE_BUSY_WAIT_MS) } != 0 => continue,
-            ERROR_PIPE_BUSY => return Err(io::Error::new(io::ErrorKind::TimedOut, "桌面助手一直在忙")),
+            ERROR_PIPE_BUSY => return Err(io::Error::new(io::ErrorKind::TimedOut, "The desktop helper is busy")),
             ERROR_FILE_NOT_FOUND => {
-                return Err(io::Error::other("当前在安全桌面（UAC 提示、锁屏或登录界面）上，而代理的桌面助手没有运行：在宿主上重新安装代理"));
+                return Err(io::Error::other("The secure desktop is showing (UAC prompt, lock screen, or sign-in screen), but the agent's desktop helper isn't running; reinstall the guest agent from the host"));
             }
             // 类别一律为 Other：PermissionDenied 在协议里表示客户机缺授权（`CODE_PERMISSION`）。
-            code => return Err(io::Error::other(format!("连接桌面助手失败：{}", io::Error::from_raw_os_error(code as i32)))),
+            code => return Err(io::Error::other(format!("Couldn't connect to the desktop helper: {}", io::Error::from_raw_os_error(code as i32)))),
         }
     }
 }
@@ -173,11 +173,11 @@ fn verify_system_server(pipe: &File) -> io::Result<()> {
             &mut descriptor,
         );
         if status != 0 {
-            return Err(io::Error::other(format!("读取桌面助手管道的所有者失败：{}", io::Error::from_raw_os_error(status as i32))));
+            return Err(io::Error::other(format!("Couldn't read the owner of the desktop helper pipe: {}", io::Error::from_raw_os_error(status as i32))));
         }
         let system = IsWellKnownSid(owner, WinLocalSystemSid) != 0;
         LocalFree(descriptor);
-        if system { Ok(()) } else { Err(io::Error::other("桌面助手的管道不归 SYSTEM 所有，不是助手建立的")) }
+        if system { Ok(()) } else { Err(io::Error::other("The desktop helper pipe isn't owned by SYSTEM, so the helper didn't create it")) }
     }
 }
 
@@ -338,13 +338,13 @@ pub fn become_desktop_helper(supervisor: u32) -> io::Result<()> {
 pub fn run_desktop_supervisor() -> i32 {
     for privilege in [SE_TCB_NAME, SE_ASSIGNPRIMARYTOKEN_NAME, SE_INCREASE_QUOTA_NAME] {
         if let Err(e) = enable_privilege(privilege) {
-            eprintln!("macvm-agent: 启用特权失败：{e}");
+            eprintln!("macvm-agent: couldn't enable privileges: {e}");
         }
     }
     let exe = match std::env::current_exe() {
         Ok(p) => p.to_string_lossy().into_owned(),
         Err(e) => {
-            eprintln!("macvm-agent: 找不到自身路径：{e}");
+            eprintln!("macvm-agent: couldn't find its own executable: {e}");
             return 1;
         }
     };
@@ -358,7 +358,7 @@ pub fn run_desktop_supervisor() -> i32 {
         if helper.is_none() && session != NO_CONSOLE_SESSION {
             match spawn_helper(&exe, session) {
                 Ok(h) => helper = Some(h),
-                Err(e) => eprintln!("macvm-agent: 在会话 {session} 启动桌面助手失败：{e}"),
+                Err(e) => eprintln!("macvm-agent: couldn't start the desktop helper in session {session}: {e}"),
             }
         }
         std::thread::sleep(SUPERVISE_INTERVAL);

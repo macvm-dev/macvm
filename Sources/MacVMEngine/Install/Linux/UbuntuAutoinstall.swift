@@ -63,7 +63,7 @@ public enum UbuntuAutoinstall {
         try handle.synchronize()
 
         // 别的进程同时生成的副本内容相同，谁后改名都一样。
-        guard rename(staging.path, boot.path) == 0 else { throw MacVMError.posix("生成 \(boot.lastPathComponent)") }
+        guard rename(staging.path, boot.path) == 0 else { throw MacVMError.posix(String(l10n: "Couldn't generate \(boot.lastPathComponent)")) }
         return boot
     }
 
@@ -74,7 +74,7 @@ public enum UbuntuAutoinstall {
         guard var kernel = lines.first(where: { $0.hasPrefix("linux ") }),
               let initrd = lines.first(where: { $0.hasPrefix("initrd ") }),
               let dashes = kernel.range(of: " ---")
-        else { throw MacVMError.io("Ubuntu 安装盘的 GRUB 配置里找不到内核启动项") }
+        else { throw MacVMError.io(String(l10n: "Couldn't find the kernel boot entry in the Ubuntu installer's GRUB configuration")) }
         kernel.insert(contentsOf: " autoinstall noprompt", at: dashes.lowerBound)
         let config = """
         set timeout=0
@@ -86,7 +86,7 @@ public enum UbuntuAutoinstall {
 
         """
         let padding = original.utf8.count - config.utf8.count
-        guard padding >= 0 else { throw MacVMError.io("Ubuntu 安装盘的 GRUB 配置太短，放不下自动安装的启动项") }
+        guard padding >= 0 else { throw MacVMError.io(String(l10n: "The Ubuntu installer's GRUB configuration is too short to fit the autoinstall boot entry")) }
         return config + String(repeating: " ", count: padding)
     }
 
@@ -217,12 +217,12 @@ public enum UbuntuAutoinstall {
         // 运行器在 App 里时控制 socket 由主 actor 应答，在主 actor 上同步等就会卡死到超时。
         while !(await Task.detached { AgentClient.isReachable(bundle) }.value) {
             if BundleLock.holder(of: bundle) == nil {
-                guard !restarted else { throw MacVMError.engine("安装过程中虚拟机意外停止，日志：\(bundle.logURL.path)") }
+                guard !restarted else { throw MacVMError.engine(String(l10n: "The virtual machine stopped unexpectedly during installation; see the log at \(bundle.logURL.path)")) }
                 restarted = true
                 try await start()
                 continue
             }
-            guard Date() < deadline else { throw MacVMError.timeout("Ubuntu 安装超时") }
+            guard Date() < deadline else { throw MacVMError.timeout(String(l10n: "Ubuntu installation timed out")) }
             try await Task.sleep(for: .seconds(3))
         }
         try finishSetup(bundle)

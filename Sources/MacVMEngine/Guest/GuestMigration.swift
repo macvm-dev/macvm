@@ -24,7 +24,7 @@ struct GuestMigration: Sendable {
 
     // MARK: - Windows
 
-    static let windowsClockAndSSH = GuestMigration(os: .windows, revision: 1, title: "主板时钟按 UTC 读，SSH 只认密钥") { _ in
+    static let windowsClockAndSSH = GuestMigration(os: .windows, revision: 1, title: String(l10n: "Treat the hardware clock as UTC and allow only key-based SSH")) { _ in
         let script = """
         $ErrorActionPreference = 'Stop'
         \(WindowsUnattend.utcClock)
@@ -35,7 +35,7 @@ struct GuestMigration: Sendable {
     }
 
     /// 装上 `WindowsInstaller.virtioWinURL` 这一版的 virtio 驱动。pnputil 只在驱动包比已装的更合适时才替换，不会降级。
-    static let windowsVirtioDrivers = GuestMigration(os: .windows, revision: 2, title: "virtio 驱动更新到 App 自带的版本") { _ in
+    static let windowsVirtioDrivers = GuestMigration(os: .windows, revision: 2, title: String(l10n: "Update virtio drivers to the version that comes with MacVM")) { _ in
         let iso = try await WindowsInstaller.cachedVirtioWin(showProgress: false)
         let id = UUID().uuidString
         let staging = FileManager.default.temporaryDirectory.appending(path: "macvm-virtio-\(id)", directoryHint: .isDirectory)
@@ -60,7 +60,7 @@ struct GuestMigration: Sendable {
           if ($LASTEXITCODE) { throw "tar exited with $LASTEXITCODE" }
           pnputil /add-driver (Join-Path $root '*.inf') /subdirs /install | Out-Host
           $code = $LASTEXITCODE
-          # 3010：装上了，重启后生效；259：没有要更新的设备。
+          # 3010: installed, takes effect after a restart; 259: no device needed an update.
           if ($code -eq 3010) { Write-Output '\(rebootMarker)' } elseif ($code -ne 0 -and $code -ne 259) { throw "pnputil exited with $code" }
         } finally {
           Remove-Item -Recurse -Force -LiteralPath $root -ErrorAction SilentlyContinue

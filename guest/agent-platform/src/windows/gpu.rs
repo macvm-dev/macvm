@@ -144,7 +144,7 @@ pub fn gpu_driver_package_is(sha256: &str) -> bool {
 /// 用宿主推来的驱动包（含 `drivers/viogpu3d` 的 zip）替换驱动目录，随即安装；返回是否换了驱动。
 pub fn replace_gpu_driver(zip: &[u8], sha256: &str) -> io::Result<bool> {
     if on_vz() {
-        return Err(io::Error::new(io::ErrorKind::Unsupported, "VZ 下不装 3D 显卡驱动"));
+        return Err(io::Error::new(io::ErrorKind::Unsupported, "The 3D graphics driver isn't installed under VZ"));
     }
     let _installing = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
     let staging = std::env::temp_dir().join(format!("macvm-viogpu3d-{}", std::process::id()));
@@ -166,11 +166,11 @@ fn unpack_driver_package(zip: &[u8], staging: &Path) -> io::Result<()> {
     let tar = Path::new(&std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into())).join(r"System32\tar.exe");
     let status = Command::new(tar).arg("-xf").arg(&archive).arg("-C").arg(staging).creation_flags(CREATE_NO_WINDOW).status()?;
     if !status.success() {
-        return Err(io::Error::other(format!("解压驱动包失败：{status}")));
+        return Err(io::Error::other(format!("Couldn't extract the driver package: {status}")));
     }
     let source = staging.join("drivers").join("viogpu3d");
     if !source.join("viogpu3d.inf").exists() {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "驱动包里没有 drivers/viogpu3d/viogpu3d.inf"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "The driver package doesn't contain drivers/viogpu3d/viogpu3d.inf"));
     }
     let target = Path::new(GPU_DRIVER_DIR);
     let _ = fs::remove_dir_all(target);

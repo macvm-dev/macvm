@@ -4,11 +4,11 @@ import MacVMEngine
 import MacVMModel
 
 struct Screenshot: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "把运行中虚拟机的画面存为 PNG（QEMU 引擎）。")
+    static let configuration = CommandConfiguration(abstract: String(l10n: "Save a running VM's screen as a PNG (QEMU engine only)."))
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
-    @Argument(help: "输出文件。") var output: String
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Argument(help: ArgumentHelp(String(l10n: "Path to save the PNG to."))) var output: String
 
     struct Result: Encodable, Sendable { let path: String }
 

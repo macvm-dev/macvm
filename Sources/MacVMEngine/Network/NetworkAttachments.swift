@@ -11,7 +11,7 @@ public enum NetworkAttachments {
         case .bridged:
             return VZFileHandleNetworkDeviceAttachment(fileHandle: try bridge ?? placeholderSocket())
         case .vmnetShared, .vmnetHost:
-            throw MacVMError.unsupported("vmnet 网络尚未实现")
+            throw MacVMError.unsupported(String(l10n: "vmnet networking isn't implemented yet"))
         }
     }
 
@@ -41,11 +41,11 @@ public enum NetworkAttachments {
         let available = bridgeableInterfaces
         if let name {
             guard available.contains(name) else {
-                throw MacVMError.invalidConfig("找不到可桥接的网卡 \(name)，可用：\(available.joined(separator: ", "))")
+                throw MacVMError.invalidConfig(String(l10n: "Couldn't find a bridgeable network interface named \(name); available: \(available.joinedAsList())"))
             }
             return name
         }
-        guard let first = available.first else { throw MacVMError.unsupported("本机没有可桥接的网卡") }
+        guard let first = available.first else { throw MacVMError.unsupported(String(l10n: "This Mac has no bridgeable network interface")) }
         return first
     }
 

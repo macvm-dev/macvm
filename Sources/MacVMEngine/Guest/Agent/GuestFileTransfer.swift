@@ -21,10 +21,10 @@ public enum GuestFileTransfer {
 
     public static func requireSupport(_ bundle: VMBundle) throws {
         guard try bundle.loadConfig().guestAgent else {
-            throw MacVMError.unsupported("\(bundle.name) 没有安装客户机代理，先运行 macvm agent install \(bundle.name)")
+            throw MacVMError.unsupported(String(l10n: "The guest agent isn't installed in \(bundle.name); run macvm agent install \(bundle.name) first"))
         }
         guard try AgentClient.info(bundle).features?.contains(AgentProtocol.featureFiles) == true else {
-            throw MacVMError.unsupported("\(bundle.name) 的客户机代理版本过旧，不支持复制文件，先运行 macvm agent install \(bundle.name) 更新")
+            throw MacVMError.unsupported(String(l10n: "The guest agent in \(bundle.name) is too old to copy files; update it with macvm agent install \(bundle.name)"))
         }
     }
 
@@ -44,7 +44,7 @@ public enum GuestFileTransfer {
     public static func send(_ urls: [URL], to target: AgentProtocol.PutTarget, bundle: VMBundle, progress: Progress) throws -> [AgentProtocol.GuestFile] {
         progress.totalUnitCount = totalSize(urls)
         let (response, socket) = try AgentClient.open(.filesPut(target), bundle: bundle, timeout: timeout)
-        _ = try response.checked("复制失败")
+        _ = try response.checked(String(l10n: "Couldn't copy"))
         do {
             for url in urls { try sendTree(url, over: socket, progress: progress) }
             try socket.writeAll(ExecSession.frame(AgentProtocol.FileFrame.end.rawValue, Data()))
@@ -53,12 +53,12 @@ public enum GuestFileTransfer {
         } catch {
             // 代理收不下去时先回失败响应再断开，它的原因比本地写失败更有用。
             if let line = try? socket.readLine(), let reply = try? JSONDecoder().decode(AgentProtocol.Response.self, from: line) {
-                _ = try reply.checked("复制失败")
+                _ = try reply.checked(String(l10n: "Couldn't copy"))
             }
             throw error
         }
-        guard let line = try socket.readLine() else { throw MacVMError.io("客户机代理在复制结束前断开") }
-        return try JSONDecoder().decode(AgentProtocol.Response.self, from: line).checked("复制失败").files ?? []
+        guard let line = try socket.readLine() else { throw MacVMError.io(String(l10n: "The guest agent disconnected before the copy finished")) }
+        return try JSONDecoder().decode(AgentProtocol.Response.self, from: line).checked(String(l10n: "Couldn't copy")).files ?? []
     }
 
     /// 把客户机上的这些路径复制到宿主目录 `directory`，返回各顶层项在宿主上的位置。与已有项重名的顶层项编号改名；
@@ -66,7 +66,7 @@ public enum GuestFileTransfer {
     @discardableResult
     public static func receive(_ paths: [String], into directory: URL, bundle: VMBundle, progress: Progress, limit: Int64? = nil) throws -> [URL] {
         let (response, socket) = try AgentClient.open(.filesGet(paths: paths), bundle: bundle, timeout: timeout)
-        let total = try response.checked("复制失败").total ?? 0
+        let total = try response.checked(String(l10n: "Couldn't copy")).total ?? 0
         if let limit, total > limit { throw TooLarge(total: total) }
         progress.totalUnitCount = total
         var receiver = Receiver(directory: directory)
@@ -127,7 +127,7 @@ public enum GuestFileTransfer {
             case .dir: entry = .init(path: relative.joined(separator: "/"), kind: .dir, mode: item.mode, mtime_ms: item.mtime)
             case .file:
                 // 打开失败时还没发条目，流里不留半个文件。
-                guard let opened = FileHandle(forReadingAtPath: path) else { throw MacVMError.io("无法读取 \(path)") }
+                guard let opened = FileHandle(forReadingAtPath: path) else { throw MacVMError.io(String(l10n: "Couldn't read \(path)")) }
                 handle = opened
                 entry = .init(path: relative.joined(separator: "/"), kind: .file, size: item.size, mode: item.mode, mtime_ms: item.mtime)
             case .link:
@@ -142,7 +142,7 @@ public enum GuestFileTransfer {
             while left > 0 {
                 if progress.isCancelled { throw CancellationError() }
                 let data = try handle.read(upToCount: min(chunk, Int(left))) ?? Data()
-                guard !data.isEmpty else { throw MacVMError.io("\(path) 在复制途中变短了") }
+                guard !data.isEmpty else { throw MacVMError.io(String(l10n: "\(path) shrank while it was being copied")) }
                 try socket.writeAll(ExecSession.frame(AgentProtocol.FileFrame.data.rawValue, data))
                 left -= Int64(data.count)
                 progress.completedUnitCount += Int64(data.count)
@@ -168,32 +168,32 @@ public enum GuestFileTransfer {
         mutating func run(_ socket: UnixSocket, progress: Progress) throws {
             while true {
                 if progress.isCancelled { throw CancellationError() }
-                guard let header = try socket.readExact(5) else { throw MacVMError.io("客户机代理在复制结束前断开") }
+                guard let header = try socket.readExact(5) else { throw MacVMError.io(String(l10n: "The guest agent disconnected before the copy finished")) }
                 let length = Int(header[1]) | Int(header[2]) << 8 | Int(header[3]) << 16 | Int(header[4]) << 24
                 guard length <= AgentProtocol.maxFrame, let payload = try socket.readExact(length) else {
-                    throw MacVMError.io("客户机代理发来无效的文件流")
+                    throw MacVMError.io(String(l10n: "The guest agent sent an invalid file stream"))
                 }
                 switch AgentProtocol.FileFrame(rawValue: header[0]) {
                 case .entry:
-                    guard open == nil else { throw invalid("文件内容不足就开始了下一项") }
+                    guard open == nil else { throw invalid(String(l10n: "the next entry started before the current file was complete")) }
                     try create(JSONDecoder().decode(AgentProtocol.FileEntry.self, from: payload))
                 case .data:
                     try write(payload)
                     progress.completedUnitCount += Int64(payload.count)
                 case .end:
-                    guard open == nil else { throw invalid("文件内容不足就结束了") }
+                    guard open == nil else { throw invalid(String(l10n: "the stream ended before the last file was complete")) }
                     for (url, mode) in dirModes.reversed() { chmod(url.path, mode_t(mode & 0o777 | 0o700)) }
                     return
-                case .error: throw MacVMError.engine("客户机代理：\(String(decoding: payload, as: UTF8.self))")
-                case nil: throw invalid("未知的文件流帧类型")
+                case .error: throw MacVMError.engine(String(l10n: "Guest agent: \(String(decoding: payload, as: UTF8.self))"))
+                case nil: throw invalid(String(l10n: "unknown file stream frame type"))
                 }
             }
         }
 
-        private func invalid(_ message: String) -> MacVMError { .io("客户机代理发来无效的文件流：\(message)") }
+        private func invalid(_ message: String) -> MacVMError { .io(String(l10n: "The guest agent sent an invalid file stream: \(message)")) }
 
         private mutating func create(_ entry: AgentProtocol.FileEntry) throws {
-            guard let parts = AgentProtocol.FileEntry.split(entry.path) else { throw invalid("不合法的路径 \(entry.path)") }
+            guard let parts = AgentProtocol.FileEntry.split(entry.path) else { throw invalid(String(l10n: "invalid path \(entry.path)")) }
             let url: URL
             if parts.count == 1 {
                 let taken = Set(renamed.values.map(\.lastPathComponent))
@@ -205,7 +205,7 @@ public enum GuestFileTransfer {
                 top.append(url)
             } else {
                 guard dirs.contains(parts.dropLast().joined(separator: "/")), let root = renamed[parts[0]] else {
-                    throw invalid("\(entry.path) 的上级不是这次收到的目录")
+                    throw invalid(String(l10n: "the parent folder of \(entry.path) wasn't part of this transfer"))
                 }
                 url = parts.dropFirst().reduce(root) { $0.appending(path: $1) }
             }
@@ -225,8 +225,8 @@ public enum GuestFileTransfer {
         }
 
         private mutating func write(_ data: Data) throws {
-            guard let current = open else { throw invalid("数据帧前没有文件条目") }
-            guard Int64(data.count) <= current.left else { throw invalid("文件内容超过条目里的大小") }
+            guard let current = open else { throw invalid(String(l10n: "got a data frame before any file entry")) }
+            guard Int64(data.count) <= current.left else { throw invalid(String(l10n: "a file is larger than its entry says")) }
             try current.handle.write(contentsOf: data)
             open?.left -= Int64(data.count)
             if open?.left == 0 { try finishFile() }

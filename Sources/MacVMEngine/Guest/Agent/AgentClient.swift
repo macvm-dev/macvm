@@ -10,7 +10,7 @@ public enum AgentClient {
         socket.setTimeout(seconds: timeout)
         let exact = if case .forward = request { true } else { false }
         guard let response = try socket.exchange(request, as: AgentProtocol.Response.self, exact: exact) else {
-            throw MacVMError.io("客户机代理关闭了连接")
+            throw MacVMError.io(String(l10n: "The guest agent closed the connection"))
         }
         return (response, socket)
     }
@@ -28,8 +28,8 @@ public enum AgentClient {
     /// `response` 之后的正文；响应失败时抛出它的错误。
     static func body(after response: AgentProtocol.Response, from socket: UnixSocket) throws -> Data {
         let size = try response.checked().size ?? 0
-        guard (0...AgentProtocol.maxBody).contains(size) else { throw MacVMError.io("客户机代理的正文过大：\(size) 字节") }
-        guard let body = try socket.readExact(size) else { throw MacVMError.io("客户机代理在正文结束前断开") }
+        guard (0...AgentProtocol.maxBody).contains(size) else { throw MacVMError.io(String(l10n: "The guest agent sent a message that's too large (\(size) bytes)")) }
+        guard let body = try socket.readExact(size) else { throw MacVMError.io(String(l10n: "The guest agent disconnected in the middle of a message")) }
         return body
     }
 
@@ -40,7 +40,7 @@ public enum AgentClient {
     }
 
     public static func info(_ bundle: VMBundle, timeout: Int = 5) throws -> AgentProtocol.Info {
-        guard let info = try call(.info, bundle: bundle, timeout: timeout).info else { throw MacVMError.engine("客户机代理未返回信息") }
+        guard let info = try call(.info, bundle: bundle, timeout: timeout).info else { throw MacVMError.engine(String(l10n: "The guest agent returned no info")) }
         return info
     }
 
@@ -49,7 +49,7 @@ public enum AgentClient {
     /// 客户机本地 TCP 端口的字节管道；返回的 socket 交给调用方转发。
     static func forward(_ bundle: VMBundle, port: UInt16) throws -> UnixSocket {
         let (response, socket) = try open(.forward(port: port), bundle: bundle)
-        _ = try response.checked("端口转发失败")
+        _ = try response.checked(String(l10n: "Couldn't forward the port"))
         socket.setTimeout(seconds: 0)
         return socket
     }
@@ -58,7 +58,7 @@ public enum AgentClient {
     /// 退出码为 nil 表示没收到 `exit` 帧就断开了：命令重启了代理自己时会这样。
     static func run(_ bundle: VMBundle, request: AgentProtocol.ExecRequest, input: Data, timeout: Int = 120) throws -> (code: Int32?, output: String) {
         let (response, socket) = try open(.exec(request), bundle: bundle)
-        _ = try response.checked("执行失败")
+        _ = try response.checked(String(l10n: "Couldn't run the command"))
         socket.setTimeout(seconds: timeout)
         let writer = Thread {
             var offset = 0
@@ -90,7 +90,7 @@ public enum AgentClient {
     /// 执行命令，标准输入输出接到本进程，返回客户机命令的退出码。
     public static func exec(_ bundle: VMBundle, request: AgentProtocol.ExecRequest) throws -> Int32 {
         let (response, socket) = try open(.exec(request), bundle: bundle)
-        _ = try response.checked("执行失败")
+        _ = try response.checked(String(l10n: "Couldn't run the command"))
         socket.setTimeout(seconds: 0)
         return try ExecSession(socket: socket, tty: request.tty == true).run()
     }
@@ -121,10 +121,10 @@ final class ExecSession: @unchecked Sendable {
         Thread.detachNewThread { [self] in pumpStdin() }
 
         while true {
-            guard let header = try socket.readExact(5) else { throw MacVMError.io("客户机代理意外断开") }
+            guard let header = try socket.readExact(5) else { throw MacVMError.io(String(l10n: "The guest agent disconnected unexpectedly")) }
             let length = Int(header[1]) | Int(header[2]) << 8 | Int(header[3]) << 16 | Int(header[4]) << 24
             guard length <= AgentProtocol.maxFrame, let payload = try socket.readExact(length) else {
-                throw MacVMError.io("客户机代理发来无效帧")
+                throw MacVMError.io(String(l10n: "The guest agent sent an invalid frame"))
             }
             switch AgentProtocol.FrameKind(rawValue: header[0]) {
             case .stdout: FileHandle.standardOutput.write(payload)

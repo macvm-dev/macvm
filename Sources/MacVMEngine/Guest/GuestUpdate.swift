@@ -42,20 +42,20 @@ public enum GuestUpdate {
         guard config.guestAgent else { throw noAgent(config) }
         var agentUpdated = false
         if AgentUpdate.status(of: try AgentClient.info(bundle), os: config.os) == .outdated {
-            progress("正在更新客户机代理…")
+            progress(String(l10n: "Updating the guest agent…"))
             agentUpdated = try await AgentUpdate.replace(bundle)
         }
         let migrations = GuestMigration.pending(for: config)
         var applied: [String] = []
         var rebootRequired = false
         for (index, migration) in migrations.enumerated() {
-            progress("正在更新客户机设置（\(index + 1)/\(migrations.count)）：\(migration.title)…")
+            progress(String(l10n: "Updating guest settings (\(index + 1)/\(migrations.count)): \(migration.title)…"))
             let (request, input) = try await migration.prepare(config)
             let (code, output) = try AgentClient.run(bundle, request: request, input: input, timeout: migrationTimeout)
             guard code == 0 else {
                 let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                let status = code.map { "退出码 \($0)" } ?? "代理中途断开"
-                throw MacVMError.engine("更新客户机设置「\(migration.title)」失败（\(status)）" + (detail.isEmpty ? "" : "：\(detail)"))
+                let status = code.map { String(l10n: "exit code \($0)") } ?? String(l10n: "the guest agent disconnected")
+                throw MacVMError.engine(String(l10n: "Couldn't update guest setting “\(migration.title)” (\(status))") + (detail.isEmpty ? "" : String(l10n: ": \(detail)")))
             }
             if output.contains(GuestMigration.rebootMarker) { rebootRequired = true }
             var latest = try bundle.loadConfig()
@@ -68,7 +68,7 @@ public enum GuestUpdate {
     }
 
     private static func noAgent(_ config: VMConfig) -> MacVMError {
-        .unsupported("\(config.name) 没有装客户机代理，先运行 macvm agent install \(config.name)")
+        .unsupported(String(l10n: "The guest agent isn't installed in \(config.name); run macvm agent install \(config.name) first"))
     }
 
     /// 单条设置的读超时：装驱动时 pnputil 可能几分钟没有输出。

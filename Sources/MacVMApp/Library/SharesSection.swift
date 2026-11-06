@@ -14,8 +14,8 @@ struct SharesSection: View {
         Section {
             if config.shares.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("没有共享目录").foregroundStyle(.secondary)
-                    Text(editable ? "把主机上的文件夹共享给客户机，两边看到同一份文件。也可以把文件夹拖到这里。" : "把主机上的文件夹共享给客户机，两边看到同一份文件。")
+                    Text("No Shared Folders").foregroundStyle(.secondary)
+                    Text(editable ? "Share folders from your Mac so the guest sees the same files. You can also drag folders here." : "Share folders from your Mac so the guest sees the same files.")
                         .font(.caption).foregroundStyle(.tertiary)
                 }
             }
@@ -24,13 +24,13 @@ struct SharesSection: View {
             }
         } header: {
             HStack {
-                Text("共享目录")
+                Text("Shared Folders")
                 Spacer()
-                Button { choosing = true } label: { Label("添加", systemImage: "plus") }
+                Button { choosing = true } label: { Label("Add", systemImage: "plus") }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .disabled(!editable)
-                    .help(editable ? "" : "现在不能添加，关机后再改")
+                    .help(editable ? "" : "Shut down the virtual machine to add folders")
             }
         } footer: {
             if !config.shares.isEmpty {
@@ -53,7 +53,7 @@ struct SharesSection: View {
                     .help(share.hostPath)
             }
             Spacer()
-            Toggle("只读", isOn: Binding(get: { share.readOnly },
+            Toggle("Read Only", isOn: Binding(get: { share.readOnly },
                                         set: { model.setShareReadOnly(vmName, hostPath: share.hostPath, $0) }))
                 .toggleStyle(.checkbox)
                 .disabled(!editable)
@@ -61,17 +61,17 @@ struct SharesSection: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
                 .disabled(!editable)
-                .help("移除共享")
+                .help("Remove Shared Folder")
         }
         .contextMenu {
-            Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: share.hostPath)]) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: share.hostPath)]) }
         }
     }
 
     private var guestHint: String {
-        if config.os == .macOS { return "客户机里在 /Volumes/My Shared Files 下，以名称为目录。" }
+        if config.os == .macOS { return String(l10n: "In the guest, each shared folder appears under /Volumes/My Shared Files, named after its tag.") }
         let example = config.shares[0].tag
-        return "Linux 客户机里挂载：sudo mkdir -p /mnt/\(example) && sudo mount -t virtiofs \(example) /mnt/\(example)，开机自动挂载要写进 /etc/fstab。"
+        return String(l10n: "To mount it in the Linux guest, run: sudo mkdir -p /mnt/\(example) && sudo mount -t virtiofs \(example) /mnt/\(example). To mount it at startup, add it to /etc/fstab.")
     }
 }
 

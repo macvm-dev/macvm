@@ -12,7 +12,7 @@ public enum LinuxDesktop: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .ubuntu: "Ubuntu \(Self.ubuntuSeries) LTS 桌面版"
+        case .ubuntu: String(l10n: "Ubuntu \(Self.ubuntuSeries) LTS Desktop")
         case .fedora: "Fedora Workstation"
         }
     }
@@ -22,7 +22,7 @@ public enum LinuxDesktop: String, CaseIterable, Sendable {
 
     public static func named(_ id: String) throws -> LinuxDesktop {
         guard let desktop = LinuxDesktop(rawValue: id) else {
-            throw MacVMError.invalidConfig("未知桌面版 \(id)，可选：\(allCases.map(\.rawValue).joined(separator: ", "))")
+            throw MacVMError.invalidConfig(String(l10n: "Unknown desktop edition \(id); available: \(allCases.map(\.rawValue).joinedAsList())"))
         }
         return desktop
     }
@@ -39,13 +39,13 @@ public enum LinuxDesktop: String, CaseIterable, Sendable {
             let base = "https://cdimage.ubuntu.com/releases/\(Self.ubuntuSeries)/release/"
             let sums = try await Self.fetch(base + "SHA256SUMS")
             guard let release = Self.ubuntuRelease(sha256sums: sums, series: Self.ubuntuSeries, base: URL(string: base)!) else {
-                throw MacVMError.io("Ubuntu \(Self.ubuntuSeries) 的发布列表里没有 arm64 桌面版 ISO")
+                throw MacVMError.io(String(l10n: "Couldn't find an arm64 desktop ISO in the Ubuntu \(Self.ubuntuSeries) release list"))
             }
             return release
         case .fedora:
             let json = try await Self.fetch("https://fedoraproject.org/releases.json")
             guard let release = Self.fedoraRelease(releasesJSON: Data(json.utf8)) else {
-                throw MacVMError.io("Fedora 的发布列表里没有 aarch64 Workstation ISO")
+                throw MacVMError.io(String(l10n: "Couldn't find an aarch64 Workstation ISO in the Fedora release list"))
             }
             return release
         }

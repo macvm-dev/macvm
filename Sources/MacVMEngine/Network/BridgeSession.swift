@@ -14,7 +14,7 @@ final class BridgeSession: @unchecked Sendable {
     private static let openTimeout: TimeInterval = 20
 
     static var unavailableError: MacVMError {
-        .unsupported("桥接网络需要网络辅助程序：在 MacVM 的设置里启用，首次启用后到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM")
+        .unsupported(String(l10n: "Bridged networking needs the network helper. Turn it on in MacVM Settings; the first time, also allow MacVM in System Settings › General › Login Items & Extensions."))
     }
 
     private init(fileHandle: FileHandle, connection: NSXPCConnection, sink: AddressSink) {
@@ -27,7 +27,7 @@ final class BridgeSession: @unchecked Sendable {
 
     /// `net.interface` 为空时桥接到第一块可桥接的网卡。
     static func open(_ net: NetworkConfig, bundle: VMBundle) throws -> BridgeSession {
-        guard let mac = net.macAddress else { throw MacVMError.invalidConfig("桥接网络需要固定的 MAC 地址") }
+        guard let mac = net.macAddress else { throw MacVMError.invalidConfig(String(l10n: "Bridged networking needs a fixed MAC address")) }
         let interface = try NetworkAttachments.bridgeInterface(named: net.interface)
         try? RuntimeDirectory.ensure()
         let sink = AddressSink(url: bundle.bridgedAddressURL)
@@ -45,12 +45,12 @@ final class BridgeSession: @unchecked Sendable {
         }
         guard done.wait(timeout: .now() + openTimeout) == .success else {
             connection.invalidate()
-            throw MacVMError.timeout("网络辅助程序没有回应：到 MacVM 的设置里重新启用网络辅助程序")
+            throw MacVMError.timeout(String(l10n: "The network helper isn't responding; turn it off and on again in MacVM Settings"))
         }
         guard let handle = reply.handle else {
             connection.invalidate()
             if reply.unavailable { throw unavailableError }
-            throw MacVMError.engine("桥接到 \(interface) 失败：\(reply.message ?? "未知原因")")
+            throw MacVMError.engine(String(l10n: "Couldn't bridge to \(interface): \(reply.message ?? String(l10n: "unknown reason"))"))
         }
         return BridgeSession(fileHandle: handle, connection: connection, sink: sink)
     }

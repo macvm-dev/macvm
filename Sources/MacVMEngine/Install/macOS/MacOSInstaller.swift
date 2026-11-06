@@ -71,7 +71,7 @@ public enum MacOSInstaller {
     }
 
     public static func install(_ options: Options, in library: VMLibrary = .default, progress: @escaping @MainActor (Phase) -> Void = { _ in }) async throws -> VMBundle {
-        guard VZVirtualMachine.isSupported else { throw MacVMError.unsupported("本机不支持虚拟化") }
+        guard VZVirtualMachine.isSupported else { throw MacVMError.unsupported(String(l10n: "This Mac doesn't support virtualization")) }
         try VMFactory.ensureNameAvailable(options.name, in: library)
 
         let ipsw: URL
@@ -84,7 +84,7 @@ public enum MacOSInstaller {
 
         let image = try await loadImage(ipsw)
         guard let requirements = image.mostFeaturefulSupportedConfiguration, requirements.hardwareModel.isSupported else {
-            throw MacVMError.unsupported("主机 macOS 版本过旧，无法安装 \(image.operatingSystemVersion.label)（\(image.buildVersion)）")
+            throw MacVMError.unsupported(String(l10n: "macOS on this Mac is too old to install \(image.operatingSystemVersion.label) (\(image.buildVersion))"))
         }
 
         return try await VMFactory.withNewBundle(named: options.name, in: library, creationToken: options.creationToken) { bundle in
@@ -127,7 +127,7 @@ public enum MacOSInstaller {
                 if Task.isCancelled { throw CancellationError() }
                 // 只把 Virtualization 的错误归为 engine；准备包内文件时已分好类的错误原样抛出。
                 if error is MacVMError { throw error }
-                throw MacVMError.engine("安装 macOS 失败：\(describeEngineError(error))")
+                throw MacVMError.engine(String(l10n: "Couldn't install macOS: \(describeEngineError(error))"))
             }
         }
     }
@@ -153,13 +153,13 @@ public enum MacOSInstaller {
     }
 
     private static func loadImage(_ url: URL) async throws -> VZMacOSRestoreImage {
-        guard FileManager.default.fileExists(atPath: url.path) else { throw MacVMError.invalidConfig("IPSW 不存在：\(url.path)") }
+        guard FileManager.default.fileExists(atPath: url.path) else { throw MacVMError.invalidConfig(String(l10n: "IPSW not found: \(url.path)")) }
         do {
             return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Unchecked<VZMacOSRestoreImage>, any Error>) in
                 VZMacOSRestoreImage.load(from: url) { c.resume(with: $0.map(Unchecked.init)) }
             }.value
         } catch {
-            throw MacVMError.invalidConfig("无法读取 IPSW：\(error.localizedDescription)")
+            throw MacVMError.invalidConfig(String(l10n: "Couldn't read the IPSW: \(error.localizedDescription)"))
         }
     }
 }

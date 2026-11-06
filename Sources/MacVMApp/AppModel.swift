@@ -181,7 +181,7 @@ final class AppModel {
     /// 经运行中的代理把客户机更新到 App 当前的版本。
     func updateGuest(_ name: String) {
         guard case .available(let pending) = guestUpdates[name], let bundle = try? library.bundle(named: name) else { return }
-        guestUpdates[name] = .updating("正在准备…")
+        guestUpdates[name] = .updating(String(l10n: "Preparing…"))
         Task {
             do {
                 let result = try await GuestUpdate.apply(bundle) { step in
@@ -284,11 +284,11 @@ final class AppModel {
             let canSuspend = try await Task.detached { try ControlClient.send(.status, to: bundle, timeout: 5).canSuspend }.value
             remoteSuspend[name] = canSuspend
             guard canSuspend == true else {
-                throw MacVMError.unsupported("\(name) 在后台进程里不能挂起，没法转到 App 里运行；关机后在这里重新启动即可显示")
+                throw MacVMError.unsupported(String(l10n: "Can't move \(name) into the app because its background process can't suspend it. Shut it down and start it here to see its screen"))
             }
             try await Self.sendControl(.suspend, to: bundle, timeout: 300)
             guard try await VMStatus.waitUntilStopped(bundle, timeout: 30) else {
-                throw MacVMError.timeout("\(name) 已挂起，但原来运行它的进程没有退出")
+                throw MacVMError.timeout(String(l10n: "\(name) was suspended, but its background process didn't exit"))
             }
             remoteSuspend[name] = nil
             return try await launch(name)
@@ -299,7 +299,7 @@ final class AppModel {
         }
     }
 
-    private static let takingOverTitle = "正在转到 App 里运行…"
+    private static let takingOverTitle = String(l10n: "Moving into the app…")
 
     /// 是否提供挂起：运行中的以运行它的进程报的为准（别的进程可能用了另一套 QEMU），其余按配置与本机的 QEMU 判断。
     func canSuspend(_ name: String) -> Bool {
@@ -407,7 +407,7 @@ final class AppModel {
     func suspendForQuit(_ names: [String]) async {
         for name in names {
             guard let runner = runners[name] else { continue }
-            setActivity(name, "正在挂起…")
+            setActivity(name, String(l10n: "Suspending…"))
             try? await runner.suspend()
             setActivity(name, nil)
         }
@@ -426,7 +426,7 @@ final class AppModel {
         var failed: [(name: String, reason: String)] = []
         for name in names {
             guard let runner = runners[name] else { continue }
-            setActivity(name, "正在转到后台…")
+            setActivity(name, String(l10n: "Moving to the background…"))
             defer { setActivity(name, nil) }
             guard (try? await runner.suspend()) != nil else { continue }
             do {
@@ -459,7 +459,7 @@ final class AppModel {
         for runner in Array(runners.values) { try? await runner.forceStop() }
     }
 
-    private static let stoppingTitle = "正在关机…"
+    private static let stoppingTitle = String(l10n: "Shutting down…")
     private static let stoppingTimeout: Duration = .seconds(90)
 
     func suspend(_ name: String) async {
@@ -719,7 +719,7 @@ final class AppModel {
 
     /// 跨卷时要整盘复制，期间虚拟机显示进度、不能开机或修改。
     func saveTemplate(_ name: String, as templateName: String) async {
-        setActivity(name, "正在存为模板…")
+        setActivity(name, String(l10n: "Saving as template…"))
         defer {
             setActivity(name, nil)
             refreshTemplates()
@@ -774,7 +774,7 @@ final class AppModel {
         }
         runningCreations[name] = request
         persistCreations()
-        setActivity(name, "正在创建…")
+        setActivity(name, String(l10n: "Creating…"))
         creationTasks[name] = Task {
             defer {
                 runningCreations[name] = nil
@@ -851,7 +851,7 @@ final class AppModel {
         }
     }
 
-    private static let sshKeyTitle = "正在首次开机并配置 SSH 与客户机代理…"
+    private static let sshKeyTitle = String(l10n: "Starting for the first time to set up SSH and the guest agent…")
 
     /// 失败时报告错误并返回 false；任务取消时不报告。已在别的进程里运行（如 `ssh` 经 `macvm proxy` 把它拉了起来）
     /// 也算开了机：装公钥与代理都不必在本进程运行。
@@ -870,7 +870,7 @@ final class AppModel {
     /// 取消正在进行的新建：终止下载与安装，删掉建了一半的包；已下载的部分留在下载目录里，下次新建接着用。
     func cancelCreation(_ name: String) {
         creationTasks[name]?.cancel()
-        setActivity(name, "正在取消…")
+        setActivity(name, String(l10n: "Canceling…"))
     }
 
     /// 已取消的任务里不能再等待，另起任务停机并删包。装 Windows 时虚拟机在运行，停下后锁才释放，删包要重试几次。
@@ -931,7 +931,7 @@ final class AppModel {
         let memory = UInt64(r.memoryGB) << 30, disk = UInt64(r.diskGB) << 30
         switch (r.os, r.source) {
         case (_, .template(let templateName)):
-            setActivity(name, "正在从模板创建…")
+            setActivity(name, String(l10n: "Creating from template…"))
             let template = try templateLibrary.template(named: templateName)
             // 没调大到超过模板容量的整 GB 数时不扩。
             let currentGB = try ResourceRange.wholeGB(DiskImage.allocatedSize(at: template.diskURL).logical)
@@ -940,7 +940,7 @@ final class AppModel {
         case (.macOS, _):
             let source: MacOSInstaller.Source
             if r.source == .ipswFile {
-                guard let file = r.file else { throw MacVMError.invalidConfig("没有选择 IPSW 文件") }
+                guard let file = r.file else { throw MacVMError.invalidConfig(String(l10n: "No IPSW file selected")) }
                 source = .file(file)
             } else {
                 source = .latest
@@ -950,38 +950,38 @@ final class AppModel {
                                                  creationToken: token)
             _ = try await MacOSInstaller.install(options, in: library) { [weak self] phase in
                 switch phase {
-                case .downloading: self?.setActivity(name, "正在下载 macOS…", downloading: true)
+                case .downloading: self?.setActivity(name, String(l10n: "Downloading macOS…"), downloading: true)
                 // 安装程序先校验、展开 IPSW，这几分钟进度一直是 0，显示为进度未知。
-                case .installing(let f) where f <= 0: self?.setActivity(name, "正在准备安装，需要几分钟…")
-                case .installing(let f): self?.setActivity(name, "正在安装 \(Int(f * 100))%", fraction: f)
+                case .installing(let f) where f <= 0: self?.setActivity(name, String(l10n: "Preparing to install. This takes a few minutes…"))
+                case .installing(let f): self?.setActivity(name, String(l10n: "Installing \(Int(f * 100))%"), fraction: f)
                 }
             }
         case (.windows, _):
             let iso: URL
             if r.source == .windowsLatest {
-                setActivity(name, "正在下载 Windows…", downloading: true)
+                setActivity(name, String(l10n: "Downloading Windows…"), downloading: true)
                 iso = try await WindowsISO.iso(showProgress: false)
             } else {
-                guard let file = r.file else { throw MacVMError.invalidConfig("没有选择 Windows 安装 ISO") }
+                guard let file = r.file else { throw MacVMError.invalidConfig(String(l10n: "No Windows installation ISO selected")) }
                 iso = file
             }
-            setActivity(name, "正在准备 Windows 安装盘…")
+            setActivity(name, String(l10n: "Preparing the Windows installation disc…"))
             let bundle = try await WindowsInstaller.create(.init(name: name, iso: iso, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
                                                                  user: r.user ?? NSUserName(), password: r.password, productKey: r.productKey,
                                                                  creationToken: token), in: library)
-            setActivity(name, "正在安装 Windows…")
-            guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name) 开始安装") }
+            setActivity(name, String(l10n: "Installing Windows…"))
+            guard await start(name) != nil else { throw MacVMError.engine(String(l10n: "Couldn't start \(name) to begin installation")) }
             openMachineWindow(name)
             let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: CLILocation.path) {
-                setActivity(name, "正在完成安装…")
+                setActivity(name, String(l10n: "Finishing installation…"))
                 await stop(name)
             } start: {
-                guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name)") }
+                guard await start(name) != nil else { throw MacVMError.engine(String(l10n: "Couldn't start \(name)")) }
             }
-            guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
+            guard finished else { throw MacVMError.timeout(String(l10n: "The guest didn't shut down after installing")) }
         case (_, .desktop(let id)):
             let desktop = try LinuxDesktop.named(id)
-            setActivity(name, "正在下载 \(desktop.title) 安装盘…", downloading: true)
+            setActivity(name, String(l10n: "Downloading the \(desktop.title) installation disc…"), downloading: true)
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
                                             rosetta: r.rosetta, desktop: desktop, unattended: r.manualInstall != true,
                                             user: r.user ?? NSUserName(), password: r.password, creationToken: token)
@@ -991,14 +991,14 @@ final class AppModel {
                 openMachineWindow(name)
                 return
             }
-            setActivity(name, "正在自动安装 \(desktop.title)…")
-            guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name) 开始安装") }
+            setActivity(name, String(l10n: "Installing \(desktop.title) automatically…"))
+            guard await start(name) != nil else { throw MacVMError.engine(String(l10n: "Couldn't start \(name) to begin installation")) }
             openMachineWindow(name)
             try await UbuntuAutoinstall.completeSetup(bundle) {
-                guard await start(name) != nil else { throw MacVMError.engine("无法启动 \(name)") }
+                guard await start(name) != nil else { throw MacVMError.engine(String(l10n: "Couldn't start \(name)")) }
             }
         case (_, .cloudImage(let id)):
-            setActivity(name, "正在下载镜像…", downloading: true)
+            setActivity(name, String(l10n: "Downloading image…"), downloading: true)
             let options = VMFactory.Options(name: name, os: .linux, cpuCount: r.cpus, memorySize: memory, diskSize: disk,
                                             rosetta: r.rosetta, image: try LinuxImage.named(id), user: r.user ?? NSUserName(), password: r.password,
                                             creationToken: token)
@@ -1020,7 +1020,7 @@ final class AppModel {
 
     /// 创建、安装、存模板等任务进行中时包还没建完或正被复制，删除、克隆、改快照要等它结束。
     func requireIdle(_ name: String) throws {
-        if let current = activity[name] { throw MacVMError.unsupported("\(name) 有进行中的任务：\(current.title)") }
+        if let current = activity[name] { throw MacVMError.unsupported(String(l10n: "\(name) is busy: \(current.title)")) }
     }
 
     func report(_ error: any Error) {

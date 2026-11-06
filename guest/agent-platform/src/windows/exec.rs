@@ -25,7 +25,7 @@ pub fn spawn(o: &ExecOptions) -> io::Result<Spawned> {
     if let Some(name) = o.user {
         let me = std::env::var("USERNAME").unwrap_or_default();
         if !name.eq_ignore_ascii_case(&me) {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("Windows 代理只能以 {me} 执行")));
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("On Windows, the agent can only run commands as {me}")));
         }
     }
     match o.tty {

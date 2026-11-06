@@ -30,7 +30,7 @@ public struct QEMUInstallation: Sendable {
     /// `locate` 的结果，供界面频繁查询；装卸 QEMU 后要重启 App 才更新。
     private static let located = locate()
 
-    static let virglSuspendError = MacVMError.unsupported("App 自带 QEMU 的 3D 显卡（virgl）不支持挂起，请关机")
+    static let virglSuspendError = MacVMError.unsupported(String(l10n: "The bundled QEMU can't suspend with 3D graphics (virgl) on; shut down instead"))
 
     /// 自带的 QEMU 把客户机经气球上报的空闲页还给宿主；Homebrew 的 QEMU 只调 madvise，macOS 上释放不了客户机写过的页。
     var returnsFreedGuestMemory: Bool { bundleRoot != nil }
@@ -86,7 +86,7 @@ public struct QEMUInstallation: Sendable {
 
     public static func require() throws -> QEMUInstallation {
         guard let found = locate() else {
-            throw MacVMError.unsupported("QEMU 引擎需要先安装 QEMU：brew install qemu")
+            throw MacVMError.unsupported(String(l10n: "The QEMU engine needs QEMU; install it with brew install qemu"))
         }
         return found
     }

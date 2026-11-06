@@ -140,16 +140,16 @@ public enum WindowsISO {
         let errors = (answer["Errors"] as? [[String: Any]])
             ?? ((answer["ValidationContainer"] as? [String: Any])?["Errors"] as? [[String: Any]]) ?? []
         guard let first = errors.first else { return }
-        let reason = (first["Value"] as? String) ?? (first["Key"] as? String) ?? "未说明原因"
-        throw MacVMError.io("微软拒绝了 Windows 下载请求（\(reason)）。同一网络短时间内要了多次下载链接，或开着 VPN、代理时常见，过一段时间（可能要几个小时）再试；也\(manualHint)")
+        let reason = (first["Value"] as? String) ?? (first["Key"] as? String) ?? String(l10n: "no reason given")
+        throw MacVMError.io(String(l10n: "Microsoft refused the Windows download request (\(reason)). This often happens after several download requests from the same network in a short time, or when a VPN or proxy is on. Try again later (it may take a few hours). \(manualHint)"))
     }
 
     private static var unexpectedAnswer: MacVMError {
-        .io("没能从微软的下载接口取到 Windows 下载链接。\(manualHint)")
+        .io(String(l10n: "Couldn't get a Windows download link from Microsoft. \(manualHint)"))
     }
 
     private static var manualHint: String {
-        "可在浏览器打开 \(WindowsInstaller.downloadPage.absoluteString) 手动下载 ISO。"
+        String(l10n: "You can also open \(WindowsInstaller.downloadPage.absoluteString) in a browser and download the ISO manually.")
     }
 
     // MARK: - 语言
@@ -199,10 +199,10 @@ public enum WindowsISO {
             do { (data, response) = try await session.data(for: request) } catch let error as URLError where error.code == .cancelled {
                 throw CancellationError()
             } catch let error as URLError {
-                throw MacVMError.io("连不上微软的下载服务器（\(url.host() ?? "")）：\(error.localizedDescription)")
+                throw MacVMError.io(String(l10n: "Couldn't connect to Microsoft's download server (\(url.host() ?? "")): \(error.localizedDescription)"))
             }
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw MacVMError.io("微软的下载服务器返回 HTTP \(http.statusCode)（\(url.host() ?? "")）。\(WindowsISO.manualHint)")
+                throw MacVMError.io(String(l10n: "Microsoft's download server returned HTTP \(http.statusCode) (\(url.host() ?? "")). \(WindowsISO.manualHint)"))
             }
             return data
         }

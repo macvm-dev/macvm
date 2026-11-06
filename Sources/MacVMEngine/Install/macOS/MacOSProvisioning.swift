@@ -47,9 +47,9 @@ public enum MacOSProvisioning {
     /// 要 sudo，用包内保存的客户机密码；客户机要已装好 macvm 公钥。
     public static func setHostNameAndTimeZone(bundle: VMBundle, config: VMConfig, macvmPath: String,
                                               timeZone: String = TimeZone.current.identifier) async throws {
-        guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 设置主机名与时区") }
+        guard let user = config.guestUser else { throw MacVMError.unsupported(String(l10n: "\(config.name)'s login user is unknown, so the host name and time zone can't be set over SSH")) }
         guard let password = GuestCredentials.password(for: bundle) else {
-            throw MacVMError.invalidConfig("没有 \(config.name) 的客户机密码，无法 sudo 设置主机名与时区")
+            throw MacVMError.invalidConfig(String(l10n: "No guest password is saved for \(config.name), so sudo isn't available to set the host name and time zone"))
         }
         // 虚拟机名只含 `SSHConfig.isPlainName` 认的字符，放进单引号里不用转义。
         try SSHConfig.validateLogin(user: user, host: bundle.name)

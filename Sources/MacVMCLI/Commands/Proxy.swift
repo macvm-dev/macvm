@@ -19,7 +19,7 @@ struct Proxy: AsyncParsableCommand {
                 let n = ready == 1 ? recv(fd, &head, 4, MSG_PEEK) : -1
                 if (ready == 1 && n <= 0) || (port == 22 && (n < 4 || head != Array("SSH-".utf8))) {
                     close(fd)
-                    throw MacVMError.notRunning("客户机端口 \(port) 未就绪")
+                    throw MacVMError.notRunning(String(l10n: "guest port \(port) isn't ready"))
                 }
                 return fd
             } catch {
@@ -30,21 +30,21 @@ struct Proxy: AsyncParsableCommand {
     }
 
     static let configuration = CommandConfiguration(
-        abstract: "把标准输入输出接到客户机的 TCP 端口，供 ssh 的 ProxyCommand 使用。",
-        discussion: "虚拟机未运行时自动在后台启动；上次是关机或断电停下的不启动，先用 macvm start 开机。"
+        abstract: String(l10n: "Connect stdin and stdout to a TCP port on the guest (for use as an ssh ProxyCommand)."),
+        discussion: String(l10n: "Starts the VM in the background if it isn't running. A VM that was shut down or powered off stays off; start it with macvm start first.")
     )
 
-    @Argument(help: "虚拟机名称。") var name: String
-    @Option(help: "客户机端口。") var port: UInt16 = 22
-    @Option(help: "等待客户机就绪的最长秒数。") var timeout: Int = 120
-    @Flag(help: "不经客户机代理，直连客户机 IP（代理尚未安装时使用）。") var tcp = false
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Option(help: ArgumentHelp(String(l10n: "Guest port."))) var port: UInt16 = 22
+    @Option(help: ArgumentHelp(String(l10n: "Seconds to wait for the guest to be ready."))) var timeout: Int = 120
+    @Flag(help: ArgumentHelp(String(l10n: "Connect to the guest's IP address directly instead of through the guest agent (useful before the agent is installed)."))) var tcp = false
 
     func run() async throws {
         try await Output.run(json: false, human: { (_: Empty) in nil }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             if BundleLock.holder(of: bundle) == nil {
                 // ssh 客户端断线后会自动重连，不能把用户刚关掉的虚拟机重新开起来。
-                if bundle.wasPoweredOff { throw MacVMError.notRunning("\(name)（已关机，用 macvm start \(name) 或在 App 里开机后再连）") }
+                if bundle.wasPoweredOff { throw MacVMError.notRunning(String(l10n: "\(name) (shut down; start it with macvm start \(name) or in the app, then reconnect)")) }
                 _ = try await Start.launch(bundle, timeout: timeout)
             }
             var config = try bundle.loadConfig()

@@ -7,10 +7,10 @@ public enum DiskImage {
         let length = try fileLength(size)
         // 磁盘里有客户机密码与代理令牌，只给自己读写。
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw MacVMError.posix("创建磁盘 \(url.path)") }
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't create disk \(url.path)")) }
         defer { close(fd) }
         guard ftruncate(fd, length) == 0 else {
-            let error = MacVMError.posix("设置磁盘大小")
+            let error = MacVMError.posix(String(l10n: "Couldn't set the disk size"))
             unlink(url.path)
             throw error
         }
@@ -20,16 +20,16 @@ public enum DiskImage {
     public static func grow(at url: URL, to size: UInt64) throws {
         let current = try allocatedSize(at: url).logical
         guard size > current else {
-            throw MacVMError.invalidConfig("新大小 \(ByteSize.format(size)) 不大于当前 \(ByteSize.format(current))")
+            throw MacVMError.invalidConfig(String(l10n: "The new size (\(ByteSize.format(size))) must be larger than the current size (\(ByteSize.format(current)))"))
         }
         let length = try fileLength(size)
         guard truncate(url.path, length) == 0 else {
-            throw MacVMError.posix("扩容 \(url.path)")
+            throw MacVMError.posix(String(l10n: "Couldn't grow \(url.path)"))
         }
     }
 
     private static func fileLength(_ size: UInt64) throws -> off_t {
-        guard let length = off_t(exactly: size) else { throw MacVMError.invalidConfig("磁盘大小 \(ByteSize.format(size)) 超出上限") }
+        guard let length = off_t(exactly: size) else { throw MacVMError.invalidConfig(String(l10n: "Disk size \(ByteSize.format(size)) is too large")) }
         return length
     }
 
@@ -53,7 +53,7 @@ public enum DiskImage {
     /// logical 是客户机看到的容量，physical 是主机实际占用。
     public static func allocatedSize(at url: URL) throws -> (logical: UInt64, physical: UInt64) {
         var st = stat()
-        guard stat(url.path, &st) == 0 else { throw MacVMError.posix("读取 \(url.path)") }
+        guard stat(url.path, &st) == 0 else { throw MacVMError.posix(String(l10n: "Couldn't read \(url.path)")) }
         return (UInt64(st.st_size), UInt64(st.st_blocks) * 512)
     }
 }

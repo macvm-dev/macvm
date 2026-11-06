@@ -121,7 +121,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(600);
 /// 投放窗口只读文件列表，总是拒绝投放。没有进行中的拖动时为空。
 pub fn drag_files() -> io::Result<(Vec<PathBuf>, Option<i64>)> {
     // OLE 拖放要求投放窗口所在线程是单线程套间并转发消息，在专门的线程里做。
-    let files = std::thread::spawn(probe).join().map_err(|_| io::Error::other("拖放探测线程崩溃"))??;
+    let files = std::thread::spawn(probe).join().map_err(|_| io::Error::other("The drag-and-drop probe thread crashed"))??;
     Ok((files, None))
 }
 

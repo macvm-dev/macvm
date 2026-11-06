@@ -5,41 +5,41 @@ import MacVMModel
 
 struct Set: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "修改已停止虚拟机的配置。",
-        discussion: """
-        --engine 切换虚拟化引擎，磁盘与系统保持不变。例如 Windows：日常编译测试用 vz（占用最低），需要声音或挂起时切到 qemu。
-        macOS 客户机只能用 vz。
-        --retina 只影响应用窗口里 QEMU 虚拟机与 VZ 下 Linux 的分辨率，运行中也可修改，打开的窗口下次调整大小时生效。
-        --clipboard 在应用窗口与客户机之间同步文本剪贴板（默认开）。macOS、Windows 客户机经代理同步，运行中也可修改；Linux 客户机经 spice-vdagent 同步，要关机后修改。
-        --screen-lock 客户机空闲、显示器休眠后是否锁屏（默认关：不锁屏）。经客户机代理写进客户机，运行中修改立即生效，否则下次开机代理上线时生效；macOS 客户机要用包内保存的客户机密码。
-        --disk-size 只扩大系统盘镜像，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。
-        --network bridged 让客户机直接接入主机所在的局域网，需要先在 App 的设置里启用网络辅助程序；不写网卡名时开机桥接到第一块可桥接的网卡。
-        --remove-share 先于 --add-share 执行，先移除再加回即可改只读。共享目录只用于 VZ 引擎的 macOS、Linux 客户机。
-        """
+        abstract: String(l10n: "Change the configuration of a stopped VM."),
+        discussion: String(l10n: """
+        --engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.
+        macOS guests can only use vz.
+        --retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.
+        --clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.
+        --screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.
+        --disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.
+        --network bridged puts the guest directly on the host's local network; turn on the network helper in the app's settings first. Without an interface name, it uses the first interface that can be bridged at boot.
+        --remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.
+        """)
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
-    @Option(help: "虚拟化引擎：vz 或 qemu。") var engine: Engine?
-    @Option(name: .customLong("cpus"), help: "vCPU 数。") var cpuCount: Int?
-    @Option(help: "内存，如 8G。") var memory: String?
-    @Option(help: "开机时的显示尺寸，宽x高，如 2560x1600。") var display: String?
-    @Option(help: "应用窗口里按屏幕像素请求分辨率（QEMU 引擎与 VZ 下的 Linux）：on 或 off。") var retina: Toggle?
-    @Option(help: "同步文本剪贴板：on 或 off。") var clipboard: Toggle?
-    @Option(help: "客户机空闲后锁屏：on 或 off。") var screenLock: Toggle?
-    @Option(help: "扩大系统盘到此容量，如 256G；只能扩大。") var diskSize: String?
-    @Option(help: "网络：nat 或 bridged[:网卡名]。") var network: String?
-    @Option(help: "添加共享目录：主机路径[:名称][:ro]，可重复。") var addShare: [String] = []
-    @Option(help: "移除共享目录：主机路径或名称，可重复。") var removeShare: [String] = []
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Option(help: ArgumentHelp(String(l10n: "Virtualization engine: vz or qemu."))) var engine: Engine?
+    @Option(name: .customLong("cpus"), help: ArgumentHelp(String(l10n: "Number of vCPUs."))) var cpuCount: Int?
+    @Option(help: ArgumentHelp(String(l10n: "Memory size, e.g. 8G."))) var memory: String?
+    @Option(help: ArgumentHelp(String(l10n: "Display size at startup as WIDTHxHEIGHT, e.g. 2560x1600."))) var display: String?
+    @Option(help: ArgumentHelp(String(l10n: "Use full Retina resolution in the app's window (QEMU engine and Linux on VZ): on or off."))) var retina: Toggle?
+    @Option(help: ArgumentHelp(String(l10n: "Sync the text clipboard: on or off."))) var clipboard: Toggle?
+    @Option(help: ArgumentHelp(String(l10n: "Lock the screen when the guest is idle: on or off."))) var screenLock: Toggle?
+    @Option(help: ArgumentHelp(String(l10n: "Grow the system disk to this size, e.g. 256G (disks can't shrink)."))) var diskSize: String?
+    @Option(help: ArgumentHelp(String(l10n: "Network: nat or bridged[:interface]."))) var network: String?
+    @Option(help: ArgumentHelp(String(l10n: "Add a shared folder as host-path[:name][:ro] (repeatable)."))) var addShare: [String] = []
+    @Option(help: ArgumentHelp(String(l10n: "Remove a shared folder by host path or name (repeatable)."))) var removeShare: [String] = []
 
     enum Toggle: String, ExpressibleByArgument { case on, off }
 
     func validate() throws {
-        if let display, Display.parse(display) == nil { throw ValidationError("尺寸格式应为 宽x高，如 2560x1600") }
+        if let display, Display.parse(display) == nil { throw ValidationError(String(l10n: "Size must be WIDTHxHEIGHT, e.g. 2560x1600")) }
     }
 
     func run() async throws {
-        try await Output.run(json: global.json, human: { (s: VMSummary) in "已更新 \(s.name)" }) {
+        try await Output.run(json: global.json, human: { (s: VMSummary) in String(l10n: "Updated \(s.name)") }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             var config = try bundle.loadConfig()
             let onlyLive = engine == nil && cpuCount == nil && memory == nil && display == nil

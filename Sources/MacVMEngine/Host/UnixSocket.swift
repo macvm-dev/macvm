@@ -95,7 +95,7 @@ final class UnixSocket: @unchecked Sendable {
                 return Data(line)
             }
             scanned = buffer.endIndex
-            guard buffer.count < limit else { throw MacVMError.io("控制消息超长") }
+            guard buffer.count < limit else { throw MacVMError.io(String(l10n: "Control message is too long")) }
             let n = Darwin.read(fd, &chunk, chunk.count)
             if n < 0 {
                 if errno == EINTR { continue }
@@ -148,7 +148,7 @@ final class UnixSocket: @unchecked Sendable {
     /// 复制出一个独立的 fd 交给调用方关闭；本对象析构时只关闭自己的那个。
     func duplicateDescriptor() throws -> Int32 {
         let copy = dup(fd)
-        guard copy >= 0 else { throw MacVMError.posix("复制连接") }
+        guard copy >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't duplicate the connection")) }
         return copy
     }
 
@@ -182,7 +182,7 @@ final class UnixSocket: @unchecked Sendable {
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
         let capacity = MemoryLayout.size(ofValue: addr.sun_path)
-        guard bytes.count < capacity else { throw MacVMError.io("socket 路径过长：\(path)") }
+        guard bytes.count < capacity else { throw MacVMError.io(String(l10n: "Socket path is too long: \(path)")) }
         withUnsafeMutableBytes(of: &addr.sun_path) { dst in
             dst.copyBytes(from: bytes)
             dst[bytes.count] = 0

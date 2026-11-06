@@ -5,18 +5,18 @@ import MacVMModel
 
 struct Display: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "调整运行中虚拟机的显示尺寸（VZ 引擎与自带的 QEMU）。",
-        discussion: "只改本次运行；省略尺寸时恢复为默认尺寸，默认尺寸用 set --display 修改。VZ 下 Windows 的分辨率固定，不支持调整。"
+        abstract: String(l10n: "Resize a running VM's display (VZ engine or the bundled QEMU)."),
+        discussion: String(l10n: "The new size lasts until the VM shuts down. Omit the size to go back to the default, which you can change with macvm set --display. Windows on VZ has a fixed resolution and can't be resized.")
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
-    @Argument(help: "宽x高，单位像素，如 2560x1600；省略时用默认尺寸。") var size: String?
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Argument(help: ArgumentHelp(String(l10n: "Size in pixels as WIDTHxHEIGHT, e.g. 2560x1600. Omit to use the default."))) var size: String?
 
     struct Result: Encodable, Sendable { let width: Int; let height: Int }
 
     func validate() throws {
-        if let size, Self.parse(size) == nil { throw ValidationError("尺寸格式应为 宽x高，如 2560x1600") }
+        if let size, Self.parse(size) == nil { throw ValidationError(String(l10n: "Size must be WIDTHxHEIGHT, e.g. 2560x1600")) }
     }
 
     static func parse(_ s: String) -> (Int, Int)? {

@@ -102,7 +102,7 @@ pub fn trim_page_cache(keep: u64) -> io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         let _ = keep;
-        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 客户机不支持修剪页缓存"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS guests don't support trimming the page cache"))
     }
 }
 
@@ -252,7 +252,7 @@ pub fn clipboard_get() -> io::Result<String> {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
     #[cfg(target_os = "linux")]
-    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机的剪贴板经 SPICE 代理同步"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux guests sync the clipboard through the SPICE agent"))
 }
 
 pub fn clipboard_set(text: &str) -> io::Result<()> {
@@ -267,7 +267,7 @@ pub fn clipboard_set(text: &str) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
         let _ = text;
-        Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机的剪贴板经 SPICE 代理同步"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "Linux guests sync the clipboard through the SPICE agent"))
     }
 }
 
@@ -283,12 +283,12 @@ pub fn clipboard_files() -> io::Result<Vec<std::path::PathBuf>> {
 
 #[cfg(target_os = "linux")]
 pub fn clipboard_set_files(_paths: &[std::path::PathBuf]) -> io::Result<()> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机的剪贴板经 SPICE 代理同步"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux guests sync the clipboard through the SPICE agent"))
 }
 
 #[cfg(target_os = "linux")]
 pub fn drag_files() -> io::Result<(Vec<std::path::PathBuf>, Option<i64>)> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux 客户机不支持从客户机里拖出文件"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Linux guests don't support dragging files out"))
 }
 
 /// Linux：`user`（没有时为前台图形会话的用户）的 XDG 桌面目录，没有桌面目录时为其用户目录；不看投放点。
@@ -300,7 +300,7 @@ pub fn drop_dir(_point: Option<(f64, f64)>, user: Option<&str>) -> io::Result<st
             .into_iter()
             .max_by_key(|s| s.active)
             .map(|s| s.user)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "没有登录的用户"))?,
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No user is logged in"))?,
     };
     let home = std::path::PathBuf::from(super::exec::home_dir(&user)?);
     let dirs = std::fs::read_to_string(home.join(".config/user-dirs.dirs")).unwrap_or_default();
@@ -320,12 +320,12 @@ fn xdg_desktop(dirs: &str, home: &std::path::Path) -> Option<std::path::PathBuf>
 
 /// 只有 Windows 客户机需要由代理提供光标形状。
 pub fn watch_cursor(_alive: impl Fn() -> bool, _on_change: impl FnMut(crate::GuestCursor) -> io::Result<()>) -> io::Result<()> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机提供光标形状"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Only Windows guests report the cursor shape"))
 }
 
 /// Linux 与 macOS 客户机的桌面自己跟随显示输出尺寸。
 pub fn set_display(_width: u32, _height: u32) -> io::Result<()> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机需要代理切换分辨率"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Only Windows guests change the resolution through the agent"))
 }
 
 /// Linux：把 GNOME 的整数缩放倍数（`percent` 四舍五入到 1–4 倍）写进每个图形会话用户的
@@ -341,7 +341,7 @@ pub fn set_display_scale(percent: u32) -> io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         let _ = percent;
-        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 客户机的缩放由系统决定"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS guests manage display scaling themselves"))
     }
 }
 
@@ -435,7 +435,7 @@ pub fn mount_virtiofs(tag: &str, path: &str, read_only: bool) -> io::Result<()> 
     #[cfg(target_os = "macos")]
     {
         let _ = (tag, path, read_only);
-        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 客户机的共享目录由系统自动挂载"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS guests mount shared folders automatically"))
     }
 }
 
@@ -445,7 +445,7 @@ pub fn gpu_driver_package_is(_sha256: &str) -> bool {
 }
 
 pub fn replace_gpu_driver(_zip: &[u8], _sha256: &str) -> io::Result<bool> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "只有 Windows 客户机由宿主推送显卡驱动"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "Only Windows guests get graphics drivers from the host"))
 }
 
 #[cfg(test)]

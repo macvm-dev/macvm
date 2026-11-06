@@ -33,15 +33,15 @@ struct DiskGrowSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                LabeledContent("当前容量", value: DisplaySize.format(currentSize))
+                LabeledContent("Current Size", value: DisplaySize.format(currentSize))
                 if let range {
-                    NumberField(title: "新容量", unit: "GB", value: $gigabytes, invalid: $invalid, range: range)
+                    NumberField(title: "New Size", unit: "GB", value: $gigabytes, invalid: $invalid, range: range)
                 } else {
-                    Text("已达到上限 \(DisplaySize.format(UInt64(Self.maxGB) << 30))，不能再扩大。").foregroundStyle(.secondary)
+                    Text("The disk is already at its maximum size of \(DisplaySize.format(UInt64(Self.maxGB) << 30)).").foregroundStyle(.secondary)
                 }
                 Section {
                     Text(guestHint)
-                    Text("只能扩大，不能缩小。镜像按实际写入占用主机空间，扩容本身不多占空间。")
+                    Text("Disks can grow but can't shrink. The image uses space on the Mac only as data is written, so growing it doesn't take up any extra space by itself.")
                         .foregroundStyle(.secondary)
                 }
                 .font(.callout)
@@ -49,8 +49,8 @@ struct DiskGrowSheet: View {
             .formStyle(.grouped)
             HStack {
                 Spacer()
-                Button("取消", role: .cancel) { dismiss() }
-                Button("扩容") {
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Resize") {
                     model.growDisk(vmName, gigabytes: gigabytes)
                     dismiss()
                 }
@@ -65,13 +65,13 @@ struct DiskGrowSheet: View {
     private var guestHint: String {
         switch config.os {
         case .macOS:
-            "macOS 的系统容器后面紧跟着恢复分区，新增的空间不会并入系统容器。要用上它，得在客户机里删除恢复分区后用 diskutil apfs resizeContainer 扩展系统容器，之后就进不了恢复模式。"
+            String(l10n: "On macOS, the recovery partition sits right after the system container, so the new space isn't added to the container. To use it, delete the recovery partition in the guest and grow the container with diskutil apfs resizeContainer. Recovery mode won't be available after that.")
         case .linux where CloudInit.growsRootPartition(config):
-            "下次开机时客户机自动把根分区和文件系统扩展到新容量。"
+            String(l10n: "The guest expands its root partition and file system to the new size the next time it starts.")
         case .linux:
-            "开机后在客户机里扩展根分区和文件系统，如用「磁盘」工具，或 growpart 加 resize2fs。"
+            String(l10n: "After the guest starts, expand its root partition and file system, for example with the Disks app or with growpart and resize2fs.")
         case .windows:
-            "开机后在客户机的「磁盘管理」里对 C 盘选「扩展卷」。"
+            String(l10n: "After the guest starts, open Disk Management in it and choose Extend Volume on drive C.")
         }
     }
 }

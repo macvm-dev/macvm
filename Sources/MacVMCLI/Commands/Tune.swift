@@ -7,32 +7,32 @@ extension MacOSTuning.Step: ExpressibleByArgument {}
 
 struct Tune: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "调优 macOS 客户机，降低空闲时的 CPU、磁盘与内存占用。",
-        discussion: """
-        经 SSH 修改客户机里的系统设置，未运行时自动启动。各项：
-          spotlight     关闭 Spotlight 索引（访达与聚焦搜索不再能按内容查找）
-          sleep         关闭系统睡眠、磁盘睡眠与 Power Nap（显示器照常睡眠）
-          screensaver   关闭屏幕保护程序
-          updates       关闭自动检查、下载与安装系统更新
-          animations    关闭窗口与 Dock 动画
-          transparency  打开减少透明度与减少动态效果；SSH 没有完全磁盘访问权限时会失败，
-                        可在客户机的 系统设置 > 辅助功能 > 显示 里手动打开
-        spotlight、sleep、updates 要 sudo，用包内保存的客户机密码（macvm create --os macos 创建的虚拟机都有）。
-        --revert 把所选各项恢复为系统默认。
-        """
+        abstract: String(l10n: "Tune a macOS guest to reduce idle CPU, disk, and memory usage."),
+        discussion: String(l10n: """
+        Changes system settings in the guest over SSH, starting the VM if it isn't running. Steps:
+          spotlight     Turn off Spotlight indexing (Finder and Spotlight can no longer search file contents)
+          sleep         Turn off system sleep, disk sleep, and Power Nap (the display still sleeps)
+          screensaver   Turn off the screen saver
+          updates       Turn off automatic checking, downloading, and installing of system updates
+          animations    Turn off window and Dock animations
+          transparency  Turn on Reduce Transparency and Reduce Motion; if SSH doesn't have Full Disk Access, this fails
+                        and you need to turn them on in the guest under System Settings > Accessibility > Display
+        spotlight, sleep, and updates need sudo, which uses the guest password saved in the VM bundle (every VM created with macvm create --os macos has one).
+        --revert restores the selected steps to system defaults.
+        """)
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
-    @Option(help: "跳过某项，可重复。") var skip: [MacOSTuning.Step] = []
-    @Flag(help: "把所选各项恢复为系统默认。") var revert = false
-    @Option(help: "客户机密码，默认读包内的 guest-password。") var password: String?
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Option(help: ArgumentHelp(String(l10n: "Skip a step (repeatable)."))) var skip: [MacOSTuning.Step] = []
+    @Flag(help: ArgumentHelp(String(l10n: "Restore the selected steps to system defaults."))) var revert = false
+    @Option(help: ArgumentHelp(String(l10n: "Guest password (default: guest-password in the VM bundle)."))) var password: String?
 
     func run() async throws {
         try await Output.run(json: global.json, human: { Self.render(name, $0) }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             let config = try bundle.loadConfig()
-            guard config.os == .macOS else { throw MacVMError.unsupported("只有 macOS 客户机可以调优") }
+            guard config.os == .macOS else { throw MacVMError.unsupported(String(l10n: "Only macOS guests can be tuned")) }
             var probe = config
             probe.guestAgent = false
             try await Wait.untilReady(bundle, config: probe, timeout: 300)
@@ -50,14 +50,16 @@ struct Tune: AsyncParsableCommand {
     static func render(_ name: String, _ r: MacOSTuning.Report) -> String {
         var lines: [String] = []
         if !r.applied.isEmpty {
-            lines.append("\(r.reverted ? "已恢复默认" : "已调优") \(name)：\(r.applied.map(\.rawValue).joined(separator: "、"))")
+            lines.append(r.reverted
+                ? String(l10n: "Reverted \(name) to defaults: \(r.applied.map(\.rawValue).joinedAsList())")
+                : String(l10n: "Tuned \(name): \(r.applied.map(\.rawValue).joinedAsList())"))
         }
         if !r.failed.isEmpty {
-            lines.append("未生效：\(r.failed.map(\.rawValue).joined(separator: "、"))")
+            lines.append(String(l10n: "Couldn't apply: \(r.failed.map(\.rawValue).joinedAsList())"))
             if r.failed.contains(.transparency), !r.reverted {
-                lines.append("transparency 需在客户机的 系统设置 > 辅助功能 > 显示 里手动打开减少透明度与减少动态效果")
+                lines.append(String(l10n: "To finish transparency, turn on Reduce Transparency and Reduce Motion yourself in the guest under System Settings > Accessibility > Display"))
             }
         }
-        return lines.isEmpty ? "没有要执行的项" : lines.joined(separator: "\n")
+        return lines.isEmpty ? String(l10n: "Nothing to do") : lines.joined(separator: "\n")
     }
 }

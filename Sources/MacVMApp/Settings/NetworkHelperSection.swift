@@ -18,19 +18,19 @@ struct NetworkHelperSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("网络辅助程序") {
+            LabeledContent("Network Helper") {
                 HStack(spacing: 8) {
                     Text(statusText).foregroundStyle(.secondary)
                     switch status {
                     case .notRegistered:
-                        Button("启用", action: enable)
+                        Button("Enable", action: enable)
                     case .notFound where Self.bundled:
-                        Button("启用", action: enable)
+                        Button("Enable", action: enable)
                     case .requiresApproval:
-                        Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
+                        Button("Open System Settings") { SMAppService.openSystemSettingsLoginItems() }
                     case .enabled:
-                        if running == false { Button("重新启用") { confirmingReenable = true } }
-                        Button("停用", action: disable)
+                        if running == false { Button("Re-enable") { confirmingReenable = true } }
+                        Button("Disable", action: disable)
                     default:
                         EmptyView()
                     }
@@ -40,17 +40,17 @@ struct NetworkHelperSection: View {
                 Text(error).font(.callout).foregroundStyle(.red)
             }
         } header: {
-            Text("桥接网络")
+            Text("Bridged Networking")
         } footer: {
-            Text("桥接让虚拟机直接接入主机所在的局域网，从局域网的路由器取得地址。收发网络帧要用到以管理员权限运行的网络辅助程序，启用后到「系统设置 › 通用 › 登录项与扩展」里允许 MacVM。")
+            Text("Bridged networking puts virtual machines directly on your Mac's local network, where they get addresses from the router. To send and receive network traffic, it needs a network helper that runs with administrator privileges. After you enable it, allow MacVM in System Settings › General › Login Items & Extensions.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .confirmationDialog("重新启用网络辅助程序？", isPresented: $confirmingReenable) {
-            Button("重新启用", action: reenable)
+        .confirmationDialog("Re-enable the Network Helper?", isPresented: $confirmingReenable) {
+            Button("Re-enable", action: reenable)
         } message: {
-            Text("辅助程序会先停用再启用，正在使用桥接网络的虚拟机会断网。")
+            Text("The helper will be turned off and back on. Virtual machines using bridged networking will lose their network connection.")
         }
         .task { await refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -60,11 +60,11 @@ struct NetworkHelperSection: View {
 
     private var statusText: String {
         switch status {
-        case .enabled: running == false ? "已启用，未响应" : "已启用"
-        case .requiresApproval: "等待在系统设置里允许"
-        case .notRegistered: "未启用"
-        case .notFound: Self.bundled ? "未启用" : "未打包运行，不可用"
-        @unknown default: "未知"
+        case .enabled: running == false ? String(l10n: "Enabled but not responding") : String(l10n: "Enabled")
+        case .requiresApproval: String(l10n: "Waiting for approval in System Settings")
+        case .notRegistered: String(l10n: "Not enabled")
+        case .notFound: Self.bundled ? String(l10n: "Not enabled") : String(l10n: "Unavailable outside the app bundle")
+        @unknown default: String(l10n: "Unknown")
         }
     }
 
@@ -76,7 +76,7 @@ struct NetworkHelperSection: View {
     private func enable() {
         error = nil
         do { try NetworkHelperRegistration.enable() } catch {
-            self.error = "启用失败：\(error.localizedDescription)"
+            self.error = String(l10n: "Couldn't enable: \(error.localizedDescription)")
         }
         Task { await refresh() }
         if Self.service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
@@ -86,7 +86,7 @@ struct NetworkHelperSection: View {
         error = nil
         Task {
             do { try await NetworkHelperRegistration.reregister() } catch {
-                self.error = "重新启用失败：\(error.localizedDescription)"
+                self.error = String(l10n: "Couldn't re-enable: \(error.localizedDescription)")
             }
             await refresh()
             if Self.service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
@@ -97,7 +97,7 @@ struct NetworkHelperSection: View {
         error = nil
         Task {
             do { try await NetworkHelperRegistration.disable() } catch {
-                self.error = "停用失败：\(error.localizedDescription)"
+                self.error = String(l10n: "Couldn't disable: \(error.localizedDescription)")
             }
             await refresh()
         }

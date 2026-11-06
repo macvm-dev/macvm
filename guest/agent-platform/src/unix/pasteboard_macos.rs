@@ -43,13 +43,13 @@ impl Drop for Pool {
 }
 
 fn class(name: &str) -> Id {
-    let name = CString::new(name).expect("类名不含 NUL");
+    let name = CString::new(name).expect("class name contains no NUL");
     // SAFETY: 按名字查类，AppKit 与 Foundation 已链接。
     unsafe { objc_getClass(name.as_ptr()) }
 }
 
 fn sel(name: &str) -> Sel {
-    let name = CString::new(name).expect("选择子不含 NUL");
+    let name = CString::new(name).expect("selector contains no NUL");
     // SAFETY: 注册或取回选择子。
     unsafe { sel_registerName(name.as_ptr()) }
 }
@@ -127,7 +127,7 @@ pub fn clipboard_set_files(paths: &[PathBuf]) -> io::Result<()> {
     }
     let pasteboard = msg!(Id; class("NSPasteboard"), "generalPasteboard");
     msg!(isize; pasteboard, "clearContents");
-    if msg!(bool; pasteboard, "writeObjects:", urls => Id) { Ok(()) } else { Err(io::Error::other("写入剪贴板失败")) }
+    if msg!(bool; pasteboard, "writeObjects:", urls => Id) { Ok(()) } else { Err(io::Error::other("Couldn't write to the clipboard")) }
 }
 
 /// 拖放剪贴板里的文件与它的变更计数。拖放结束后内容仍留着，是否在拖动由宿主比较前后两次的计数判断。
@@ -142,7 +142,7 @@ pub fn drag_files() -> io::Result<(Vec<PathBuf>, Option<i64>)> {
 
 /// 当前用户的桌面目录。
 pub(crate) fn desktop() -> io::Result<PathBuf> {
-    let home = std::env::var_os("HOME").ok_or_else(|| io::Error::other("不知道用户目录"))?;
+    let home = std::env::var_os("HOME").ok_or_else(|| io::Error::other("Couldn't determine the home directory"))?;
     let desktop = Path::new(&home).join("Desktop");
     Ok(if desktop.is_dir() { desktop } else { home.into() })
 }

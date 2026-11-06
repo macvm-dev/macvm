@@ -36,7 +36,7 @@ final class Bridge: @unchecked Sendable {
     /// 建桥接并返回交给引擎的那端 socket，调用方负责关闭它。
     static func start(interface name: String, mac: [UInt8], onAddress: @escaping @Sendable (String) -> Void) throws(Failure) -> (Bridge, Int32) {
         var fds: [Int32] = [-1, -1]
-        guard socketpair(AF_UNIX, SOCK_DGRAM, 0, &fds) == 0 else { throw Failure(message: "socketpair：\(String(cString: strerror(errno)))") }
+        guard socketpair(AF_UNIX, SOCK_DGRAM, 0, &fds) == 0 else { throw Failure(message: "socketpair: \(String(cString: strerror(errno)))") }
         for fd in fds {
             var send = Int32(sendBuffer), receive = Int32(receiveBuffer)
             setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &send, socklen_t(MemoryLayout<Int32>.size))
@@ -60,13 +60,13 @@ final class Bridge: @unchecked Sendable {
         }
         guard let iface else {
             close(fds[0]); close(fds[1])
-            throw Failure(message: "vmnet 桥接 \(name) 失败")
+            throw Failure(message: "vmnet bridge on \(name) failed")
         }
         guard done.wait(timeout: .now() + 10) == .success, started.status == .VMNET_SUCCESS else {
             // 超时后接口仍可能建起来，不停掉就一直占着。
             vmnet_stop_interface(iface, queue) { _ in }
             close(fds[0]); close(fds[1])
-            throw Failure(message: "vmnet 桥接 \(name) 失败（\(started.status.map { "\($0.rawValue)" } ?? "超时")）")
+            throw Failure(message: "vmnet bridge on \(name) failed (\(started.status.map { "\($0.rawValue)" } ?? "timeout"))")
         }
         let bridge = Bridge(interface: iface, socket: fds[0], queue: queue, mac: mac,
                             packetSize: max(started.maxPacketSize, 1514), onAddress: onAddress)

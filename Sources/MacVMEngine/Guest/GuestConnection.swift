@@ -17,7 +17,7 @@ public enum GuestConnection {
 
     public static func connect(to bundle: VMBundle, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
         guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
-        guard let ip = try await VMStatus.waitForIPAddress(bundle, timeout: timeout, interval: 0.5) else { throw MacVMError.timeout("未找到 \(bundle.name) 的 IP 地址") }
+        guard let ip = try await VMStatus.waitForIPAddress(bundle, timeout: timeout, interval: 0.5) else { throw MacVMError.timeout(String(l10n: "Couldn't find \(bundle.name)'s IP address")) }
 
         var fd: Int32 = -1
         var target = ip
@@ -28,14 +28,14 @@ public enum GuestConnection {
             fd = tcpConnect(target, port, timeout: min(connectTimeout, max(deadline.timeIntervalSinceNow, 0.1)))
             return fd >= 0
         }
-        guard fd >= 0 else { throw MacVMError.timeout("连接 \(target):\(port) 超时") }
+        guard fd >= 0 else { throw MacVMError.timeout(String(l10n: "Timed out connecting to \(target):\(port)")) }
         return fd
     }
 
     /// 经网络直连客户机 `ip` 上的 `port`。连的是代理端口时先过 `AgentToken.authenticate`。
     static func direct(_ ip: String, port: UInt16, bundle: VMBundle, config: VMConfig) throws -> UnixSocket {
         let fd = tcpConnect(ip, port)
-        guard fd >= 0 else { throw MacVMError.posix("连接 \(ip):\(port)") }
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't connect to \(ip):\(port)")) }
         let socket = UnixSocket(fd: fd)
         if UInt32(port) == AgentProtocol.port {
             try AgentToken.authenticate(socket, bundle: bundle, bridged: config.networks.first?.mode == .bridged)

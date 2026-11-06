@@ -35,66 +35,66 @@ struct CreateSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Picker("系统", selection: $os) {
+                Picker("Operating System", selection: $os) {
                     ForEach(GuestOS.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .disabled(os == .windows && !WindowsSupport.isAvailable)
 
-                TextField("名称", text: $name, prompt: Text(defaultName))
+                TextField("Name", text: $name, prompt: Text(defaultName))
                 if nameTaken {
-                    Text("已有名为「\(finalName)」的虚拟机，换个名称。").font(.caption).foregroundStyle(.red)
+                    Text("A virtual machine named “\(finalName)” already exists. Choose a different name.").font(.caption).foregroundStyle(.red)
                 }
 
-                Section("来源") { sourcePicker }
+                Section("Source") { sourcePicker }
 
-                Section("资源") {
-                    NumberField(title: "CPU", unit: "核", value: $cpus, invalid: invalid("CPU"), range: ResourceRange.cpuCount)
-                    NumberField(title: "内存", unit: "GB", value: $memoryGB, invalid: invalid("内存"), range: ResourceRange.memoryGB)
-                    NumberField(title: "磁盘", unit: "GB（按实际写入占用）", value: $diskGB, invalid: invalid("磁盘"), range: diskRange, step: 16)
-                    if os == .linux, template == nil { Toggle("Rosetta（运行 x86_64 程序）", isOn: $rosetta) }
+                Section("Resources") {
+                    NumberField(title: "CPU", unit: cpus == 1 ? "core" : "cores", value: $cpus, invalid: invalid("cpu"), range: ResourceRange.cpuCount)
+                    NumberField(title: "Memory", unit: "GB", value: $memoryGB, invalid: invalid("memory"), range: ResourceRange.memoryGB)
+                    NumberField(title: "Disk", unit: "GB (uses space only as needed)", value: $diskGB, invalid: invalid("disk"), range: diskRange, step: 16)
+                    if os == .linux, template == nil { Toggle("Rosetta (run x86_64 programs)", isOn: $rosetta) }
                 }
                 if setsPassword {
                     Section {
-                        TextField("用户名", text: $user, prompt: Text(NSUserName()))
-                        LabeledContent("密码") {
+                        TextField("User Name", text: $user, prompt: Text(NSUserName()))
+                        LabeledContent("Password") {
                             HStack(spacing: 6) {
-                                let prompt = Text(source.isCloudImage ? "可选，留空则只能用 SSH 登录" : "可选，留空则随机生成")
+                                let prompt = Text(source.isCloudImage ? "Optional. Without one, you can only sign in over SSH" : "Optional. Leave empty to generate one")
                                 if revealsPassword {
-                                    TextField("密码", text: $password, prompt: prompt)
+                                    TextField("Password", text: $password, prompt: prompt)
                                 } else {
-                                    SecureField("密码", text: $password, prompt: prompt)
+                                    SecureField("Password", text: $password, prompt: prompt)
                                 }
                                 Button { revealsPassword.toggle() } label: {
                                     Image(systemName: revealsPassword ? "eye.slash" : "eye")
                                 }
                                 .buttonStyle(.borderless)
                                 .foregroundStyle(.secondary)
-                                .help(revealsPassword ? "隐藏密码" : "显示密码")
+                                .help(revealsPassword ? "Hide Password" : "Show Password")
                             }
                             .labelsHidden()
                         }
                     } header: {
-                        Text("账户")
+                        Text("Account")
                     } footer: {
                         let problem = accountProblem
-                        Text(problem ?? "密码保存在虚拟机包内的 guest-password，只有你能读。")
+                        Text(problem ?? String(l10n: "The password is saved to guest-password in the virtual machine bundle, which only you can read."))
                             .font(.caption).foregroundStyle(problem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
                     }
                 }
                 if os == .windows, template == nil {
-                    TextField("产品密钥", text: $productKey, prompt: Text("可选，装好后联网激活"))
+                    TextField("Product Key", text: $productKey, prompt: Text("Optional. You can also activate online after installation"))
                     Text(!hasQEMU
-                         ? "安装 Windows 需要 QEMU：在终端运行 brew install qemu。"
-                         : "自动下载时语言随系统首选语言。微软拒绝下载时（同一网络短时间内下载多次，或开着 VPN、代理时常见）可过几个小时再试，或改选本地 ISO，点「从微软下载…」在浏览器里下载（选好语言后点 Download），下载完成会自动选上。用 QEMU 无人值守部署（约 15 分钟，进度显示在打开的虚拟机窗口里），装好后可在虚拟机的「配置」里改用 VZ 引擎运行。")
+                         ? "Installing Windows requires QEMU. To install it, run brew install qemu in Terminal."
+                         : "Windows downloads in your preferred system language. If Microsoft blocks the download, which often happens after several downloads from the same network in a short time or over a VPN or proxy, try again in a few hours. You can also choose a local ISO and click Download from Microsoft… to download it in your browser (choose a language, then click Download); MacVM selects it when the download finishes. Windows then installs unattended with QEMU in about 15 minutes, with progress shown in the virtual machine window. Afterward, you can switch to the VZ engine in the virtual machine's settings.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
             HStack {
                 Spacer()
-                Button("取消", role: .cancel) { dismiss() }
-                Button("创建") { create() }
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Create") { create() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid)
             }
@@ -113,67 +113,67 @@ struct CreateSheet: View {
         switch os {
         case .linux:
             Picker("", selection: $source) {
-                ForEach(LinuxImage.catalog, id: \.id) { Text("\($0.title)（云镜像，免安装）").tag(Source.cloudImage($0.id)) }
-                ForEach(LinuxDesktop.allCases, id: \.self) { Text("\($0.title)（下载安装盘）").tag(Source.desktop($0.rawValue)) }
-                Text("安装 ISO…").tag(Source.iso)
+                ForEach(LinuxImage.catalog, id: \.id) { Text("\($0.title) (cloud image, no install needed)").tag(Source.cloudImage($0.id)) }
+                ForEach(LinuxDesktop.allCases, id: \.self) { Text("\($0.title) (download installer)").tag(Source.desktop($0.rawValue)) }
+                Text("Installer ISO…").tag(Source.iso)
                 templateOptions
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
             if let desktop {
                 if desktop.supportsUnattended {
-                    Picker("安装方式", selection: $manualInstall) {
-                        Text("自动安装").tag(false)
-                        Text("手动安装").tag(true)
+                    Picker("Installation", selection: $manualInstall) {
+                        Text("Automatic").tag(false)
+                        Text("Manual").tag(true)
                     }
                     .pickerStyle(.segmented)
                 }
                 Text(desktop.supportsUnattended && !manualInstall
-                     ? "离线无人值守安装，约 10 分钟；装好即带下方的账户、SSH 公钥与客户机代理，系统语言为英文，不含安装盘之后的更新。"
-                     : "开机后在虚拟机窗口里走一遍图形安装程序，账户、语言等在安装程序里设置。")
+                     ? "Installs offline and unattended in about 10 minutes, with the account below, your SSH public key, and the guest agent. The system language is English, and updates released after the installer aren't included."
+                     : "After the virtual machine starts, use the graphical installer in its window to set up the account, language, and other options.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         case .macOS:
             Picker("", selection: $source) {
-                Text("下载本机支持的最新版本").tag(Source.ipswLatest)
-                Text("本地 IPSW 文件…").tag(Source.ipswFile)
+                Text("Download the latest version supported by this Mac").tag(Source.ipswLatest)
+                Text("Local IPSW File…").tag(Source.ipswFile)
                 templateOptions
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
         case .windows:
             Picker("", selection: $source) {
-                Text("从微软下载 Windows 11 ARM64").tag(Source.windowsLatest)
-                Text("本地 ISO 文件…").tag(Source.iso)
+                Text("Download Windows 11 ARM64 from Microsoft").tag(Source.windowsLatest)
+                Text("Local ISO File…").tag(Source.iso)
                 templateOptions
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
         }
         if template != nil {
-            Text("复制模板的磁盘与设置，账户沿用模板里的；新虚拟机获得新的机器标识与 MAC。磁盘只能比模板的大。")
+            Text("Copies the template's disk, settings, and accounts. The new virtual machine gets a new machine identifier and MAC address. The disk can't be smaller than the template's.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         if needsFile {
             HStack {
-                Text(file?.lastPathComponent ?? (downloadRequestedAt != nil ? "下载完成后自动选上…" : "未选择文件"))
+                Text(file?.lastPathComponent ?? (downloadRequestedAt != nil ? String(l10n: "Selected automatically when the download finishes…") : String(l10n: "No file selected")))
                     .foregroundStyle(file == nil ? .secondary : .primary)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer()
                 if os == .windows {
-                    Button("从微软下载…") {
+                    Button("Download from Microsoft…") {
                         downloadRequestedAt = .now
                         openURL(WindowsInstaller.downloadPage)
                     }
                 }
-                Button("选择…") { choosingFile = true }
+                Button("Choose…") { choosingFile = true }
             }
             .task(id: downloadRequestedAt) { await watchDownloads() }
         }
     }
 
     @ViewBuilder private var templateOptions: some View {
-        ForEach(model.templates.filter { $0.os == os }, id: \.name) { Text("模板：\($0.name)").tag(Source.template($0.name)) }
+        ForEach(model.templates.filter { $0.os == os }, id: \.name) { Text("Template: \($0.name)").tag(Source.template($0.name)) }
     }
 
     /// 选中的模板。
@@ -219,7 +219,7 @@ struct CreateSheet: View {
     /// 用户名留空时用主机用户名，它也要合规；密码留空时按系统默认处理，不另做检查。
     private var accountProblem: String? {
         if user.isEmpty, (try? GuestAccount.validate(user: NSUserName())) == nil {
-            return "主机用户名 \(NSUserName()) 不能用作客户机登录用户，请填写用户名"
+            return String(l10n: "Your Mac user name, \(NSUserName()), can't be used in the guest. Enter a different user name")
         }
         do {
             if !user.isEmpty { try GuestAccount.validate(user: user) }

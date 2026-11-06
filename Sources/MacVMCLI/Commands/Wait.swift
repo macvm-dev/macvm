@@ -5,13 +5,13 @@ import MacVMModel
 
 struct Wait: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "等到虚拟机可用：装有代理时等代理响应，否则等 SSH 端口可连。",
-        discussion: "虚拟机未运行时自动在后台启动。"
+        abstract: String(l10n: "Wait until a VM is ready: its guest agent responds, or, without an agent, its SSH port accepts connections."),
+        discussion: String(l10n: "Starts the VM in the background if it isn't running.")
     )
 
     @OptionGroup var global: GlobalOptions
-    @Argument(help: "虚拟机名称。") var name: String
-    @Option(help: "最长等待秒数。") var timeout: Int = 120
+    @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+    @Option(help: ArgumentHelp(String(l10n: "Seconds to wait before giving up."))) var timeout: Int = 120
 
     func run() async throws {
         try await Output.run(json: global.json, human: { (_: VMSummary) in nil }) {
@@ -27,7 +27,7 @@ struct Wait: AsyncParsableCommand {
         }
         if config.guestAgent {
             let ready = try await VMStatus.poll(timeout: TimeInterval(timeout), interval: 0.2) { AgentClient.isReachable(bundle) }
-            guard ready else { throw MacVMError.timeout("\(bundle.name) 的客户机代理 \(timeout) 秒内未响应") }
+            guard ready else { throw MacVMError.timeout(String(l10n: "The guest agent on \(bundle.name) didn't respond within \(timeout) seconds")) }
         } else {
             close(try await Proxy.openWithRetry(bundle, config: config, port: 22, timeout: timeout))
         }

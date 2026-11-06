@@ -60,10 +60,10 @@ struct StatusMenu: View {
             }
             Spacer()
             if !isEmpty {
-                IconButton(systemImage: "plus", help: "新建虚拟机") { createMachine() }
+                IconButton(systemImage: "plus", help: "New Virtual Machine") { createMachine() }
             }
             MoreMenu {
-                Button("在 Finder 中显示虚拟机目录") {
+                Button("Show Virtual Machines Folder in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([model.library.root])
                 }
             }
@@ -75,14 +75,14 @@ struct StatusMenu: View {
 
     private var footer: some View {
         HStack(spacing: 2) {
-            FooterButton("打开 MacVM", systemImage: "macwindow") { showLibrary() }
-            FooterButton("设置…", systemImage: "gearshape") {
+            FooterButton("Open MacVM", systemImage: "macwindow") { showLibrary() }
+            FooterButton("Settings…", systemImage: "gearshape") {
                 NSApp.activate()
                 openSettings()
             }
             .keyboardShortcut(",")
             Spacer()
-            FooterButton("退出", systemImage: "power") { NSApp.terminate(nil) }
+            FooterButton("Quit", systemImage: "power") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         }
         .padding(.horizontal, 6)
@@ -100,10 +100,10 @@ struct StatusMenu: View {
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.tertiary)
             VStack(spacing: 4) {
-                Text("还没有虚拟机").font(.system(size: 14, weight: .semibold))
-                Text("新建一台 macOS、Linux 或 Windows 虚拟机").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("No Virtual Machines").font(.system(size: 14, weight: .semibold))
+                Text("Create a macOS, Linux, or Windows virtual machine").font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            FilledButton("新建虚拟机…", systemImage: "plus") { createMachine() }
+            FilledButton("New Virtual Machine…", systemImage: "plus") { createMachine() }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
@@ -115,8 +115,8 @@ struct StatusMenu: View {
     private var summary: String {
         let total = model.machines.count
         let creating = model.pendingCreations.count + model.interruptedCreations.count
-        guard total > 0 else { return creating > 0 ? "正在创建 \(creating) 台" : "还没有虚拟机" }
-        return runningCount == 0 ? "\(total) 台虚拟机 · 都没有运行" : "\(runningCount) 台运行中 · 共 \(total) 台"
+        guard total > 0 else { return creating > 0 ? String(l10n: "\(creating) being created") : String(l10n: "No virtual machines yet") }
+        return runningCount == 0 ? String(l10n: "\(total) virtual machines · none running") : String(l10n: "\(runningCount) running · \(total) total")
     }
 
     // MARK: 列表
@@ -131,16 +131,16 @@ struct StatusMenu: View {
         VStack(alignment: .leading, spacing: 0) {
             let creating = model.pendingCreations.count + model.interruptedCreations.count
             if creating > 0 {
-                SectionTitle("正在创建", count: creating)
+                SectionTitle("Creating", count: creating)
                 ForEach(model.pendingCreations, id: \.self) { pendingRow($0) }
                 ForEach(model.interruptedCreations, id: \.name) { interruptedRow($0) }
             }
             if !running.isEmpty {
-                SectionTitle("运行中", count: running.count)
+                SectionTitle("Running", count: running.count)
                 ForEach(running, id: \.name) { machineRow($0) }
             }
             if !notRunning.isEmpty {
-                SectionTitle("未运行", count: notRunning.count)
+                SectionTitle("Not Running", count: notRunning.count)
                 ForEach(notRunning, id: \.name) { machineRow($0) }
             }
         }
@@ -158,7 +158,7 @@ struct StatusMenu: View {
             subtitle: pending ?? subtitle(vm),
             chips: pending == nil ? chips(vm, config: config) : [],
             activity: pending == nil ? activity : nil,
-            help: canDisplay ? "显示画面" : "在 MacVM 中查看",
+            help: canDisplay ? "Show Display" : "Show in MacVM",
             open: { canDisplay ? show(vm.name) : reveal(vm.name) }
         ) {
             OSTile(os: vm.os, state: vm.state)
@@ -170,15 +170,15 @@ struct StatusMenu: View {
                 switch vm.state {
                 case .running:
                     if model.canSuspend(vm.name) {
-                        IconButton(systemImage: "pause.fill", help: "挂起") {
-                            perform(vm.name, "正在挂起…") { await model.suspend(vm.name) }
+                        IconButton(systemImage: "pause.fill", help: "Suspend") {
+                            perform(vm.name, String(l10n: "Suspending…")) { await model.suspend(vm.name) }
                         }
                     }
                     if canDisplay {
-                        IconButton(systemImage: "macwindow", help: "显示画面") { show(vm.name) }
+                        IconButton(systemImage: "macwindow", help: "Show Display") { show(vm.name) }
                     }
                 case .stopped, .suspended:
-                    IconButton(systemImage: "play.fill", help: vm.state == .suspended ? "继续运行" : "启动") { show(vm.name) }
+                    IconButton(systemImage: "play.fill", help: vm.state == .suspended ? "Resume" : "Start") { show(vm.name) }
                         .disabled(activity != nil)
                 }
             }
@@ -190,24 +190,24 @@ struct StatusMenu: View {
     @ViewBuilder private func machineMenu(_ vm: VMSummary, config: VMConfig?) -> some View {
         if vm.state == .running {
             if let ip = vm.ipAddress {
-                Button("拷贝 IP 地址") { copy(ip) }
+                Button("Copy IP Address") { copy(ip) }
             }
             if config?.guestUser != nil {
-                Button("拷贝 SSH 命令") { copy(model.sshCommand(vm.name)) }
+                Button("Copy SSH Command") { copy(model.sshCommand(vm.name)) }
             }
             if vm.ipAddress != nil || config?.guestUser != nil { Divider() }
-            Button("关机") { Task { await model.stop(vm.name) } }
-            Button("强制断电", role: .destructive) {
-                perform(vm.name, "正在断电…") { await model.stop(vm.name, force: true) }
+            Button("Shut Down") { Task { await model.stop(vm.name) } }
+            Button("Force Power Off", role: .destructive) {
+                perform(vm.name, String(l10n: "Powering off…")) { await model.stop(vm.name, force: true) }
             }
             Divider()
         }
         if model.isCreating(vm.name) {
-            Button("取消创建") { model.cancelCreation(vm.name) }
+            Button("Cancel Creation") { model.cancelCreation(vm.name) }
             Divider()
         }
-        Button("在 MacVM 中查看") { reveal(vm.name) }
-        Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: vm.path)]) }
+        Button("Show in MacVM") { reveal(vm.name) }
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: vm.path)]) }
     }
 
     /// 没运行时显示硬件与系统；运行中没有可拷贝的连接方式时只显示状态。
@@ -216,7 +216,7 @@ struct StatusMenu: View {
         case .running:
             return vm.state.label
         case .stopped, .suspended:
-            var parts = ["\(vm.cpuCount) 核", DisplaySize.format(vm.memorySize), vm.os.label]
+            var parts = [String(l10n: "\(vm.cpuCount) cores"), DisplaySize.format(vm.memorySize), vm.os.label]
             if vm.state == .suspended { parts.insert(vm.state.label, at: 0) }
             return parts.joined(separator: " · ")
         }
@@ -234,15 +234,15 @@ struct StatusMenu: View {
     private func pendingRow(_ name: String) -> some View {
         let activity = model.activity[name]
         return PanelRow(title: name, subtitle: "", activity: activity,
-                        help: "在 MacVM 中查看", open: { reveal(name) }) {
+                        help: "Show in MacVM", open: { reveal(name) }) {
             ProgressTile(os: model.creatingOS(name), activity: activity)
         } trailing: {
-            IconButton(systemImage: "xmark", help: "取消创建") { model.cancelCreation(name) }
+            IconButton(systemImage: "xmark", help: "Cancel Creation") { model.cancelCreation(name) }
         }
     }
 
     private func interruptedRow(_ request: CreationRequest) -> some View {
-        PanelRow(title: request.name, subtitle: "创建被中断，可以继续", activity: nil, help: nil, open: nil) {
+        PanelRow(title: request.name, subtitle: String(l10n: "Creation was interrupted; you can resume it"), activity: nil, help: nil, open: nil) {
             Tile {
                 Image(systemName: request.os.tileSymbol)
                     .font(.system(size: request.os.tileSymbolSize, weight: .medium))
@@ -250,12 +250,12 @@ struct StatusMenu: View {
             }
             .statusBadge(systemImage: "exclamationmark", color: .orange)
         } trailing: {
-            IconButton(systemImage: "arrow.clockwise", help: "继续创建") {
+            IconButton(systemImage: "arrow.clockwise", help: "Resume Creation") {
                 NSApp.activate()
                 model.resumeCreation(request.name) { openWindow(id: "machine", value: $0) }
             }
             MoreMenu {
-                Button("放弃", role: .destructive) { model.discardCreation(request.name) }
+                Button("Discard", role: .destructive) { model.discardCreation(request.name) }
             }
         }
     }
@@ -306,7 +306,7 @@ private struct PanelRow<Leading: View, Trailing: View>: View {
     let subtitle: String
     var chips: [String] = []
     let activity: AppModel.Activity?
-    let help: String?
+    let help: LocalizedStringKey?
     let open: (() -> Void)?
     @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
@@ -440,7 +440,7 @@ private struct CopyChip: View {
                 Text(text)
                     .truncationMode(.middle)
                     .opacity(copied ? 0 : 1)
-                    .overlay { if copied { Text("已拷贝").fixedSize() } }
+                    .overlay { if copied { Text("Copied").fixedSize() } }
             }
             .font(.system(size: 11).monospacedDigit())
             .lineLimit(1)
@@ -452,15 +452,15 @@ private struct CopyChip: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .onHover { hovering = $0 }
-        .help("拷贝「\(text)」")
+        .help("Copy “\(text)”")
     }
 }
 
 private struct SectionTitle: View {
-    let text: String
+    let text: LocalizedStringKey
     let count: Int
 
-    init(_ text: String, count: Int) {
+    init(_ text: LocalizedStringKey, count: Int) {
         self.text = text
         self.count = count
     }
@@ -487,7 +487,7 @@ private struct ErrorBanner: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             Text(message).font(.callout).lineLimit(4).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            IconButton(systemImage: "xmark", help: "关闭") { dismiss() }
+            IconButton(systemImage: "xmark", help: "Close") { dismiss() }
                 .padding(.top, -5)
         }
         .padding(.leading, 10)
@@ -601,7 +601,7 @@ private struct Tile<Content: View>: View {
 /// 只有图标的按钮，悬停时加底色。
 private struct IconButton: View {
     let systemImage: String
-    let help: String
+    let help: LocalizedStringKey
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
@@ -642,19 +642,19 @@ private struct MoreMenu<Content: View>: View {
         .fixedSize()
         .background(.primary.opacity(hovering ? 0.1 : 0), in: .rect(cornerRadius: 7, style: .continuous))
         .onHover { hovering = $0 }
-        .help("更多")
+        .help("More")
     }
 }
 
 /// 带浅灰底的文字按钮，悬停时底色加深；字号与圆角跟面板里其他按钮一致。
 private struct FilledButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     let action: () -> Void
 
     @State private var hovering = false
 
-    init(_ title: String, systemImage: String, action: @escaping () -> Void) {
+    init(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
         self.action = action
@@ -682,13 +682,13 @@ private struct FilledButton: View {
 
 /// 底栏里带图标、像菜单项的文字按钮。
 private struct FooterButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     let action: () -> Void
 
     @State private var hovering = false
 
-    init(_ title: String, systemImage: String, action: @escaping () -> Void) {
+    init(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
         self.action = action

@@ -6,7 +6,7 @@ import MacVMModel
 struct MacVM: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "macvm",
-        abstract: "在 Apple Silicon 上运行 macOS、Linux、Windows 虚拟机。",
+        abstract: String(l10n: "Run macOS, Linux, and Windows virtual machines on Apple Silicon."),
         discussion: discussion,
         version: appVersion,
         subcommands: [
@@ -29,21 +29,21 @@ private let discussion: String = {
     let rows = MacVMError.catalog.map { e in
         "  \(String(e.exitCode).padding(toLength: 4, withPad: " ", startingAt: 0))\(e.code.padding(toLength: 20, withPad: " ", startingAt: 0))\(e.summary)"
     }
-    return """
-    所有命令都支持 --json：标准输出是一行 {"schemaVersion":1,"result":…}，失败时是 {"schemaVersion":1,"error":{"code":…,"message":…}}。
+    return String(l10n: """
+    Every command accepts --json and then prints a single line to standard output: {"schemaVersion":1,"result":…} on success, or {"schemaVersion":1,"error":{"code":…,"message":…}} on failure.
 
-    退出码：
-      0   成功
-      1   其他错误
+    Exit codes:
+      0   Success
+      1   Other error
     \(rows.joined(separator: "\n"))
-      64  命令行用法错误
+      64  Command-line usage error
 
-    虚拟机目录、下载目录与模板目录可在 App 设置里更改（存在 ~/Library/Application Support/MacVM/settings.json，CLI 同样遵循）；
-    环境变量 MACVM_HOME 优先于设置里的虚拟机目录。
-    """
+    You can change the VM, downloads, and templates folders in the app's settings. The CLI reads the same file (~/Library/Application Support/MacVM/settings.json).
+    MACVM_HOME, if set, overrides the VM folder from settings.
+    """)
 }()
 
 struct GlobalOptions: ParsableArguments {
-    @Flag(help: "以 JSON 输出结果。")
+    @Flag(help: ArgumentHelp(String(l10n: "Output the result as JSON.")))
     var json = false
 }

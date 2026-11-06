@@ -69,7 +69,7 @@ func describeEngineError(_ error: any Error) -> String {
     var parts = ["\(ns.domain)#\(ns.code) \(ns.localizedDescription)"]
     if let reason = ns.localizedFailureReason { parts.append(reason) }
     if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError { parts.append(describeEngineError(underlying)) }
-    return parts.joined(separator: "；")
+    return parts.joined(separator: String(l10n: "; "))
 }
 
 /// 到客户机内某个端口的双向字节通道；用完调用 `close`。

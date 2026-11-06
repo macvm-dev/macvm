@@ -19,21 +19,21 @@ enum ISO9660 {
         func read(_ offset: UInt64, _ count: Int) throws -> [UInt8] {
             try handle.seek(toOffset: offset)
             let data = try handle.read(upToCount: count) ?? Data()
-            guard data.count == count else { throw MacVMError.io("\(image.lastPathComponent) 不是完整的 ISO 9660 镜像") }
+            guard data.count == count else { throw MacVMError.io(String(l10n: "\(image.lastPathComponent) isn't a complete ISO 9660 image")) }
             return [UInt8](data)
         }
 
         let pvd = try read(16 * UInt64(sectorSize), sectorSize)
         guard pvd[0] == 1, Array(pvd[1...5]) == Array("CD001".utf8) else {
-            throw MacVMError.io("\(image.lastPathComponent) 不是 ISO 9660 镜像")
+            throw MacVMError.io(String(l10n: "\(image.lastPathComponent) isn't an ISO 9660 image"))
         }
         var current = record(in: pvd, at: 156)
         for component in path.split(separator: "/") {
-            guard let dir = current, dir.isDirectory else { throw MacVMError.io("\(image.lastPathComponent) 里没有 \(path)") }
+            guard let dir = current, dir.isDirectory else { throw MacVMError.io(String(l10n: "\(image.lastPathComponent) doesn't contain \(path)")) }
             let bytes = try read(dir.extent.offset, dir.extent.length)
             current = children(of: bytes).first { $0.name == component.uppercased() }
         }
-        guard let file = current, !file.isDirectory else { throw MacVMError.io("\(image.lastPathComponent) 里没有 \(path)") }
+        guard let file = current, !file.isDirectory else { throw MacVMError.io(String(l10n: "\(image.lastPathComponent) doesn't contain \(path)")) }
         return file.extent
     }
 

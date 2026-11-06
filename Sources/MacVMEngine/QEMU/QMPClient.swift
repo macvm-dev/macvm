@@ -22,16 +22,16 @@ final class QMPClient: @unchecked Sendable {
                 // QEMU 先监听，主循环起来后才接受连接、发问候语，初始化卡住时读会一直阻塞。
                 socket.setTimeout(seconds: max(1, Int(deadline.timeIntervalSinceNow.rounded(.up))))
                 guard (try? socket.readLine()) != nil else {
-                    guard isAlive() else { throw MacVMError.engine("QEMU 启动后立即退出") }
-                    throw MacVMError.timeout("连接 QEMU 控制接口超时")
+                    guard isAlive() else { throw MacVMError.engine(String(l10n: "QEMU quit right after starting")) }
+                    throw MacVMError.timeout(String(l10n: "Timed out connecting to the QEMU control interface"))
                 }
                 socket.setTimeout(seconds: 0)
                 Thread.detachNewThread { client.readLoop() }
                 _ = try await client.execute("qmp_capabilities")
                 return client
             }
-            guard isAlive() else { throw MacVMError.engine("QEMU 启动后立即退出") }
-            guard Date() < deadline else { throw MacVMError.timeout("连接 QEMU 控制接口超时") }
+            guard isAlive() else { throw MacVMError.engine(String(l10n: "QEMU quit right after starting")) }
+            guard Date() < deadline else { throw MacVMError.timeout(String(l10n: "Timed out connecting to the QEMU control interface")) }
             try await Task.sleep(for: .milliseconds(100))
         }
     }
@@ -45,7 +45,7 @@ final class QMPClient: @unchecked Sendable {
             lock.lock()
             if closed {
                 lock.unlock()
-                c.resume(throwing: MacVMError.notRunning("QEMU 已退出"))
+                c.resume(throwing: MacVMError.notRunning(String(l10n: "QEMU has exited")))
                 return
             }
             pending.append(c)
@@ -71,7 +71,7 @@ final class QMPClient: @unchecked Sendable {
             let c = pending.isEmpty ? nil : pending.removeFirst()
             lock.unlock()
             if let error = object["error"] as? JSON {
-                c?.resume(throwing: MacVMError.engine("QEMU：\(error["desc"] as? String ?? "未知错误")"))
+                c?.resume(throwing: MacVMError.engine(String(l10n: "QEMU: \(error["desc"] as? String ?? String(l10n: "Unknown error"))")))
             } else {
                 c?.resume(returning: Unchecked(value: object["return"] as? JSON ?? [:]))
             }
@@ -81,6 +81,6 @@ final class QMPClient: @unchecked Sendable {
         let waiting = pending
         pending.removeAll()
         lock.unlock()
-        waiting.forEach { $0.resume(throwing: MacVMError.notRunning("QEMU 已退出")) }
+        waiting.forEach { $0.resume(throwing: MacVMError.notRunning(String(l10n: "QEMU has exited"))) }
     }
 }

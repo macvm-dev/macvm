@@ -68,12 +68,12 @@ enum CreationStore {
     private static func writePrivately(_ data: Data, to url: URL) throws {
         let temp = url.deletingLastPathComponent().appending(path: ".\(url.lastPathComponent).\(UUID().uuidString)")
         let fd = open(temp.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw MacVMError.posix("创建 \(temp.path)") }
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't create \(temp.path)")) }
         do {
             let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             try handle.write(contentsOf: data)
             try handle.close()
-            guard rename(temp.path, url.path) == 0 else { throw MacVMError.posix("写入 \(url.path)") }
+            guard rename(temp.path, url.path) == 0 else { throw MacVMError.posix(String(l10n: "Couldn't write \(url.path)")) }
         } catch {
             unlink(temp.path)
             throw error

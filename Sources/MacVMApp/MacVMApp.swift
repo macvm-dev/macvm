@@ -22,12 +22,12 @@ struct MacVMApp: App {
         .commands {
             SidebarCommands()
             CommandGroup(replacing: .newItem) {
-                Button("新建虚拟机…") { model.showingCreate = true }
+                Button("New Virtual Machine…") { model.showingCreate = true }
                     .keyboardShortcut("n")
             }
         }
 
-        WindowGroup("虚拟机", id: "machine", for: String.self) { $name in
+        WindowGroup("Virtual Machine", id: "machine", for: String.self) { $name in
             if let name {
                 MachineWindow(name: name)
                     .environment(model)

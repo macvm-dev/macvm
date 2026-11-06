@@ -27,14 +27,14 @@ fn main() {
     let listener = match platform::Listener::bind(config.port) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("macvm-agent: 监听端口 {} 失败：{e}", config.port);
+            eprintln!("macvm-agent: couldn't listen on port {}: {e}", config.port);
             std::process::exit(1);
         }
     };
     #[cfg(target_os = "linux")]
     std::thread::spawn(|| {
         if let Err(e) = platform::prepare_ui_input() {
-            eprintln!("macvm-agent: 创建虚拟输入设备失败：{e}");
+            eprintln!("macvm-agent: couldn't create virtual input devices: {e}");
         }
     });
     #[cfg(windows)]
@@ -45,7 +45,7 @@ fn main() {
         // 换显卡驱动要十几秒，不挡住监听；光标开关已按换之前的驱动设好，换上的驱动下次开机读到。
         std::thread::spawn(|| {
             if let Err(e) = platform::install_gpu_driver() {
-                eprintln!("macvm-agent: 安装 3D 显卡驱动失败：{e}");
+                eprintln!("macvm-agent: couldn't install the 3D graphics driver: {e}");
             }
         });
     }
@@ -61,7 +61,7 @@ fn main() {
                 });
             }
             Err(e) => {
-                eprintln!("macvm-agent: accept 失败：{e}");
+                eprintln!("macvm-agent: couldn't accept a connection: {e}");
                 // fd 耗尽一类错误下连接仍留在队列里，监听立刻又就绪，不等一下就会空转刷屏。
                 thread::sleep(ACCEPT_RETRY_DELAY);
             }
@@ -84,7 +84,7 @@ fn parse_args() -> Config {
             "--ignore-firmware-framebuffer" => match platform::ignore_firmware_framebuffer() {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
-                    eprintln!("macvm-agent: 写显卡 udev 规则失败：{e}");
+                    eprintln!("macvm-agent: couldn't write the GPU udev rule: {e}");
                     std::process::exit(1);
                 }
             },
@@ -105,7 +105,7 @@ fn parse_args() -> Config {
                 std::process::exit(0);
             }
             other => {
-                eprintln!("macvm-agent: 未知参数 {other}");
+                eprintln!("macvm-agent: unknown argument {other}");
                 std::process::exit(2);
             }
         }
@@ -119,14 +119,14 @@ const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 /// 以共享令牌 `token` 发质询、验应答，返回是否通过。
 fn authenticate(conn: &mut Conn, token: &str) -> io::Result<bool> {
     let mut nonce = [0u8; proto::auth::CHALLENGE_BYTES];
-    getrandom::fill(&mut nonce).map_err(|e| io::Error::other(format!("取随机数失败：{e}")))?;
+    getrandom::fill(&mut nonce).map_err(|e| io::Error::other(format!("Couldn't get random bytes: {e}")))?;
     let challenge = proto::auth::hex(&nonce);
     let deadline = Instant::now() + AUTH_TIMEOUT;
     proto::write_json_line(conn, &proto::auth::Challenge { challenge: challenge.clone() })?;
     let line = read_answer_line(conn, deadline)?;
     let ok = serde_json::from_slice::<proto::auth::Answer>(&line).is_ok_and(|a| proto::auth::verify(token, &challenge, &a.auth));
     if !ok {
-        proto::write_json_line(conn, &Response::error("认证失败"))?;
+        proto::write_json_line(conn, &Response::error("Authentication failed"))?;
         return Ok(false);
     }
     platform::set_read_timeout(conn, None)?;
@@ -143,19 +143,19 @@ fn read_answer_line(conn: &mut Conn, deadline: Instant) -> io::Result<Vec<u8>> {
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "认证应答超时"));
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "Timed out waiting for the authentication response"));
         }
         // 零超时在 SO_RCVTIMEO 里表示不限时，Windows 上则直接报错。
         platform::set_read_timeout(conn, Some(left.max(Duration::from_millis(1))))?;
         if conn.read(&mut byte)? == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "连接在认证应答结束前关闭"));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Connection closed before the authentication response ended"));
         }
         if byte[0] == b'\n' {
             return Ok(line);
         }
         line.push(byte[0]);
         if line.len() > MAX_ANSWER {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "认证应答过长"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Authentication response is too long"));
         }
     }
 }
@@ -195,7 +195,7 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
     let line = proto::read_line(&mut conn)?;
     let request: Request = match serde_json::from_slice(&line) {
         Ok(r) => r,
-        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("无法解析请求：{e}"))),
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("Couldn't parse the request: {e}"))),
     };
     let reply = |conn: &mut Conn, result: io::Result<Response>| {
         let resp = result.unwrap_or_else(|e| Response::error(e.to_string()));
@@ -223,7 +223,7 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
                 proto::write_json_line(&mut conn, &Response::ok())?;
                 forward(conn, tcp)
             }
-            Err(e) => reply(&mut conn, Err(io::Error::new(e.kind(), format!("连接 127.0.0.1:{port} 失败：{e}")))),
+            Err(e) => reply(&mut conn, Err(io::Error::new(e.kind(), format!("Couldn't connect to 127.0.0.1:{port}: {e}")))),
         },
         Request::Exec(req) => run_exec(conn, req, config),
         #[cfg(windows)]
@@ -249,14 +249,14 @@ fn clipboard_get() -> io::Result<Response> {
 /// 先确定目标目录并回 ok，再收文件流，收完回一行带各顶层项路径的响应。
 fn put_files(mut conn: Conn, to: proto::PutTarget, path: Option<String>, point: Option<(f64, f64)>, config: &Config) -> io::Result<()> {
     let dir = match to {
-        proto::PutTarget::Dir => path.map(std::path::PathBuf::from).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "缺少 path")),
+        proto::PutTarget::Dir => path.map(std::path::PathBuf::from).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No path given")),
         proto::PutTarget::Drop => platform::drop_dir(point, config.default_user.as_deref()),
-        proto::PutTarget::Clipboard if !platform::CLIPBOARD_FILES => Err(io::Error::new(io::ErrorKind::Unsupported, "这个客户机的剪贴板不经代理同步")),
+        proto::PutTarget::Clipboard if !platform::CLIPBOARD_FILES => Err(io::Error::new(io::ErrorKind::Unsupported, "This guest's clipboard isn't synced through the agent")),
         proto::PutTarget::Clipboard => files::clipboard_staging(),
     };
     let dir = match dir {
         Ok(dir) if dir.is_dir() => dir,
-        Ok(dir) => return proto::write_json_line(&mut conn, &Response::error(format!("{} 不是目录", dir.display()))),
+        Ok(dir) => return proto::write_json_line(&mut conn, &Response::error(format!("{} isn't a directory", dir.display()))),
         Err(e) => return proto::write_json_line(&mut conn, &Response::error(e.to_string())),
     };
     proto::write_json_line(&mut conn, &Response::ok())?;
@@ -306,7 +306,7 @@ fn serve_ui(conn: &mut impl Write, request: Request) -> io::Result<()> {
             reply_ui(conn, result)
         }
         Request::UiScreenshot => reply_body(conn, platform::ui_screenshot()),
-        _ => proto::write_json_line(conn, &Response::error("只受理 UI 请求")),
+        _ => proto::write_json_line(conn, &Response::error("The desktop helper only accepts UI requests")),
     }
 }
 
@@ -326,17 +326,17 @@ fn forward_to_desktop_helper(conn: &mut Conn, request: &Request) -> io::Result<(
 #[cfg(windows)]
 fn serve_desktop_helper(supervisor: Option<u32>) -> i32 {
     let Some(supervisor) = supervisor else {
-        eprintln!("macvm-agent: {} 需要守护进程的 pid", platform::DESKTOP_HELPER_ARG);
+        eprintln!("macvm-agent: {} needs the supervisor's process ID", platform::DESKTOP_HELPER_ARG);
         return 2;
     };
     if let Err(e) = platform::become_desktop_helper(supervisor) {
-        eprintln!("macvm-agent: 找不到守护进程 {supervisor}：{e}");
+        eprintln!("macvm-agent: couldn't find supervisor process {supervisor}: {e}");
         return 1;
     }
     let mut listener = match platform::DesktopHelperListener::bind() {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("macvm-agent: 建立桌面助手管道失败：{e}");
+            eprintln!("macvm-agent: couldn't create the desktop helper pipe: {e}");
             return 1;
         }
     };
@@ -350,7 +350,7 @@ fn serve_desktop_helper(supervisor: Option<u32>) -> i32 {
                 });
             }
             Err(e) => {
-                eprintln!("macvm-agent: 桌面助手 accept 失败：{e}");
+                eprintln!("macvm-agent: the desktop helper couldn't accept a connection: {e}");
                 thread::sleep(ACCEPT_RETRY_DELAY);
             }
         }
@@ -362,11 +362,11 @@ fn serve_desktop_request(mut conn: platform::HelperConn) -> io::Result<()> {
     let line = proto::read_line(&mut conn)?;
     let request: Request = match serde_json::from_slice(&line) {
         Ok(r) => r,
-        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("无法解析请求：{e}"))),
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("Couldn't parse the request: {e}"))),
     };
     let _desktop = match platform::enter_input_desktop() {
         Ok(d) => d,
-        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("切换到输入桌面失败：{e}"))),
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("Couldn't switch to the input desktop: {e}"))),
     };
     serve_ui(&mut conn, request)
 }
@@ -492,7 +492,7 @@ fn receive_gpu_driver(mut conn: Conn, sha256: &str, size: u64) -> io::Result<()>
         return proto::write_json_line(&mut conn, &reply("current"));
     }
     if size > MAX_GPU_DRIVER_PACKAGE {
-        return proto::write_json_line(&mut conn, &Response::error(format!("驱动包过大：{size} 字节")));
+        return proto::write_json_line(&mut conn, &Response::error(format!("The driver package is too large ({size} bytes)")));
     }
     proto::write_json_line(&mut conn, &reply("send"))?;
     let mut zip = vec![0u8; size as usize];
@@ -520,7 +520,7 @@ fn forward(conn: Conn, tcp: TcpStream) -> io::Result<()> {
 
 fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()> {
     if req.argv.is_empty() {
-        return proto::write_json_line(&mut conn, &Response::error("argv 为空"));
+        return proto::write_json_line(&mut conn, &Response::error("argv is empty"));
     }
     let env: Vec<(String, String)> = req.env.into_iter().collect();
     let options = ExecOptions {
@@ -533,7 +533,7 @@ fn run_exec(mut conn: Conn, req: ExecRequest, config: &Config) -> io::Result<()>
     };
     let mut spawned = match platform::spawn(&options) {
         Ok(s) => s,
-        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("无法执行 {}：{e}", req.argv[0]))),
+        Err(e) => return proto::write_json_line(&mut conn, &Response::error(format!("Couldn't run {}: {e}", req.argv[0]))),
     };
     proto::write_json_line(&mut conn, &Response::ok())?;
 

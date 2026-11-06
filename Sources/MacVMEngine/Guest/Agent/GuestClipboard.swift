@@ -33,7 +33,7 @@ public enum GuestClipboard {
     }
 
     public static func setText(_ bundle: VMBundle, _ text: String) throws {
-        guard text.utf8.count <= maxText else { throw MacVMError.unsupported("剪贴板文本超过 \(maxText) 字节，不同步") }
+        guard text.utf8.count <= maxText else { throw MacVMError.unsupported(String(l10n: "Clipboard text over \(maxText) bytes isn't synced")) }
         _ = try AgentClient.call(.clipboardSet(text: text), bundle: bundle, timeout: timeout)
     }
 

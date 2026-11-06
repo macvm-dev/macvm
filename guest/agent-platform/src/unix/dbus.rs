@@ -97,7 +97,7 @@ fn alignment(code: u8) -> usize {
 
 /// 签名开头的一个完整类型的长度。
 fn type_len(sig: &[u8]) -> io::Result<usize> {
-    let bad = || io::Error::new(io::ErrorKind::InvalidData, "D-Bus 签名无效");
+    let bad = || io::Error::new(io::ErrorKind::InvalidData, "Invalid D-Bus signature");
     match sig.first().ok_or_else(bad)? {
         b'a' => Ok(1 + type_len(&sig[1..])?),
         open @ (b'(' | b'{') => {
@@ -195,7 +195,7 @@ impl Reader<'_> {
     fn take(&mut self, align: usize, n: usize) -> io::Result<&[u8]> {
         self.pos = self.pos.next_multiple_of(align);
         let end = self.pos.checked_add(n).filter(|&e| e <= self.buf.len());
-        let end = end.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "D-Bus 消息截断"))?;
+        let end = end.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "D-Bus message is truncated"))?;
         let bytes = &self.buf[self.pos..end];
         self.pos = end;
         Ok(bytes)
@@ -255,7 +255,7 @@ impl Reader<'_> {
                 let len = usize::from(self.take(1, 1)?[0]);
                 let inner = self.text(len)?;
                 if inner.is_empty() || type_len(inner.as_bytes())? != inner.len() {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "D-Bus 变体签名无效"));
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid D-Bus variant signature"));
                 }
                 Value::Variant(Box::new(self.value(inner.as_bytes())?))
             }
@@ -265,7 +265,7 @@ impl Reader<'_> {
                 self.pos = self.pos.next_multiple_of(alignment(elem[0]));
                 let end = self.pos + len;
                 if end > self.buf.len() {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "D-Bus 数组越界"));
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "D-Bus array runs past the end of the message"));
                 }
                 let mut items = Vec::new();
                 while self.pos < end {
@@ -277,7 +277,7 @@ impl Reader<'_> {
                 self.pos = self.pos.next_multiple_of(8);
                 Value::Struct(self.values(&sig[1..sig.len() - 1])?)
             }
-            other => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("不支持的 D-Bus 类型 {}", other as char))),
+            other => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported D-Bus type {}", other as char))),
         })
     }
 }
@@ -307,7 +307,7 @@ impl Bus {
     /// 连接 `unix:path=…` 或 `unix:abstract=…` 地址，以本进程 uid 认证并注册。
     pub fn connect(address: &str) -> io::Result<Self> {
         let stream = address.split(';').find_map(|a| open(a).transpose()).unwrap_or_else(|| {
-            Err(io::Error::new(io::ErrorKind::NotFound, format!("不支持的 D-Bus 地址：{address}")))
+            Err(io::Error::new(io::ErrorKind::NotFound, format!("Unsupported D-Bus address: {address}")))
         })?;
         stream.set_read_timeout(Some(CALL_TIMEOUT))?;
         let mut stream = BufReader::new(stream);
@@ -318,7 +318,7 @@ impl Bus {
         let mut line = String::new();
         stream.read_line(&mut line)?;
         if !line.starts_with("OK ") {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("D-Bus 认证失败：{}", line.trim())));
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("Couldn't authenticate with D-Bus: {}", line.trim())));
         }
         stream.get_mut().write_all(b"BEGIN\r\n")?;
         let mut bus = Self { stream, serial: 0 };
@@ -348,7 +348,7 @@ impl Bus {
                     } else {
                         io::ErrorKind::Other
                     };
-                    Err(io::Error::new(kind, format!("{member}：{name} {detail}")))
+                    Err(io::Error::new(kind, format!("{member}: {name} {detail}")))
                 }
             };
         }
@@ -359,7 +359,7 @@ impl Bus {
         let reply = self.call(destination, path, "org.freedesktop.DBus.Properties", "Get", &[Value::Str(interface.into()), Value::Str(name.into())])?;
         match reply.into_iter().next() {
             Some(Value::Variant(v)) => Ok(*v),
-            _ => Err(io::Error::new(io::ErrorKind::InvalidData, format!("{name} 的回复无效"))),
+            _ => Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid reply to {name}"))),
         }
     }
 
@@ -367,13 +367,13 @@ impl Bus {
         let mut head = [0u8; 16];
         self.stream.read_exact(&mut head)?;
         if head[0] != b'l' {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "只支持小端 D-Bus 消息"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Only little-endian D-Bus messages are supported"));
         }
         let body_len = u32::from_le_bytes(head[4..8].try_into().unwrap()) as usize;
         let fields_len = u32::from_le_bytes(head[12..16].try_into().unwrap()) as usize;
         let total = (16 + fields_len).next_multiple_of(8) + body_len;
         if total > MAX_MESSAGE {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "D-Bus 消息过大"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "D-Bus message is too large"));
         }
         let mut message = head.to_vec();
         message.resize(total, 0);

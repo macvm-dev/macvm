@@ -17,7 +17,7 @@ public enum ByteSize {
             break
         }
         if let v = UInt64(s), v > 0 { return v }
-        throw MacVMError.invalidConfig("无法解析容量：\(text)（示例：512M、8G、1T）")
+        throw MacVMError.invalidConfig(String(l10n: "Invalid size: \(text) (examples: 512M, 8G, 1T)"))
     }
 
     public static func format(_ bytes: UInt64) -> String {

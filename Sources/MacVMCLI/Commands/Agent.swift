@@ -5,29 +5,33 @@ import MacVMModel
 
 struct Agent: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "管理客户机代理（macvm-agent）。",
-        discussion: "代理提供 exec、端口转发、关机、对时、剪贴板与 UI 自动化（macvm ui）。VZ 下的 Linux、macOS 经 vsock，不依赖客户机网络；Windows 与 QEMU 下的 Linux 经 TCP。云镜像、macOS、自动安装的 Ubuntu 桌面版与 Windows 安装创建的虚拟机自动安装。",
+        abstract: String(l10n: "Manage the guest agent (macvm-agent)."),
+        discussion: String(l10n: "The agent handles exec, port forwarding, shutdown, time sync, the clipboard, and UI automation (macvm ui). Linux and macOS guests on VZ reach it over vsock, which works without guest networking; Windows and Linux guests on QEMU use TCP. It's installed automatically in macOS VMs, VMs created from cloud images, automatically installed Ubuntu Desktop, and Windows VMs set up by the installer."),
         subcommands: [Install.self, Info.self]
     )
 
     struct Install: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "安装或更新代理。",
-            discussion: "代理在线时经代理自身换成随 App 分发的版本，不需要 SSH；没装代理、代理不在线、要补写认证令牌或给 Windows 放 3D 显卡驱动，以及给了 --ssh 时经 SSH 安装。"
+            abstract: String(l10n: "Install or update the agent."),
+            discussion: String(l10n: "If the agent is online, it replaces itself with the version bundled with the app; SSH isn't needed. Otherwise it's installed over SSH, which is also used when an auth token needs to be written, when the Windows 3D graphics driver needs to be copied into the guest, or when you pass --ssh.")
         )
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Flag(help: "经 SSH 安装，即使代理在线。") var ssh = false
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Flag(help: ArgumentHelp(String(l10n: "Install over SSH even if the agent is online."))) var ssh = false
 
         func run() async throws {
             var gpuDriver = false
             var updated: AgentUpdate.Result?
             try await Output.run(json: global.json, human: { (_: InfoResult) in
                 if let updated {
-                    guard updated.changed else { return "\(name) 的客户机代理已是 App 自带的版本；要重装请加 --ssh" }
-                    return "已更新 \(name) 的客户机代理" + (updated.rebooting ? "；3D 显卡驱动也已更新，正在重启客户机" : "")
+                    guard updated.changed else { return String(l10n: "The guest agent on \(name) already matches the app's version; add --ssh to reinstall") }
+                    return updated.rebooting
+                        ? String(l10n: "Updated the guest agent and 3D graphics driver on \(name); restarting the guest")
+                        : String(l10n: "Updated the guest agent on \(name)")
                 }
-                return "已安装 \(name) 的客户机代理" + (gpuDriver ? "；3D 显卡驱动已放进客户机，代理随即安装，重启客户机后桌面改用 GPU 合成" : "")
+                return gpuDriver
+                    ? String(l10n: "Installed the guest agent and 3D graphics driver on \(name); the desktop will use GPU compositing after the guest restarts")
+                    : String(l10n: "Installed the guest agent on \(name)")
             }) {
                 let bundle = try VMLibrary.default.bundle(named: name)
                 let config = try bundle.loadConfig()
@@ -40,16 +44,16 @@ struct Agent: AsyncParsableCommand {
                 try await Wait.untilReady(bundle, config: probe, timeout: 300)
                 let result = try await AgentInstaller.installAndEnable(bundle: bundle, config: config, macvmPath: SSHConfigCommand.executablePath)
                 gpuDriver = result.gpuDriver
-                guard result.online else { throw MacVMError.timeout("代理已安装但未响应") }
+                guard result.online else { throw MacVMError.timeout(String(l10n: "Installed the agent, but it isn't responding")) }
                 return try InfoResult(bundle)
             }
         }
     }
 
     struct Info: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "显示代理报告的客户机信息。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Show guest information reported by the agent."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
 
         func run() async throws {
             try await Output.run(json: global.json, human: Self.render) {
@@ -58,16 +62,16 @@ struct Agent: AsyncParsableCommand {
         }
 
         static func render(_ r: InfoResult) -> String {
-            render(r.info) + (r.updateAvailable == true ? "\n随 App 分发的代理版本不同，运行 macvm agent install \(r.name) 更新" : "")
+            render(r.info) + (r.updateAvailable == true ? "\n" + String(l10n: "The app bundles a different agent version; run macvm agent install \(r.name) to update") : "")
         }
 
         static func render(_ i: AgentProtocol.Info) -> String {
-            """
-            代理 \(i.version) · \(i.os) · \(i.hostname)
-            IPv4：\(i.ipv4.joined(separator: ", "))
-            内存：可用 \(ByteSize.format(i.memAvailable)) / \(ByteSize.format(i.memTotal))
-            运行：\(i.uptimeMs / 1000) 秒
-            """
+            String(l10n: """
+            Agent \(i.version) · \(i.os) · \(i.hostname)
+            IPv4: \(i.ipv4.joinedAsList())
+            Memory: \(ByteSize.format(i.memAvailable)) of \(ByteSize.format(i.memTotal)) available
+            Uptime: \(i.uptimeMs / 1000) s
+            """)
         }
     }
 

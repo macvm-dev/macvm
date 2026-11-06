@@ -9,26 +9,26 @@ extension AgentProtocol.MouseButton: ExpressibleByArgument {}
 struct UICommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "ui",
-        abstract: "经客户机代理读取与操作客户机桌面。",
-        discussion: """
-        snapshot 列出前台应用（或 --app 指定的应用）的无障碍树，每个元素有一个编号，act 与 click --element 用它，下一次 snapshot 后作废。
-        坐标一律是 ui screenshot 截图的像素，原点在主屏左上角。macOS 客户机要在「系统设置 › 隐私与安全性」里给 MacVM Agent
-        辅助功能与屏幕录制权限，没给时报 permission_denied；Linux 客户机要有已登录的图形会话。
-        """,
+        abstract: String(l10n: "Read and control the guest desktop through the guest agent."),
+        discussion: String(l10n: """
+        snapshot lists the accessibility tree of the frontmost app, or of the app given with --app. Each element gets a number you can pass to act and click --element; the numbers stay valid until the next snapshot.
+        Coordinates are always pixels in the ui screenshot image, measured from the top-left corner of the main screen.
+        On macOS guests, MacVM Agent needs Accessibility and Screen Recording permission in System Settings › Privacy & Security, or commands fail with permission_denied. Linux guests need a logged-in graphical session.
+        """),
         subcommands: [Snapshot.self, Act.self, Click.self, Move.self, Drag.self, Scroll.self, TypeText.self, Key.self, Shot.self]
     )
 
     struct Snapshot: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "列出应用的无障碍树。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "List an app's accessibility tree."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Option(help: "应用：pid、进程名，macOS 上也可以是 bundle id；缺省为前台应用。") var app: String?
-        @Option(help: "遍历深度上限。") var depth: Int?
-        @Option(help: "元素个数上限。") var limit: Int?
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Option(help: ArgumentHelp(String(l10n: "App to inspect: pid, process name, or (on macOS) bundle ID. Defaults to the frontmost app."))) var app: String?
+        @Option(help: ArgumentHelp(String(l10n: "Maximum tree depth."))) var depth: Int?
+        @Option(help: ArgumentHelp(String(l10n: "Maximum number of elements."))) var limit: Int?
 
         func validate() throws {
-            if let depth, depth < 0 { throw ValidationError("--depth 不能为负数") }
-            if let limit, limit < 0 { throw ValidationError("--limit 不能为负数") }
+            if let depth, depth < 0 { throw ValidationError(String(l10n: "--depth can't be negative")) }
+            if let limit, limit < 0 { throw ValidationError(String(l10n: "--limit can't be negative")) }
         }
 
         func run() async throws {
@@ -39,13 +39,13 @@ struct UICommand: AsyncParsableCommand {
 
         static func render(_ s: AgentProtocol.UISnapshot) -> String {
             let scale = s.screen.scale == 1 ? "" : " @\(String(format: "%g", s.screen.scale))x"
-            var lines = ["屏幕 \(s.screen.width)×\(s.screen.height)\(scale)"]
-            let apps = s.apps.map { "\($0.name)（\($0.pid)）\($0.frontmost ? " *" : "")" }
-            if !apps.isEmpty { lines.append("应用：" + apps.joined(separator: "，")) }
-            guard let app = s.app else { return (lines + ["没有前台应用"]).joined(separator: "\n") }
-            lines.append("\(app.name)（pid \(app.pid)）")
+            var lines = [String(l10n: "Screen \(s.screen.width)×\(s.screen.height)\(scale)")]
+            let apps = s.apps.map { "\($0.name) (\($0.pid))\($0.frontmost ? " *" : "")" }
+            if !apps.isEmpty { lines.append(String(l10n: "Apps: \(apps.joinedAsList())")) }
+            guard let app = s.app else { return (lines + [String(l10n: "No frontmost app")]).joined(separator: "\n") }
+            lines.append("\(app.name) (pid \(app.pid))")
             lines += s.nodes.map(line)
-            if s.truncated { lines.append("…已达深度或个数上限，用 --depth、--limit 放宽") }
+            if s.truncated { lines.append(String(l10n: "…Stopped at the depth or element limit; raise it with --depth or --limit")) }
             return lines.joined(separator: "\n")
         }
 
@@ -67,15 +67,15 @@ struct UICommand: AsyncParsableCommand {
     }
 
     struct Act: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "对快照里的元素执行动作。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Perform an action on an element from a snapshot."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Argument(help: "元素编号（来自 ui snapshot）。") var element: String
-        @Argument(help: "动作：\(AgentProtocol.ElementAction.allCases.map(\.rawValue).joined(separator: "、"))。") var action: AgentProtocol.ElementAction
-        @Option(help: "set-value 要设的值。") var value: String?
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "Element number (from ui snapshot)."))) var element: String
+        @Argument(help: ArgumentHelp(String(l10n: "Action: \(AgentProtocol.ElementAction.allCases.map(\.rawValue).joinedAsList())."))) var action: AgentProtocol.ElementAction
+        @Option(help: ArgumentHelp(String(l10n: "Value for set-value."))) var value: String?
 
         func validate() throws {
-            if action == .setValue, value == nil { throw ValidationError("set-value 需要 --value") }
+            if action == .setValue, value == nil { throw ValidationError(String(l10n: "set-value requires --value")) }
         }
 
         func run() async throws {
@@ -87,19 +87,19 @@ struct UICommand: AsyncParsableCommand {
     }
 
     struct Click: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "在坐标或元素中心点击。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Click a point or the center of an element."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Argument(help: "x 与 y（截图像素）；给了 --element 时省略。") var point: [Int] = []
-        @Option(help: "点这个元素的中心。") var element: String?
-        @Option(help: "left、right 或 middle。") var button: AgentProtocol.MouseButton = .left
-        @Option(help: "连击次数。") var count = 1
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "x and y in screenshot pixels; omit when using --element."))) var point: [Int] = []
+        @Option(help: ArgumentHelp(String(l10n: "Click the center of this element."))) var element: String?
+        @Option(help: ArgumentHelp(String(l10n: "Mouse button: left, right, or middle."))) var button: AgentProtocol.MouseButton = .left
+        @Option(help: ArgumentHelp(String(l10n: "Number of clicks."))) var count = 1
 
         func validate() throws {
             guard point.isEmpty ? element != nil : point.count == 2 && element == nil else {
-                throw ValidationError("给出 x y 两个坐标，或者 --element，二选一")
+                throw ValidationError(String(l10n: "Give either x and y coordinates or --element, not both"))
             }
-            guard count >= 1 else { throw ValidationError("--count 至少为 1") }
+            guard count >= 1 else { throw ValidationError(String(l10n: "--count must be at least 1")) }
         }
 
         func run() async throws {
@@ -109,9 +109,9 @@ struct UICommand: AsyncParsableCommand {
     }
 
     struct Move: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "移动鼠标。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Move the mouse."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
         @Argument var x: Int
         @Argument var y: Int
 
@@ -119,56 +119,56 @@ struct UICommand: AsyncParsableCommand {
     }
 
     struct Drag: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "按住鼠标键从一点拖到另一点。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Drag from one point to another with a mouse button held down."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
         @Argument var x1: Int
         @Argument var y1: Int
         @Argument var x2: Int
         @Argument var y2: Int
-        @Option(help: "left、right 或 middle。") var button: AgentProtocol.MouseButton = .left
+        @Option(help: ArgumentHelp(String(l10n: "Mouse button: left, right, or middle."))) var button: AgentProtocol.MouseButton = .left
 
         func run() async throws { try await send(.drag(from: [x1, y1], to: [x2, y2], button: button), to: name, json: global.json) }
     }
 
     struct Scroll: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "在某点滚动滚轮。")
+        static let configuration = CommandConfiguration(abstract: String(l10n: "Scroll at a point."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
         @Argument var x: Int
         @Argument var y: Int
-        @Option(parsing: .unconditional, help: "水平格数，正值向右。") var dx = 0
-        @Option(parsing: .unconditional, help: "竖直格数，正值向下。") var dy = 0
+        @Option(parsing: .unconditional, help: ArgumentHelp(String(l10n: "Horizontal scroll steps; positive values scroll right."))) var dx = 0
+        @Option(parsing: .unconditional, help: ArgumentHelp(String(l10n: "Vertical scroll steps; positive values scroll down."))) var dy = 0
 
         func run() async throws { try await send(.scroll(x: x, y: y, dx: dx, dy: dy), to: name, json: global.json) }
     }
 
     struct TypeText: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "type", abstract: "向焦点处输入文本。")
+        static let configuration = CommandConfiguration(commandName: "type", abstract: String(l10n: "Type text into the focused element."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Argument(help: "文本。") var text: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "Text to type."))) var text: String
 
         func run() async throws { try await send(.text(text), to: name, json: global.json) }
     }
 
     struct Key: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "按组合键。",
-            discussion: "如 enter、cmd+shift+t、ctrl+alt+delete。修饰键 cmd（Windows 为 Win 键，Linux 为 Super）、ctrl、alt（option）、shift；主键是美式键盘上的键名或不按 Shift 时的字符。"
+            abstract: String(l10n: "Press a key combination."),
+            discussion: String(l10n: "For example: enter, cmd+shift+t, ctrl+alt+delete. Modifiers are cmd (the Windows key on Windows, Super on Linux), ctrl, alt (option), and shift. The main key is a key name, or the character the key types without Shift, on a US keyboard.")
         )
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Argument(help: "组合键。") var keys: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "Key combination."))) var keys: String
 
         func run() async throws { try await send(.key(keys), to: name, json: global.json) }
     }
 
     struct Shot: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "screenshot", abstract: "在客户机里截主屏，存为 PNG。")
+        static let configuration = CommandConfiguration(commandName: "screenshot", abstract: String(l10n: "Capture the guest's main screen as a PNG."))
         @OptionGroup var global: GlobalOptions
-        @Argument(help: "虚拟机名称。") var name: String
-        @Argument(help: "输出文件。") var output: String
+        @Argument(help: ArgumentHelp(String(l10n: "VM name."))) var name: String
+        @Argument(help: ArgumentHelp(String(l10n: "Path to save the PNG to."))) var output: String
 
         struct Result: Encodable, Sendable {
             let path: String
@@ -177,13 +177,13 @@ struct UICommand: AsyncParsableCommand {
         }
 
         func run() async throws {
-            try await Output.run(json: global.json, human: { (r: Result) in "\(r.path)（\(r.width)×\(r.height)）" }) {
+            try await Output.run(json: global.json, human: { (r: Result) in "\(r.path) (\(r.width)×\(r.height))" }) {
                 let png = try GuestUI.screenshot(VMLibrary.default.bundle(named: name))
                 let url = URL(filePath: (output as NSString).expandingTildeInPath).standardizedFileURL
                 do {
                     try png.write(to: url)
                 } catch {
-                    throw MacVMError.io("写入 \(url.path) 失败：\(error.localizedDescription)")
+                    throw MacVMError.io(String(l10n: "Couldn't write \(url.path): \(error.localizedDescription)"))
                 }
                 let (width, height) = Self.size(png)
                 return Result(path: url.path, width: width, height: height)

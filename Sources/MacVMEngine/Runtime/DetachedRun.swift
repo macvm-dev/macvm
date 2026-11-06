@@ -12,12 +12,12 @@ public enum DetachedRun {
         let ready = try await VMStatus.poll(timeout: TimeInterval(timeout)) {
             if hasExited(pid) {
                 let tail = readLog(bundle.logURL, from: logOffset)
-                throw MacVMError.engine("后台进程启动失败：\(tail.isEmpty ? "无输出" : tail)")
+                throw MacVMError.engine(String(l10n: "Couldn't start the background process: \(tail.isEmpty ? String(l10n: "no output") : tail)"))
             }
             guard let status = try? ControlClient.send(.status, to: bundle, timeout: 2) else { return false }
             return status.ok && status.state == "running"
         }
-        guard ready else { throw MacVMError.timeout("等待 \(name) 启动超时，日志：\(bundle.logURL.path)") }
+        guard ready else { throw MacVMError.timeout(String(l10n: "Timed out waiting for \(name) to start; see the log at \(bundle.logURL.path)")) }
         return try VMStatus.summary(of: bundle)
     }
 
@@ -39,7 +39,7 @@ public enum DetachedRun {
         defer { argv.forEach { free($0) } }
         var pid: pid_t = 0
         let rc = posix_spawn(&pid, executable, &actions, &attr, argv, environ)
-        guard rc == 0 else { throw MacVMError.posix("派生后台进程", code: rc) }
+        guard rc == 0 else { throw MacVMError.posix(String(l10n: "Couldn't spawn the background process"), code: rc) }
         return pid
     }
 

@@ -185,7 +185,7 @@ impl Cf {
 
 impl Clone for Cf {
     fn clone(&self) -> Self {
-        Self::retain(self.0).expect("非空")
+        Self::retain(self.0).expect("non-null")
     }
 }
 
@@ -318,8 +318,8 @@ impl Grant {
 
     fn denied(self) -> io::Error {
         let message = match self {
-            Grant::Accessibility => "MacVM Agent 没有辅助功能权限：在客户机「系统设置 › 隐私与安全性 › 辅助功能」里允许 MacVM Agent 后重试",
-            Grant::ScreenCapture => "MacVM Agent 没有屏幕录制权限：在客户机「系统设置 › 隐私与安全性 › 屏幕与系统录音」里允许 MacVM Agent 后重试",
+            Grant::Accessibility => "MacVM Agent doesn't have Accessibility permission; in the guest, turn on MacVM Agent in System Settings › Privacy & Security › Accessibility, then try again",
+            Grant::ScreenCapture => "MacVM Agent doesn't have Screen Recording permission; in the guest, turn on MacVM Agent in System Settings › Privacy & Security › Screen & System Audio Recording, then try again",
         };
         io::Error::new(io::ErrorKind::PermissionDenied, message)
     }
@@ -342,7 +342,7 @@ fn require(grant: Grant) -> io::Result<()> {
             thread::sleep(RESTART_DELAY);
             std::process::exit(0);
         });
-        return Err(io::Error::other(macvm_agent_protocol::Restarting("授权已生效，正在重启以载入授权，几秒后重试")));
+        return Err(io::Error::other(macvm_agent_protocol::Restarting("Permission granted; the agent is restarting to apply it, so try again in a few seconds")));
     }
     if !PROMPTED[grant as usize].swap(true, Ordering::Relaxed) {
         grant.held(true);
@@ -418,10 +418,10 @@ fn ax_result(code: AXError, what: &str, id: &str) -> io::Result<()> {
         AX_ERROR_API_DISABLED => Err(permission_error()),
         AX_ERROR_INVALID_ELEMENT => Err(stale_element(id)),
         AX_ERROR_ATTRIBUTE_UNSUPPORTED | AX_ERROR_ACTION_UNSUPPORTED | AX_ERROR_NO_VALUE | AX_ERROR_ILLEGAL_ARGUMENT => {
-            Err(io::Error::new(io::ErrorKind::Unsupported, format!("元素 {id} 不支持 {what}")))
+            Err(io::Error::new(io::ErrorKind::Unsupported, format!("Element {id} doesn't support {what}")))
         }
-        AX_ERROR_CANNOT_COMPLETE => Err(io::Error::new(io::ErrorKind::TimedOut, format!("应用没有响应 {what}"))),
-        other => Err(io::Error::other(format!("{what} 失败：AXError {other}"))),
+        AX_ERROR_CANNOT_COMPLETE => Err(io::Error::new(io::ErrorKind::TimedOut, format!("The app didn't respond to {what}"))),
+        other => Err(io::Error::other(format!("Couldn't apply {what} (AXError {other})"))),
     }
 }
 
@@ -598,7 +598,7 @@ pub fn ui_snapshot(options: &SnapshotOptions) -> io::Result<UiSnapshot> {
     cache.elements.clear();
     let Some(app) = target else { return Ok(snapshot) };
     // SAFETY: 为 pid 创建应用元素，按 Create 规则持有。
-    let root = Cf::own(unsafe { AXUIElementCreateApplication(app.pid as i32) }).ok_or_else(|| io::Error::other("创建应用元素失败"))?;
+    let root = Cf::own(unsafe { AXUIElementCreateApplication(app.pid as i32) }).ok_or_else(|| io::Error::other("Couldn't create the accessibility element for the app"))?;
     let names: Vec<Cf> = ATTRIBUTES.iter().map(|n| Cf::str(n)).collect();
     let attributes = Cf::array(&names.iter().collect::<Vec<_>>());
     let generation = cache.generation;
@@ -804,7 +804,7 @@ fn find_app(apps: &[UiApp], query: &str) -> io::Result<UiApp> {
     }
     let found = apps.iter().find(|a| a.bundle.as_deref().is_some_and(|b| b.eq_ignore_ascii_case(query)) || a.name.eq_ignore_ascii_case(query));
     // 系统授权提示、菜单栏应用的窗口不在普通层，`apps` 里没有它们，按进程名再找一遍。
-    found.cloned().or_else(|| find_process(query)).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("没有找到应用 {query}")))
+    found.cloned().or_else(|| find_process(query)).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("No app matches {query}")))
 }
 
 /// 可执行文件名为 `query`（不区分大小写）的进程，有多个时取 pid 最小的。
@@ -849,7 +849,7 @@ pub fn ui_action(id: &str, action: ElementAction, value: Option<&str>) -> io::Re
             set_attribute(&element, "AXDisclosing", flag, id).or_else(|_| set_attribute(&element, "AXExpanded", flag, id))
         }
         ElementAction::SetValue => {
-            let value = value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "set-value 需要 value"))?;
+            let value = value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "set-value needs a value"))?;
             set_attribute(&element, "AXValue", Cf::str(value).0, id)
         }
     }
@@ -863,7 +863,7 @@ pub fn ui_element_bounds(id: &str) -> io::Result<[i32; 4]> {
     let size = copy_attribute(&element, "AXSize").and_then(|v| ax_value::<CGSize>(v.0, AX_VALUE_SIZE));
     match (origin, size) {
         (Some(origin), Some(size)) => Ok(Screen::main().to_pixels(origin, size)),
-        _ => Err(io::Error::new(io::ErrorKind::Unsupported, format!("元素 {id} 没有位置"))),
+        _ => Err(io::Error::new(io::ErrorKind::Unsupported, format!("Element {id} has no position"))),
     }
 }
 
@@ -891,7 +891,7 @@ const TEXT_PAUSE: Duration = Duration::from_millis(4);
 
 impl Events {
     fn post(&self, event: CFTypeRef) -> io::Result<()> {
-        let event = Cf::own(event).ok_or_else(|| io::Error::other("创建输入事件失败"))?;
+        let event = Cf::own(event).ok_or_else(|| io::Error::other("Couldn't create the input event"))?;
         // SAFETY: event 是有效 CGEvent。
         unsafe { CGEventPost(HID_EVENT_TAP, event.0) };
         Ok(())
@@ -952,7 +952,7 @@ impl Injector for Events {
         } else {
             self.modifiers &= !flag;
         }
-        let code = keycode(key).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("macOS 上没有这个键：{key:?}")))?;
+        let code = keycode(key).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("No such key on macOS: {key:?}")))?;
         // SAFETY: 创建键盘事件并设好修饰键。
         let event = unsafe { CGEventCreateKeyboardEvent(std::ptr::null(), code, down) };
         if !event.is_null() {
@@ -1023,7 +1023,7 @@ pub fn ui_screenshot() -> io::Result<Vec<u8>> {
     let data = std::fs::read(&path);
     let _ = std::fs::remove_file(&path);
     if !status.success() {
-        return Err(io::Error::other(format!("screencapture 退出码 {status}")));
+        return Err(io::Error::other(format!("screencapture exited with an error ({status})")));
     }
     data
 }

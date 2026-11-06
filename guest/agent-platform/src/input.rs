@@ -91,7 +91,7 @@ pub fn unshifted(c: char) -> (char, bool) {
 /// 解析 `cmd+shift+t` 这样的组合键：修饰键在前，最后一个是主键（也可以只有一个修饰键）。
 /// 主键是要按 Shift 才打得出的符号（如 `?`）时补上 Shift；字母不区分大小写。
 pub fn parse_combo(text: &str) -> io::Result<Vec<Key>> {
-    let invalid = || io::Error::new(io::ErrorKind::InvalidInput, format!("无法识别的按键：{text}"));
+    let invalid = || io::Error::new(io::ErrorKind::InvalidInput, format!("Unknown key: {text}"));
     let parts: Vec<&str> = text.split('+').map(str::trim).collect();
     let mut keys: Vec<Key> = parts.iter().map(|part| Key::parse(part)).collect::<Option<_>>().ok_or_else(invalid)?;
     let (last, modifiers) = keys.split_last().ok_or_else(invalid)?;
@@ -136,7 +136,7 @@ pub fn play(injector: &mut impl Injector, events: &[InputEvent]) -> io::Result<(
                     injector.button(*button, false, *x, *y, n)?;
                 }
             }
-            InputEvent::Click { .. } => return Err(io::Error::new(io::ErrorKind::InvalidInput, "click 需要 x、y 或 element")),
+            InputEvent::Click { .. } => return Err(io::Error::new(io::ErrorKind::InvalidInput, "click needs x and y, or element")),
             InputEvent::Drag { from, to, button } => {
                 injector.move_to(from[0], from[1])?;
                 injector.button(*button, true, from[0], from[1], 1)?;

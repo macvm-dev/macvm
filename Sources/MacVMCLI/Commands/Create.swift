@@ -5,106 +5,106 @@ public import MacVMModel
 
 struct Create: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "创建虚拟机。",
-        discussion: """
-        macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、
-        自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名，再执行 macvm tune 的全部项（--no-tune 跳过）。
+        abstract: String(l10n: "Create a VM."),
+        discussion: String(l10n: """
+        macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,
+        turns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, and runs every macvm tune step (skip with --no-tune).
           macvm create mac --os macos
-        Windows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。
+        Windows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.
           macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso
-        Linux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。
+        Linux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.
           macvm create dev --image debian-13 --memory 8G
-        Linux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，
-        加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。
+        Linux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;
+        add --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.
           macvm create desk --desktop ubuntu-desktop
-        安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。
+        Installation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).
           macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso
-        模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--network、--engine。
+        Templates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), --network, and --engine.
           macvm create dev2 --template dev-base
-        """
+        """)
     )
 
     @OptionGroup var global: GlobalOptions
 
-    @Argument(help: "虚拟机名称（字母、数字、. _ -，最长 40）。")
+    @Argument(help: ArgumentHelp(String(l10n: "VM name (letters, digits, . _ -, up to 40 characters).")))
     var name: String
 
-    @Option(name: .customLong("os"), help: "客户机系统：linux（默认）、windows、macos。")
+    @Option(name: .customLong("os"), help: ArgumentHelp(String(l10n: "Guest OS: linux (default), windows, or macos.")))
     var osOption: GuestOS?
 
     var os: GuestOS { osOption ?? .linux }
 
-    @Option(help: "从模板新建（见 macvm template）。")
+    @Option(help: ArgumentHelp(String(l10n: "Create from a template (see macvm template).")))
     var template: String?
 
-    @Option(name: .customLong("cpus"), help: "vCPU 数，默认 4，且不超过主机核数。")
+    @Option(name: .customLong("cpus"), help: ArgumentHelp(String(l10n: "Number of vCPUs (default 4, at most the host's core count).")))
     var cpuCount: Int?
 
-    @Option(help: "内存，如 4G。默认 8G，且不超过主机内存一半。")
+    @Option(help: ArgumentHelp(String(l10n: "Memory size, e.g. 4G (default 8G, at most half the host's memory).")))
     var memory: String?
 
-    @Option(help: "磁盘容量（稀疏，按实际写入占用），如 64G。")
+    @Option(help: ArgumentHelp(String(l10n: "Disk size, e.g. 64G. The disk is sparse and only uses space for data actually written.")))
     var disk: String?
 
-    @Option(help: ArgumentHelp("Linux 云镜像。", valueName: LinuxImage.catalog.map(\.id).joined(separator: "|")))
+    @Option(help: ArgumentHelp(String(l10n: "Linux cloud image."), valueName: LinuxImage.catalog.map(\.id).joined(separator: "|")))
     var image: String?
 
-    @Option(help: ArgumentHelp("Linux 桌面版：下载官方安装 ISO 并以它启动。Ubuntu 自动安装，Fedora 在窗口里图形安装。", valueName: LinuxDesktop.allCases.map(\.rawValue).joined(separator: "|")))
+    @Option(help: ArgumentHelp(String(l10n: "Linux desktop: download the official installer ISO and boot from it. Ubuntu installs automatically; Fedora uses the graphical installer in the window."), valueName: LinuxDesktop.allCases.map(\.rawValue).joined(separator: "|")))
     var desktop: String?
 
-    @Flag(help: "Ubuntu 桌面版：不自动安装，开机后在窗口里图形安装。")
+    @Flag(help: ArgumentHelp(String(l10n: "Ubuntu Desktop: use the graphical installer in the window instead of installing automatically.")))
     var manualInstall = false
 
-    @Option(help: "云镜像、自动安装的 Ubuntu 桌面版与 Windows 里创建的登录用户，默认与主机用户同名。")
+    @Option(help: ArgumentHelp(String(l10n: "Login user to create for cloud images, automatically installed Ubuntu Desktop, and Windows (default: your host user name).")))
     var user: String?
 
-    @Option(help: "Linux 云镜像、自动安装的 Ubuntu 桌面版与 Windows：登录密码，保存在虚拟机包内的 guest-password。省略时云镜像只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 随机生成。")
+    @Option(help: ArgumentHelp(String(l10n: "Login password for cloud images, automatically installed Ubuntu Desktop, and Windows, saved as guest-password in the VM bundle. If omitted, cloud images allow only SSH key login, and Ubuntu Desktop and Windows get a random password.")))
     var password: String?
 
-    @Option(name: .customLong("iso"), help: "以只读 U 盘挂载的安装介质，可重复。Windows 只取一张，省略时从微软下载。")
+    @Option(name: .customLong("iso"), help: ArgumentHelp(String(l10n: "Installation media to attach as a read-only USB drive (repeatable). Windows takes only one, and downloads it from Microsoft if omitted.")))
     var installMedia: [String] = []
 
-    @Option(help: "共享目录：主机路径[:tag][:ro]，可重复。")
+    @Option(help: ArgumentHelp(String(l10n: "Shared folder as host-path[:tag][:ro] (repeatable).")))
     var share: [String] = []
 
-    @Option(help: "网络：nat（默认）或 bridged[:网卡名]。")
+    @Option(help: ArgumentHelp(String(l10n: "Network: nat (default) or bridged[:interface].")))
     var network: String?
 
-    @Flag(help: "Linux：挂载 Rosetta，运行 x86_64 程序。")
+    @Flag(help: ArgumentHelp(String(l10n: "Linux: enable Rosetta to run x86_64 programs.")))
     var rosetta = false
 
-    @Flag(inversion: .prefixedNo, help: "不挂键盘鼠标，只用 SSH 访问；可挂起。云镜像默认开启，安装介质默认关闭。")
+    @Flag(inversion: .prefixedNo, help: ArgumentHelp(String(l10n: "Run without a keyboard or mouse (SSH only), which allows suspending. On by default for cloud images, off for installation media.")))
     var headless: Bool?
 
-    @Option(help: "Windows：virtio-win 驱动 ISO，省略时下载并缓存。")
+    @Option(help: ArgumentHelp(String(l10n: "Windows: virtio-win driver ISO; downloaded and cached if omitted.")))
     var virtioWin: String?
 
-    @Option(help: "虚拟化引擎：vz（默认，资源占用最低）或 qemu（功能更全）。Windows 安装总是用 qemu。")
+    @Option(help: ArgumentHelp(String(l10n: "Virtualization engine: vz (default, lowest overhead) or qemu (more features). Windows always installs with qemu.")))
     var engine: Engine?
 
-    @Option(name: .customLong("product-key"), help: "Windows：产品密钥，装好后联网激活；不写进虚拟机配置。省略时不激活。")
+    @Option(name: .customLong("product-key"), help: ArgumentHelp(String(l10n: "Windows: product key to activate online after installation; it isn't saved in the VM configuration. If omitted, Windows isn't activated.")))
     var productKey: String?
 
-    @Flag(help: "Windows：只建好虚拟机，不立即开始安装。")
+    @Flag(help: ArgumentHelp(String(l10n: "Windows: create the VM but don't start installing yet.")))
     var noInstall = false
 
-    @Flag(help: "后台运行时把客户机控制台输出写进 run.log。")
+    @Flag(help: ArgumentHelp(String(l10n: "Write the guest console output to run.log when running in the background.")))
     var console = false
 
-    @Option(help: "macOS：本地 IPSW 文件，省略时下载本机支持的最新版本。")
+    @Option(help: ArgumentHelp(String(l10n: "macOS: local IPSW file (default: download the latest version this Mac supports).")))
     var ipsw: String?
 
-    @Option(help: "macOS：显示分辨率，默认 1920x1200。")
+    @Option(help: ArgumentHelp(String(l10n: "macOS: display resolution (default 1920x1200).")))
     var resolution: String?
 
-    @Flag(help: "macOS：装完不开机配置 SSH、代理与调优。")
+    @Flag(help: ArgumentHelp(String(l10n: "macOS: skip the first boot that sets up SSH, the guest agent, and tuning.")))
     var noProvision = false
 
-    @Flag(help: "macOS：开通后不执行 macvm tune。")
+    @Flag(help: ArgumentHelp(String(l10n: "macOS: don't run macvm tune after setup.")))
     var noTune = false
 
     func run() async throws {
-        try await Output.run(json: global.json, human: { (s: VMSummary) in "已创建 \(s.name)：\(s.path)" }) {
+        try await Output.run(json: global.json, human: { (s: VMSummary) in String(l10n: "Created \(s.name): \(s.path)") }) {
             if let template { return try await createFromTemplate(template) }
             if let user { try GuestAccount.validate(user: user) }
             if let password { try GuestAccount.validate(password: password) }
@@ -112,22 +112,22 @@ struct Create: AsyncParsableCommand {
             let macOnly: [(String, Bool)] = [
                 ("--ipsw", ipsw != nil), ("--resolution", resolution != nil), ("--no-provision", noProvision), ("--no-tune", noTune),
             ]
-            if let option = macOnly.first(where: \.1)?.0 { throw MacVMError.invalidConfig("\(option) 只用于 macOS 客户机") }
+            if let option = macOnly.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) is only for macOS guests")) }
             if os == .windows {
-                if image != nil || desktop != nil { throw MacVMError.invalidConfig("--image 与 --desktop 只用于 Linux 客户机") }
-                if let network, network != "nat" { throw MacVMError.invalidConfig("Windows 用 NAT 网络安装，装好后再用 macvm set --network 改") }
+                if image != nil || desktop != nil { throw MacVMError.invalidConfig(String(l10n: "--image and --desktop are only for Linux guests")) }
+                if let network, network != "nat" { throw MacVMError.invalidConfig(String(l10n: "Windows must be installed with NAT networking; change it afterward with macvm set --network")) }
                 let ignored: [(String, Bool)] = [
                     ("--share", !share.isEmpty), ("--rosetta", rosetta), ("--headless", headless != nil),
                     ("--console", console), ("--manual-install", manualInstall),
                 ]
-                if let option = ignored.first(where: \.1)?.0 { throw MacVMError.invalidConfig("\(option) 不用于 Windows 客户机") }
+                if let option = ignored.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) doesn't apply to Windows guests")) }
                 try Self.validateDefaultUser(user)
                 return try await createWindows()
             }
-            if productKey != nil { throw MacVMError.invalidConfig("--product-key 只用于 Windows") }
+            if productKey != nil { throw MacVMError.invalidConfig(String(l10n: "--product-key is only for Windows")) }
             let desktop = try desktop.map(LinuxDesktop.named)
             if manualInstall, desktop?.supportsUnattended != true {
-                throw MacVMError.invalidConfig("--manual-install 只用于能自动安装的桌面版（--desktop ubuntu-desktop）")
+                throw MacVMError.invalidConfig(String(l10n: "--manual-install only works with desktops that install automatically (--desktop ubuntu-desktop)"))
             }
             if engine == .qemu { _ = try QEMUInstallation.require() }
             let options = VMFactory.Options(
@@ -139,7 +139,7 @@ struct Create: AsyncParsableCommand {
                 showProgress: interactive, headless: headless
             )
             if password != nil, image == nil, !options.autoinstalls {
-                throw MacVMError.invalidConfig("--password 只用于 Linux 云镜像（--image）、自动安装的 Ubuntu 桌面版与 Windows")
+                throw MacVMError.invalidConfig(String(l10n: "--password is only for Linux cloud images (--image), the automatically installed Ubuntu Desktop, and Windows"))
             }
             if image != nil || options.autoinstalls { try Self.validateDefaultUser(user) }
             let bundle = try await VMFactory.createEFIGuest(options)
@@ -163,11 +163,11 @@ struct Create: AsyncParsableCommand {
             ("--no-provision", noProvision), ("--no-tune", noTune),
         ]
         if let option = conflicting.first(where: \.1)?.0 {
-            throw MacVMError.invalidConfig("\(option) 不能与 --template 同用：系统、账户与设备都沿用模板")
+            throw MacVMError.invalidConfig(String(l10n: "\(option) can't be used with --template: the OS, accounts, and devices all come from the template"))
         }
         let template = try TemplateLibrary.default.template(named: name)
         if let osOption, osOption != (try template.loadConfig()).os {
-            throw MacVMError.invalidConfig("模板 \(name) 不是 \(osOption.rawValue) 客户机")
+            throw MacVMError.invalidConfig(String(l10n: "Template \(name) isn't a \(osOption.rawValue) guest"))
         }
         let network = try network.map(Self.parseNetwork)
         let bundle = try await VMTemplate.instantiate(
@@ -188,12 +188,12 @@ struct Create: AsyncParsableCommand {
     }
 
     private func installUbuntu(_ bundle: VMBundle) async throws {
-        say("开始离线自动安装 Ubuntu…")
+        say(String(l10n: "Installing Ubuntu offline…"))
         _ = try await Start.launch(bundle, timeout: 120)
         try await UbuntuAutoinstall.completeSetup(bundle) {
             _ = try await Start.launch(bundle, timeout: 120)
         }
-        say("Ubuntu 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
+        say(String(l10n: "Ubuntu is ready: macvm exec \(name) -- whoami (password in \(GuestCredentials.passwordURL(bundle).path))"))
     }
 
     /// 网络与共享目录不在安装时设置：首次开机经 NAT 下的客户机 IP 开通 SSH，装好后用 `macvm set` 改。
@@ -204,14 +204,14 @@ struct Create: AsyncParsableCommand {
             ("--rosetta", rosetta), ("--headless", headless != nil), ("--virtio-win", virtioWin != nil),
             ("--product-key", productKey != nil), ("--no-install", noInstall), ("--console", console), ("--engine qemu", engine == .qemu),
         ]
-        if let option = unsupported.first(where: \.1)?.0 { throw MacVMError.invalidConfig("\(option) 不用于 macOS 客户机") }
-        if let network, network != "nat" { throw MacVMError.invalidConfig("macOS 用 NAT 网络安装，装好后再用 macvm set --network 改") }
-        if !share.isEmpty { throw MacVMError.invalidConfig("macOS 安装时不挂共享目录，装好后再用 macvm set --add-share 加") }
+        if let option = unsupported.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) doesn't apply to macOS guests")) }
+        if let network, network != "nat" { throw MacVMError.invalidConfig(String(l10n: "macOS must be installed with NAT networking; change it afterward with macvm set --network")) }
+        if !share.isEmpty { throw MacVMError.invalidConfig(String(l10n: "macOS installs without shared folders; add them afterward with macvm set --add-share")) }
         try Self.validateDefaultUser(user)
         let user = user ?? NSUserName()
         let resolution = resolution ?? "1920x1200"
         guard let (width, height) = Display.parse(resolution) else {
-            throw MacVMError.invalidConfig("分辨率格式应为 宽x高：\(resolution)")
+            throw MacVMError.invalidConfig(String(l10n: "Invalid resolution \(resolution); use WIDTHxHEIGHT"))
         }
         let interactive = interactive
         let options = MacOSInstaller.Options(
@@ -226,12 +226,12 @@ struct Create: AsyncParsableCommand {
         let bundle = try await MacOSInstaller.install(options) { phase in
             guard interactive else { return }
             switch phase {
-            case .downloading: FileHandle.standardError.write(Data("下载 IPSW…\n".utf8))
+            case .downloading: FileHandle.standardError.write(Data((String(l10n: "Downloading the IPSW…") + "\n").utf8))
             case .installing(let f):
                 let percent = Int(f * 100)
                 if percent != lastPercent {
                     lastPercent = percent
-                    FileHandle.standardError.write(Data("\r安装 macOS：\(percent)%".utf8))
+                    FileHandle.standardError.write(Data(("\r" + String(l10n: "Installing macOS: \(percent)%")).utf8))
                 }
             }
         }
@@ -239,29 +239,29 @@ struct Create: AsyncParsableCommand {
         SSHConfigCommand.refresh()
         guard !noProvision, let pw = GuestCredentials.password(for: bundle) else { return try VMStatus.summary(of: bundle) }
 
-        say("首次开机并配置 SSH（可能需要几分钟）…")
+        say(String(l10n: "Starting the VM for the first time to set up SSH (this can take a few minutes)…"))
         try await MacOSInstaller.firstBoot { _ = try await Start.launch(bundle, timeout: 120) }
         let proxy = SSHConfig.proxyCommand(macvmPath: SSHConfigCommand.executablePath, name: name, flags: ["--tcp", "--timeout", "600"])
         try await GuestSSH.installPublicKey(bundle: bundle, user: user, password: pw, proxyCommand: proxy, timeout: 900)
         do {
             try await MacOSProvisioning.setHostNameAndTimeZone(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
         } catch {
-            warn("设置主机名与时区失败：\((error as? MacVMError)?.message ?? error.localizedDescription)")
+            warn(String(l10n: "Couldn't set the hostname and time zone: \((error as? MacVMError)?.message ?? error.localizedDescription)"))
         }
         if AgentInstaller.binary(for: .macOS) != nil {
             _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
         }
         // 调优失败不算安装失败，原因写到标准错误，可稍后单独运行 macvm tune。
         if !noTune {
-            say("调优客户机…")
+            say(String(l10n: "Tuning the guest…"))
             do {
                 let report = try await MacOSTuning.run(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
                 say(Tune.render(name, report))
             } catch {
-                warn("调优失败：\((error as? MacVMError)?.message ?? error.localizedDescription)，可稍后运行 macvm tune \(name)")
+                warn(String(l10n: "Couldn't tune the guest: \((error as? MacVMError)?.message ?? error.localizedDescription); you can run macvm tune \(name) later"))
             }
         }
-        say("macOS 已就绪：macvm ssh \(name)；用户 \(user)，密码见 \(GuestCredentials.passwordURL(bundle).path)")
+        say(String(l10n: "macOS is ready: macvm ssh \(name) (user \(user), password in \(GuestCredentials.passwordURL(bundle).path))"))
         return try VMStatus.summary(of: bundle)
     }
 
@@ -271,13 +271,13 @@ struct Create: AsyncParsableCommand {
     }
 
     private func createWindows() async throws -> VMSummary {
-        guard installMedia.count <= 1 else { throw MacVMError.invalidConfig("Windows 只能用 --iso 指定一张安装 ISO") }
+        guard installMedia.count <= 1 else { throw MacVMError.invalidConfig(String(l10n: "Windows accepts only one --iso")) }
 
         let iso: URL
         if let path = installMedia.first {
             iso = URL(filePath: (path as NSString).expandingTildeInPath).standardizedFileURL
         } else {
-            say("正在从微软下载 Windows 11 ARM64 安装 ISO（语言随系统首选语言）…")
+            say(String(l10n: "Downloading the Windows 11 ARM64 ISO from Microsoft in your system's language…"))
             iso = try await WindowsISO.iso(showProgress: interactive)
         }
         let options = WindowsInstaller.Options(
@@ -290,17 +290,17 @@ struct Create: AsyncParsableCommand {
         SSHConfigCommand.refresh()
         guard !noInstall else { return try VMStatus.summary(of: bundle) }
 
-        say("开始安装 Windows（约 15–30 分钟，进度可用 macvm run \(name) --display 查看）…")
+        say(String(l10n: "Installing Windows (about 15–30 minutes; watch the progress with macvm run \(name) --display)…"))
         _ = try await Start.launch(bundle, timeout: 120)
         let finished = try await WindowsInstaller.completeSetup(bundle, macvmPath: SSHConfigCommand.executablePath) {
-            say("安装完成，正在关机并卸下安装介质…")
+            say(String(l10n: "Installation finished; shutting down and removing the installation media…"))
             _ = try ControlClient.send(.stop(force: false), to: bundle)
         } start: {
-            say("正在重新开机…")
+            say(String(l10n: "Restarting…"))
             _ = try await Start.launch(bundle, timeout: 120)
         }
-        guard finished else { throw MacVMError.timeout("安装完成后客户机未关机") }
-        say("Windows 已就绪：macvm exec \(name) -- whoami；密码见 \(GuestCredentials.passwordURL(bundle).path)")
+        guard finished else { throw MacVMError.timeout(String(l10n: "The guest didn't shut down after the installation finished")) }
+        say(String(l10n: "Windows is ready: macvm exec \(name) -- whoami (password in \(GuestCredentials.passwordURL(bundle).path))"))
         return try VMStatus.summary(of: bundle)
     }
 
@@ -309,7 +309,7 @@ struct Create: AsyncParsableCommand {
         switch parts.first {
         case "nat": return NetworkConfig(mode: .nat)
         case "bridged": return NetworkConfig(mode: .bridged, interface: parts.count > 1 ? parts[1] : nil)
-        default: throw MacVMError.invalidConfig("未知网络模式：\(text)（可选 nat、bridged[:网卡名]）")
+        default: throw MacVMError.invalidConfig(String(l10n: "Unknown network mode \(text); use nat or bridged[:interface]"))
         }
     }
 
@@ -319,7 +319,7 @@ struct Create: AsyncParsableCommand {
         do {
             try GuestAccount.validate(user: NSUserName())
         } catch {
-            throw MacVMError.invalidConfig("主机用户名 \(NSUserName()) 不能用作客户机登录用户，请用 --user 指定")
+            throw MacVMError.invalidConfig(String(l10n: "Your host user name \(NSUserName()) can't be used as the guest login user; choose one with --user"))
         }
     }
 
@@ -335,7 +335,7 @@ struct Create: AsyncParsableCommand {
     /// `主机路径[:tag][:ro]`；路径展开 `~` 并标准化，没写 tag 时为 nil。
     static func parseShare(_ text: String) throws -> (hostPath: String, tag: String?, readOnly: Bool) {
         var parts = text.split(separator: ":").map(String.init)
-        guard let first = parts.first else { throw MacVMError.invalidConfig("共享目录参数为空") }
+        guard let first = parts.first else { throw MacVMError.invalidConfig(String(l10n: "The shared folder path is empty")) }
         let path = standardizedPath(first)
         parts.removeFirst()
         let readOnly = parts.last == "ro"

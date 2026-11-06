@@ -16,7 +16,7 @@
 | `guest/agent` | 客户机代理 macvm-agent；`agent-platform` 是各系统的实现，`agent-protocol` 是协议类型与黄金样例（`fixtures`） |
 | `guest/boot` | UEFI 引导程序 macvm-boot：在 VZ 上启动 Windows 用的帧缓冲垫片 |
 | `qemu` | App 自带 QEMU 的源码清单、补丁与 SPICE 显示库（`make qemu` 编译，产物在 `.build/qemu`） |
-| `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物） |
+| `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物）、界面文案的字符串目录（`l10n`） |
 | `scripts` | Makefile 调用的脚本 |
 | `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
 | `skills` | 给其他应用与 agent 用的技能：`macvm` 教它们用 CLI 操作虚拟机 |
@@ -59,6 +59,13 @@
 
 - 所有命令支持 `--json`，输出一行 `JSONEnvelope`；错误码与退出码在 `MacVMError` 定义，已发布的值不能改。
 - 改命令或选项时同步更新 `docs/cli.md`，以及 `skills/macvm` 里讲到它的地方。
+
+## 界面语言
+
+- App 与 CLI 支持英文和简体中文，按系统（或「系统设置 › 通用 › 语言与地区」里给 MacVM 单独设的）语言显示，其他语言显示英文。
+- 源码里写英文，英文就是查表的键；中文译文在 `packaging/l10n/Localizable.xcstrings`（Info.plist 里的文案在 `InfoPlist.xcstrings`），`make app` / `make run` 编译成 `.lproj` 放进 App 包。
+- SwiftUI 收 `LocalizedStringKey` 的地方直接写英文字面量；其余给人看的 `String`（错误消息、CLI 输出与帮助）写 `String(l10n: "…")`，字面量要直接写在参数里，编译器才抽得到。日志、发进客户机的内容、客户机代理的消息只写英文，不查表。
+- 改了文案后跑 `make strings`：同步字符串目录，新条目在 Xcode 里打开 `Localizable.xcstrings` 补中文（或直接编辑 JSON），直到它不再报缺译文。
 
 ## 客户机更新
 

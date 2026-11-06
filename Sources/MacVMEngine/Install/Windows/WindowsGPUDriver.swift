@@ -41,7 +41,7 @@ enum WindowsGPUDriver {
         try socket.writeAll(payload.data)
         // 装驱动要十几秒。
         socket.setTimeout(seconds: 180)
-        guard let last = try socket.readLine() else { throw MacVMError.io("客户机代理在安装显卡驱动时关闭了连接") }
+        guard let last = try socket.readLine() else { throw MacVMError.io(String(l10n: "The guest agent closed the connection while installing the graphics driver")) }
         return try JSONDecoder().decode(AgentProtocol.Response.self, from: last).checked().text == "installed"
     }
 
@@ -52,7 +52,7 @@ enum WindowsGPUDriver {
         try await Subprocess.run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path])
         let source = unpacked.appending(path: "drivers/viogpu3d")
         guard FileManager.default.fileExists(atPath: source.appending(path: "viogpu3d.inf").path) else {
-            throw MacVMError.io("驱动包里没有 viogpu3d.inf：\(zip.path)")
+            throw MacVMError.io(String(l10n: "The driver package doesn't contain viogpu3d.inf: \(zip.path)"))
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for name in try FileManager.default.contentsOfDirectory(atPath: source.path) {

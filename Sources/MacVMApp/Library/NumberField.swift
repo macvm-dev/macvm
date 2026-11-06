@@ -3,8 +3,8 @@ import SwiftUI
 /// 可直接输入、也可用步进器调整的整数。输入超出 `range` 或不是数字时不改 `value`，字标红并置 `invalid`；
 /// 离开输入框或回车后文字回到当前 `value`。
 struct NumberField: View {
-    let title: String
-    let unit: String
+    let title: LocalizedStringKey
+    let unit: LocalizedStringKey
     @Binding var value: Int
     @Binding var invalid: Bool
     let range: ClosedRange<Int>
@@ -13,7 +13,7 @@ struct NumberField: View {
     @State private var text: String
     @FocusState private var focused: Bool
 
-    init(title: String, unit: String, value: Binding<Int>, invalid: Binding<Bool>, range: ClosedRange<Int>, step: Int = 1) {
+    init(title: LocalizedStringKey, unit: LocalizedStringKey, value: Binding<Int>, invalid: Binding<Bool>, range: ClosedRange<Int>, step: Int = 1) {
         self.title = title
         self.unit = unit
         _value = value

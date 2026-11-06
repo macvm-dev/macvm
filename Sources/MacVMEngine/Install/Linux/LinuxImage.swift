@@ -27,7 +27,7 @@ public struct LinuxImage: Sendable, Equatable {
 
     public static func named(_ id: String) throws -> LinuxImage {
         guard let image = catalog.first(where: { $0.id == id }) else {
-            throw MacVMError.invalidConfig("未知镜像 \(id)，可选：\(catalog.map(\.id).joined(separator: ", "))")
+            throw MacVMError.invalidConfig(String(l10n: "Unknown image \(id); available: \(catalog.map(\.id).joinedAsList())"))
         }
         return image
     }
@@ -67,7 +67,7 @@ public enum ImageCache {
                 $0.pathExtension == image.diskExtension
                     && (try? FileManager.default.attributesOfItem(atPath: $0.path)[.type] as? FileAttributeType) == .typeRegular
             }) else {
-                throw MacVMError.io("镜像归档里没有 .\(image.diskExtension) 磁盘")
+                throw MacVMError.io(String(l10n: "The image archive doesn't contain a .\(image.diskExtension) disk"))
             }
             try FileManager.default.moveItem(at: extracted, to: disk)
             try? FileManager.default.removeItem(at: archive)

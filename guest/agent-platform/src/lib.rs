@@ -20,7 +20,7 @@ pub use windows::*;
 /// 运行命令并等它结束，非零退出算错误。
 pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<()> {
     let status = Command::new(program).args(args).status()?;
-    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} 退出码 {status}"))) }
+    if status.success() { Ok(()) } else { Err(io::Error::other(format!("{program} exited with an error ({status})"))) }
 }
 
 /// 连接的来处。
@@ -95,7 +95,7 @@ pub(crate) fn encode_png(width: u32, height: u32, rgb: &[u8]) -> io::Result<Vec<
 
 /// 元素编号不在最近一次快照里。
 pub(crate) fn stale_element(id: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::NotFound, format!("元素 {id} 不在最近一次快照里，重新快照后再试"))
+    io::Error::new(io::ErrorKind::NotFound, format!("Element {id} isn't in the latest snapshot; take a new snapshot and try again"))
 }
 
 /// 推给宿主的客户机光标。

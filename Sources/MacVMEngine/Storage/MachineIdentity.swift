@@ -10,7 +10,7 @@ enum MachineIdentity {
 
     static func loadGeneric(from bundle: VMBundle) throws -> VZGenericMachineIdentifier {
         guard let id = VZGenericMachineIdentifier(dataRepresentation: try read(bundle.machineIdentifierURL)) else {
-            throw MacVMError.invalidConfig("机器标识损坏：\(bundle.machineIdentifierURL.path)")
+            throw MacVMError.invalidConfig(String(l10n: "Corrupt machine identifier: \(bundle.machineIdentifierURL.path)"))
         }
         return id
     }
@@ -21,7 +21,7 @@ enum MachineIdentity {
 
     static func loadMac(from bundle: VMBundle) throws -> VZMacMachineIdentifier {
         guard let id = VZMacMachineIdentifier(dataRepresentation: try read(bundle.machineIdentifierURL)) else {
-            throw MacVMError.invalidConfig("机器标识损坏：\(bundle.machineIdentifierURL.path)")
+            throw MacVMError.invalidConfig(String(l10n: "Corrupt machine identifier: \(bundle.machineIdentifierURL.path)"))
         }
         return id
     }
@@ -32,10 +32,10 @@ enum MachineIdentity {
 
     static func loadHardwareModel(from bundle: VMBundle) throws -> VZMacHardwareModel {
         guard let model = VZMacHardwareModel(dataRepresentation: try read(bundle.hardwareModelURL)) else {
-            throw MacVMError.invalidConfig("硬件型号损坏：\(bundle.hardwareModelURL.path)")
+            throw MacVMError.invalidConfig(String(l10n: "Corrupt hardware model: \(bundle.hardwareModelURL.path)"))
         }
         guard model.isSupported else {
-            throw MacVMError.unsupported("本机不支持该虚拟机的硬件型号，需更新主机 macOS")
+            throw MacVMError.unsupported(String(l10n: "This Mac doesn't support the virtual machine's hardware model; update macOS on this Mac"))
         }
         return model
     }
@@ -49,13 +49,13 @@ enum MachineIdentity {
 
     private static func read(_ url: URL) throws -> Data {
         do { return try Data(contentsOf: url) } catch {
-            throw MacVMError.io("读取 \(url.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't read \(url.path): \(error.localizedDescription)"))
         }
     }
 
     private static func write(_ data: Data, to url: URL) throws {
         do { try data.write(to: url, options: .atomic) } catch {
-            throw MacVMError.io("写入 \(url.path) 失败：\(error.localizedDescription)")
+            throw MacVMError.io(String(l10n: "Couldn't write \(url.path): \(error.localizedDescription)"))
         }
     }
 }

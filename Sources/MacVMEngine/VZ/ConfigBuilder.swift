@@ -55,7 +55,7 @@ public struct ConfigBuilder {
 
         if validate {
             do { try vz.validate() } catch {
-                throw MacVMError.invalidConfig("配置无效：\(error.localizedDescription)")
+                throw MacVMError.invalidConfig(String(l10n: "Invalid configuration: \(error.localizedDescription)"))
             }
         }
         return vz
@@ -84,7 +84,7 @@ public struct ConfigBuilder {
         if config.os == .windows {
             let boot = WindowsSupport.bootImageURL(bundle)
             guard FileManager.default.fileExists(atPath: boot.path) else {
-                throw MacVMError.invalidConfig("缺少 Windows 启动盘 \(WindowsSupport.bootImageName)，应经 RunnerFactory.make 创建运行器")
+                throw MacVMError.invalidConfig(String(l10n: "Missing Windows boot disk \(WindowsSupport.bootImageName); the runner should be created through RunnerFactory.make"))
             }
             devices.append(VZVirtioBlockDeviceConfiguration(attachment: try Self.diskAttachment(url: boot, readOnly: true, caching: .automatic, sync: .none)))
         }
@@ -109,7 +109,7 @@ public struct ConfigBuilder {
 
     static func diskAttachment(url: URL, readOnly: Bool, caching: DiskConfig.Caching, sync: DiskConfig.Sync) throws -> VZDiskImageStorageDeviceAttachment {
         guard FileManager.default.fileExists(atPath: url.path) else {
-            throw MacVMError.invalidConfig("磁盘文件不存在：\(url.path)")
+            throw MacVMError.invalidConfig(String(l10n: "Disk file not found: \(url.path)"))
         }
         let cachingMode: VZDiskImageCachingMode = switch caching {
         case .automatic: .automatic
@@ -124,7 +124,7 @@ public struct ConfigBuilder {
         do {
             return try VZDiskImageStorageDeviceAttachment(url: url, readOnly: readOnly, cachingMode: cachingMode, synchronizationMode: syncMode)
         } catch {
-            throw MacVMError.engine("挂载磁盘 \(url.lastPathComponent) 失败：\(error.localizedDescription)")
+            throw MacVMError.engine(String(l10n: "Couldn't attach disk \(url.lastPathComponent): \(error.localizedDescription)"))
         }
     }
 
@@ -135,7 +135,7 @@ public struct ConfigBuilder {
             let device = VZVirtioNetworkDeviceConfiguration()
             device.attachment = try NetworkAttachments.make(for: net, bridge: net.mode == .bridged ? openBridge?(net) : nil)
             if let text = net.macAddress {
-                guard let mac = VZMACAddress(string: text) else { throw MacVMError.invalidConfig("MAC 地址无效：\(text)") }
+                guard let mac = VZMACAddress(string: text) else { throw MacVMError.invalidConfig(String(l10n: "Invalid MAC address: \(text)")) }
                 device.macAddress = mac
             }
             return device
@@ -236,7 +236,7 @@ public struct ConfigBuilder {
             var isDir: ObjCBool = false
             let url = bundle.resolve(share.hostPath)
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
-                throw MacVMError.invalidConfig("共享目录不存在：\(url.path)")
+                throw MacVMError.invalidConfig(String(l10n: "Shared folder not found: \(url.path)"))
             }
             return (share, VZSharedDirectory(url: url, readOnly: share.readOnly))
         }
@@ -274,9 +274,9 @@ enum RosettaShare {
     static func make() throws -> VZVirtioFileSystemDeviceConfiguration {
         switch VZLinuxRosettaDirectoryShare.availability {
         case .installed: break
-        case .notInstalled: throw MacVMError.unsupported("主机未安装 Rosetta，先运行 softwareupdate --install-rosetta")
-        case .notSupported: throw MacVMError.unsupported("本机不支持 Linux Rosetta")
-        @unknown default: throw MacVMError.unsupported("Rosetta 状态未知")
+        case .notInstalled: throw MacVMError.unsupported(String(l10n: "Rosetta isn't installed on this Mac; run softwareupdate --install-rosetta first"))
+        case .notSupported: throw MacVMError.unsupported(String(l10n: "This Mac doesn't support Rosetta for Linux"))
+        @unknown default: throw MacVMError.unsupported(String(l10n: "Couldn't tell whether Rosetta is available"))
         }
         let share = try VZLinuxRosettaDirectoryShare()
         let device = VZVirtioFileSystemDeviceConfiguration(tag: tag)

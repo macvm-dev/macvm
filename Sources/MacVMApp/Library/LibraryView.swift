@@ -22,13 +22,13 @@ struct LibraryView: View {
         .toolbar {
             // 空库时引导页正中已有新建按钮。
             if !isEmpty {
-                Button { model.showingCreate = true } label: { Label("新建", systemImage: "plus") }
-                    .help("新建虚拟机")
+                Button { model.showingCreate = true } label: { Label("New", systemImage: "plus") }
+                    .help("New Virtual Machine")
             }
         }
         .sheet(isPresented: $model.showingCreate) { CreateSheet() }
-        .alert("操作失败", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
-            Button("好") { model.lastError = nil }
+        .alert("The Operation Couldn't Be Completed", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
+            Button("OK") { model.lastError = nil }
         } message: {
             Text(model.lastError ?? "")
         }
@@ -39,11 +39,11 @@ struct LibraryView: View {
 
     private var emptyLibrary: some View {
         ContentUnavailableView {
-            Label("还没有虚拟机", systemImage: "desktopcomputer")
+            Label("No Virtual Machines", systemImage: "desktopcomputer")
         } description: {
-            Text("新建一台 macOS、Linux 或 Windows 虚拟机")
+            Text("Create a macOS, Linux, or Windows virtual machine")
         } actions: {
-            Button { model.showingCreate = true } label: { Label("新建虚拟机…", systemImage: "plus") }
+            Button { model.showingCreate = true } label: { Label("New Virtual Machine…", systemImage: "plus") }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
         }
@@ -70,8 +70,8 @@ struct LibraryView: View {
                         row.tag(request.name)
                     } else {
                         row.selectionDisabled().contextMenu {
-                            Button("继续创建") { resume(request.name) }
-                            Button("放弃", role: .destructive) { model.discardCreation(request.name) }
+                            Button("Resume Creation") { resume(request.name) }
+                            Button("Discard", role: .destructive) { model.discardCreation(request.name) }
                         }
                     }
                 }
@@ -95,15 +95,15 @@ struct LibraryView: View {
             CreatingView(name: name, activity: activity) { model.cancelCreation(name) }
         } else if let name = model.selection, let request = model.interruptedCreations.first(where: { $0.name == name }) {
             ContentUnavailableView {
-                Label("\(request.name) 的创建被中断", systemImage: "exclamationmark.triangle")
+                Label("Creation of \(request.name) was interrupted", systemImage: "exclamationmark.triangle")
             } description: {
-                Text("自动继续没有成功。继续会从头再建，已下载的部分不用重下。")
+                Text("MacVM couldn't resume automatically. Resuming starts over, but anything already downloaded won't be downloaded again.")
             } actions: {
-                Button("继续创建") { resume(request.name) }.buttonStyle(.borderedProminent)
-                Button("放弃") { model.discardCreation(request.name) }
+                Button("Resume Creation") { resume(request.name) }.buttonStyle(.borderedProminent)
+                Button("Discard") { model.discardCreation(request.name) }
             }
         } else {
-            ContentUnavailableView("选择一台虚拟机", systemImage: "desktopcomputer")
+            ContentUnavailableView("Select a Virtual Machine", systemImage: "desktopcomputer")
         }
     }
 
@@ -111,23 +111,23 @@ struct LibraryView: View {
         if let vm = model.summary(name) {
             machineMenu(vm)
         } else if model.activity[name] != nil {
-            Button("取消创建") { model.cancelCreation(name) }
+            Button("Cancel Creation") { model.cancelCreation(name) }
         } else if model.interruptedCreations.contains(where: { $0.name == name }) {
-            Button("继续创建") { resume(name) }
-            Button("放弃", role: .destructive) { model.discardCreation(name) }
+            Button("Resume Creation") { resume(name) }
+            Button("Discard", role: .destructive) { model.discardCreation(name) }
         }
     }
 
     @ViewBuilder private func machineMenu(_ vm: VMSummary) -> some View {
         switch vm.state {
         case .stopped, .suspended:
-            Button(vm.state == .suspended ? "继续" : "启动") { open(vm) }.disabled(model.activity[vm.name] != nil)
+            Button(vm.state == .suspended ? "Resume" : "Start") { open(vm) }.disabled(model.activity[vm.name] != nil)
         case .running:
-            Button("显示") { open(vm) }
-            Button("关机") { Task { await model.stop(vm.name) } }
+            Button("Show") { open(vm) }
+            Button("Shut Down") { Task { await model.stop(vm.name) } }
         }
         Divider()
-        Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: vm.path)]) }
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: vm.path)]) }
     }
 
     /// 双击行：停着的启动，运行中的打开窗口；显示不了画面时窗口里说明原因。
@@ -152,7 +152,7 @@ struct LibraryView: View {
     private var subtitle: String {
         guard !model.machines.isEmpty else { return "" }
         let running = model.machines.count { $0.state == .running }
-        return running == 0 ? "\(model.machines.count) 台" : "\(model.machines.count) 台 · \(running) 台运行中"
+        return running == 0 ? String(l10n: "\(model.machines.count) machines") : String(l10n: "\(model.machines.count) machines · \(running) running")
     }
 }
 
@@ -197,7 +197,7 @@ struct CreatingView: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("正在创建 \(name)", systemImage: "desktopcomputer")
+            Label("Creating \(name)", systemImage: "desktopcomputer")
         } description: {
             Text(activity.text)
         } actions: {
@@ -208,7 +208,7 @@ struct CreatingView: View {
                 } else {
                     ProgressView().controlSize(.small)
                 }
-                Button("取消", action: cancel).fixedSize()
+                Button("Cancel", action: cancel).fixedSize()
             }
         }
     }
@@ -231,7 +231,7 @@ struct PendingRow: View {
             Button(action: cancel) { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
-                .help("取消创建")
+                .help("Cancel Creation")
         }
         .padding(.vertical, 4)
     }
@@ -247,10 +247,10 @@ struct InterruptedRow: View {
             Image(systemName: "exclamationmark.triangle").font(.title2).frame(width: 28).foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(request.name).font(.headline)
-                Text("创建被中断").font(.caption).foregroundStyle(.secondary)
+                Text("Creation interrupted").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("继续", action: resume).controlSize(.small)
+            Button("Resume", action: resume).controlSize(.small)
         }
         .padding(.vertical, 4)
     }
@@ -291,9 +291,9 @@ extension GuestOS {
 extension VMSummary.State {
     var label: String {
         switch self {
-        case .running: "运行中"
-        case .stopped: "已停止"
-        case .suspended: "已挂起"
+        case .running: String(l10n: "Running")
+        case .stopped: String(l10n: "Stopped")
+        case .suspended: String(l10n: "Suspended")
         }
     }
 

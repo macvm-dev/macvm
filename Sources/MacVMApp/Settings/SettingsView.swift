@@ -10,44 +10,44 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("本机") {
+            Section("This Mac") {
                 LabeledContent("macOS", value: capabilities.hostOS)
-                LabeledContent("性能核", value: "\(capabilities.performanceCores)")
-                LabeledContent("内存", value: DisplaySize.format(capabilities.physicalMemory))
-                capability("Windows 客户机", capabilities.windows)
+                LabeledContent("Performance Cores", value: "\(capabilities.performanceCores)")
+                LabeledContent("Memory", value: DisplaySize.format(capabilities.physicalMemory))
+                capability("Windows Guests", capabilities.windows)
                 capability("Linux Rosetta", capabilities.rosetta)
             }
             NetworkHelperSection()
-            Section("通用") {
-                Toggle("在菜单栏显示", isOn: $showsMenuBarExtra)
+            Section("General") {
+                Toggle("Show in Menu Bar", isOn: $showsMenuBarExtra)
             }
             Section {
-                LocationRow(title: "虚拟机", url: model.library.root, isCustom: model.settings.libraryPath != nil,
+                LocationRow(title: "Virtual Machines", url: model.library.root, isCustom: model.settings.libraryPath != nil,
                             editable: model.canChangeLibrary) { model.setLibraryPath($0) }
-                LocationRow(title: "下载", url: model.settings.downloadRoot, isCustom: model.settings.downloadPath != nil,
+                LocationRow(title: "Downloads", url: model.settings.downloadRoot, isCustom: model.settings.downloadPath != nil,
                             editable: model.canChangeDownloads) { model.setDownloadPath($0) }
-                LocationRow(title: "模板", url: model.templateLibrary.root, isCustom: model.settings.templatePath != nil,
+                LocationRow(title: "Templates", url: model.templateLibrary.root, isCustom: model.settings.templatePath != nil,
                             editable: model.canChangeTemplates) { model.setTemplatePath($0) }
             } header: {
-                Text("位置")
+                Text("Locations")
             } footer: {
                 footer(locationFooter)
             }
             Section {
                 ForEach(model.templates, id: \.name) { TemplateRow(template: $0) }
             } header: {
-                Text("模板")
+                Text("Templates")
             } footer: {
                 footer(model.templates.isEmpty
-                       ? "在虚拟机的「更多操作」里选「存为模板…」，之后新建虚拟机时可从模板创建。"
-                       : "从模板新建的虚拟机获得新的机器标识与 MAC；删除模板不影响由它新建的虚拟机。")
+                       ? String(l10n: "To make a template, choose Save as Template… from a virtual machine's More Actions menu. You can then create virtual machines from it.")
+                       : String(l10n: "Virtual machines created from a template get a new machine identifier and MAC address. Deleting a template doesn't affect virtual machines created from it."))
             }
             Section {
-                Toggle("把虚拟机加入 ~/.ssh/config", isOn: Binding(get: { model.sshIncluded }, set: { model.setSSHIncluded($0) }))
+                Toggle("Add Virtual Machines to ~/.ssh/config", isOn: Binding(get: { model.sshIncluded }, set: { model.setSSHIncluded($0) }))
             } header: {
                 Text("SSH")
             } footer: {
-                footer("可直接 ssh \(model.machines.first?.name ?? "dev")。只加一行 Include，不改动其他内容。")
+                footer(String(l10n: "Then you can run ssh \(model.machines.first?.name ?? "dev") directly. MacVM adds a single Include line and changes nothing else."))
             }
         }
         .formStyle(.grouped)
@@ -67,16 +67,16 @@ struct SettingsView: View {
     }
 
     private var locationFooter: String {
-        if VMLibrary.environmentRoot != nil { return "虚拟机目录由环境变量 MACVM_HOME 指定。" }
+        if VMLibrary.environmentRoot != nil { return String(l10n: "The virtual machine folder is set by the MACVM_HOME environment variable.") }
         if !model.canChangeLibrary, !model.interruptedCreations.isEmpty {
-            return "有被中断的创建时不能更改虚拟机目录，先在列表里继续或放弃它。"
+            return String(l10n: "To change the virtual machine folder, first resume or discard the interrupted creation in the list.")
         }
-        if !model.canChangeLibrary { return "有虚拟机运行或正在创建时不能更改虚拟机目录。" }
-        if !model.canChangeDownloads { return "正在下载、安装或存模板时不能更改下载目录与模板目录。" }
-        return "更改后不会搬动已有文件，命令行同样生效。"
+        if !model.canChangeLibrary { return String(l10n: "The virtual machine folder can't be changed while a virtual machine is running or being created.") }
+        if !model.canChangeDownloads { return String(l10n: "The download and template folders can't be changed while downloading, installing, or saving a template.") }
+        return String(l10n: "Changing a location doesn't move existing files. The macvm command uses the new location too.")
     }
 
-    private func capability(_ title: String, _ ok: Bool) -> some View {
+    private func capability(_ title: LocalizedStringKey, _ ok: Bool) -> some View {
         LabeledContent(title) {
             Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle").foregroundStyle(ok ? .green : .secondary)
         }
@@ -96,7 +96,7 @@ private struct TemplateRow: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
                 .opacity(hovering ? 1 : 0)
-                .help("删除模板")
+                .help("Delete Template")
         } label: {
             Label {
                 Text(template.name)
@@ -107,26 +107,26 @@ private struct TemplateRow: View {
         }
         .onHover { hovering = $0 }
         .contextMenu {
-            Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: template.path)]) }
-            Button("删除…", role: .destructive) { confirmingDelete = true }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: template.path)]) }
+            Button("Delete…", role: .destructive) { confirmingDelete = true }
         }
-        .confirmationDialog("删除模板「\(template.name)」？", isPresented: $confirmingDelete) {
-            Button("删除", role: .destructive) { model.deleteTemplate(template.name) }
+        .confirmationDialog("Delete Template “\(template.name)”?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) { model.deleteTemplate(template.name) }
         } message: {
-            Text("由它新建的虚拟机不受影响。")
+            Text("Virtual machines created from it aren't affected.")
         }
     }
 
     private var detail: String {
-        var parts = [template.os.label, "\(template.cpuCount) 核", DisplaySize.format(template.memorySize)]
-        if let disk = template.diskSize { parts.append("磁盘 " + DisplaySize.format(disk)) }
+        var parts = [template.os.label, String(l10n: "\(template.cpuCount) cores"), DisplaySize.format(template.memorySize)]
+        if let disk = template.diskSize { parts.append(String(l10n: "\(DisplaySize.format(disk)) disk")) }
         return parts.joined(separator: " · ")
     }
 }
 
 /// 一个可更改的目录：显示路径，菜单里选择新目录、恢复默认或在 Finder 中显示。
 private struct LocationRow: View {
-    let title: String
+    let title: LocalizedStringKey
     let url: URL
     let isCustom: Bool
     let editable: Bool
@@ -143,10 +143,10 @@ private struct LocationRow: View {
                     .foregroundStyle(.secondary)
                     .help(path)
                 Menu {
-                    Button("选择…", action: choose).disabled(!editable)
-                    Button("恢复默认") { change(nil) }.disabled(!editable || !isCustom)
+                    Button("Choose…", action: choose).disabled(!editable)
+                    Button("Restore Default") { change(nil) }.disabled(!editable || !isCustom)
                     Divider()
-                    Button("在 Finder 中显示", action: reveal)
+                    Button("Show in Finder", action: reveal)
                 } label: {
                     Image(systemName: "folder")
                 }
@@ -162,7 +162,7 @@ private struct LocationRow: View {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.directoryURL = url
-        panel.prompt = "选择"
+        panel.prompt = String(l10n: "Choose")
         if panel.runModal() == .OK, let picked = panel.url { change(picked) }
     }
 

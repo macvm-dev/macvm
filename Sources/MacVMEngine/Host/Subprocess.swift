@@ -32,7 +32,7 @@ enum Subprocess {
                     group.leave()
                 }
                 do { try process.run() } catch {
-                    c.resume(throwing: MacVMError.io("无法运行 \(executable)：\(error.localizedDescription)"))
+                    c.resume(throwing: MacVMError.io(String(l10n: "Couldn't run \(executable): \(error.localizedDescription)")))
                     return
                 }
                 // 取消发生在 run 之前时 onCancel 看不到在运行的进程，这里补上。
@@ -61,7 +61,7 @@ enum Subprocess {
         let (status, out, err) = result
         guard acceptedExitCodes.contains(status) else {
             let message = String(decoding: err, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            throw MacVMError.io("\((executable as NSString).lastPathComponent) 退出码 \(status)\(message.isEmpty ? "" : "：" + message)")
+            throw MacVMError.io(String(l10n: "\((executable as NSString).lastPathComponent) exited with code \(status)") + (message.isEmpty ? "" : String(l10n: ": \(message)")))
         }
         return String(decoding: out, as: UTF8.self)
     }

@@ -47,7 +47,7 @@ public enum AgentToken {
     static func authenticate(_ socket: UnixSocket, bundle: VMBundle, bridged: Bool) throws {
         guard let token = read(bundle) else {
             guard !bridged else {
-                throw MacVMError.invalidConfig("\(bundle.name) 的包里没有共享令牌，桥接网络下连不上客户机代理，用 macvm agent install \(bundle.name) 重新安装代理")
+                throw MacVMError.invalidConfig(String(l10n: "The bundle for \(bundle.name) has no shared token, so the guest agent can't be reached over bridged networking; reinstall it with macvm agent install \(bundle.name)"))
             }
             return
         }
@@ -59,10 +59,10 @@ public enum AgentToken {
         socket.setTimeout(seconds: 10)
         defer { socket.setTimeout(seconds: 0) }
         guard let line = try socket.readLine(exact: true) else {
-            throw MacVMError.engine("\(name) 的客户机代理没有发来认证质询就断开了：代理没在运行，或客户机里没有共享令牌（用 macvm agent install \(name) 重新安装代理）")
+            throw MacVMError.engine(String(l10n: "The guest agent in \(name) disconnected without sending an authentication challenge. Either the agent isn't running or the guest has no shared token; reinstall it with macvm agent install \(name)."))
         }
         guard let challenge = try? JSONDecoder().decode(Challenge.self, from: line).challenge else {
-            throw MacVMError.engine("\(name) 的客户机代理没有发来认证质询，可能是旧版代理，用 macvm agent install \(name) 更新")
+            throw MacVMError.engine(String(l10n: "The guest agent in \(name) didn't send an authentication challenge and may be out of date; update it with macvm agent install \(name)"))
         }
         try socket.writeLine(JSONEncoder().encode(Answer(auth: answer(token: token, challenge: challenge))))
     }

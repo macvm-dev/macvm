@@ -33,6 +33,8 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: make boot
       - run: make test-swift
+      # 字符串目录要与源码同步，且每条都有中文译文。
+      - run: make strings && git diff --exit-code packaging/l10n
       # 组装 App 并 ad-hoc 签名、校验，Info.plist 与打包脚本的问题不必等到发布才暴露。
       - run: make app
 

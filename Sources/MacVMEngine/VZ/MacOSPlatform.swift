@@ -8,7 +8,7 @@ extension ConfigBuilder {
         platform.hardwareModel = try MachineIdentity.loadHardwareModel(from: bundle)
         platform.machineIdentifier = try MachineIdentity.loadMac(from: bundle)
         guard FileManager.default.fileExists(atPath: bundle.auxiliaryStorageURL.path) else {
-            throw MacVMError.invalidConfig("缺少辅助存储：\(bundle.auxiliaryStorageURL.path)")
+            throw MacVMError.invalidConfig(String(l10n: "Missing auxiliary storage: \(bundle.auxiliaryStorageURL.path)"))
         }
         platform.auxiliaryStorage = VZMacAuxiliaryStorage(url: bundle.auxiliaryStorageURL)
         vz.platform = platform

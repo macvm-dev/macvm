@@ -69,13 +69,13 @@ final class ClipboardSync {
     private func pushFiles(_ urls: [URL], changeCount: Int) {
         let bundle = bundle
         Self.log(bundle.name, "push files \(urls.map(\.lastPathComponent))")
-        let activity = GuestTransferActivity(vmName: bundle.name, title: "正在把剪贴板里的文件复制到虚拟机…")
+        let activity = GuestTransferActivity(vmName: bundle.name, title: String(l10n: "Copying clipboard files to the virtual machine…"))
         transfer = activity
         activity.run { progress in
             let total = GuestFileTransfer.totalSize(urls)
             guard total <= GuestClipboard.maxFiles else {
                 Self.markPushed(self, changeCount, contents: nil)
-                throw MacVMError.unsupported("剪贴板里的文件共 \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))，太大了没有复制到虚拟机；可以直接拖进窗口")
+                throw MacVMError.unsupported(String(l10n: "The copied files (\(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))) are too large to paste into the virtual machine. Drag them into its window instead"))
             }
             do {
                 try GuestClipboard.setFiles(bundle, urls, progress: progress)
@@ -132,7 +132,7 @@ final class ClipboardSync {
         transfer?.progress.cancel()
         let bundle = bundle
         let paths = contents.files.map(\.path)
-        let activity = GuestTransferActivity(vmName: bundle.name, title: "正在从虚拟机复制剪贴板里的文件…")
+        let activity = GuestTransferActivity(vmName: bundle.name, title: String(l10n: "Copying clipboard files from the virtual machine…"))
         transfer = activity
         activity.run { progress in
             let staging = try Self.freshStaging(for: bundle.name)

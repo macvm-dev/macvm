@@ -125,8 +125,8 @@ public enum AgentInstaller {
     /// 用 qemu 引擎的 Windows 在自带 QEMU 带 3D 时一并放进 viogpu3d 驱动包，返回是否放了。
     @discardableResult
     public static func installOverSSH(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> Bool {
-        guard let user = config.guestUser else { throw MacVMError.unsupported("不知道 \(config.name) 的登录用户，无法经 SSH 安装代理") }
-        guard let binary = binary(for: config.os) else { throw MacVMError.io("找不到 \(config.os.rawValue) 版客户机代理，先运行 make agent") }
+        guard let user = config.guestUser else { throw MacVMError.unsupported(String(l10n: "\(config.name)'s login user is unknown, so the guest agent can't be installed over SSH")) }
+        guard let binary = binary(for: config.os) else { throw MacVMError.io(String(l10n: "Couldn't find the \(config.os.rawValue) guest agent; run make agent first")) }
         try SSHConfig.validateLogin(user: user, host: bundle.name)
         let ssh = sshArguments(bundle: bundle, user: user, macvmPath: macvmPath)
         // 宿主包里一有令牌就对代理要求质询：新生成的令牌在送进客户机之前就失败时删掉，现有代理才连得上。

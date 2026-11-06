@@ -26,7 +26,7 @@ fn automation() -> io::Result<IUIAutomation> {
 }
 
 fn com(e: windows::core::Error) -> io::Error {
-    io::Error::other(format!("UI Automation：{}", e.message()))
+    io::Error::other(format!("UI Automation: {}", e.message()))
 }
 
 /// 快照里缓存的属性。
@@ -246,7 +246,7 @@ fn control_type_name(id: i32) -> &'static str {
 
 fn pattern<T: Interface>(element: &IUIAutomationElement, id: UIA_PATTERN_ID, what: &str) -> io::Result<T> {
     // SAFETY: 向元素要指定的控件模式。
-    unsafe { element.GetCurrentPatternAs::<T>(id) }.map_err(|_| io::Error::new(io::ErrorKind::Unsupported, format!("元素不支持 {what}")))
+    unsafe { element.GetCurrentPatternAs::<T>(id) }.map_err(|_| io::Error::new(io::ErrorKind::Unsupported, format!("Element doesn't support {what}")))
 }
 
 pub fn ui_action(id: &str, action: ElementAction, value: Option<&str>) -> io::Result<()> {
@@ -270,7 +270,7 @@ pub fn ui_action(id: &str, action: ElementAction, value: Option<&str>) -> io::Re
                 pattern::<IUIAutomationScrollItemPattern>(&element, UIA_ScrollItemPatternId, "scroll-into-view")?.ScrollIntoView()
             }
             ElementAction::SetValue => {
-                let value = value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "set-value 需要 value"))?;
+                let value = value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "set-value needs a value"))?;
                 pattern::<IUIAutomationValuePattern>(&element, UIA_ValuePatternId, "set-value")?.SetValue(&BSTR::from(value))
             }
             ElementAction::Focus => element.SetFocus(),
@@ -285,7 +285,7 @@ pub fn ui_action(id: &str, action: ElementAction, value: Option<&str>) -> io::Re
             ElementAction::ShowMenu => {
                 // UIA 没有弹出右键菜单的模式，在元素中心点右键。
                 let rect = element.CurrentBoundingRectangle().map_err(com)?;
-                let [x, y, w, h] = bounds(rect).ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("元素 {id} 没有位置")))?;
+                let [x, y, w, h] = bounds(rect).ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("Element {id} has no position")))?;
                 let click = InputEvent::Click { x: Some(x + w / 2), y: Some(y + h / 2), element: None, button: MouseButton::Right, count: 1 };
                 return sendinput::play(&[click]);
             }
@@ -299,7 +299,7 @@ pub fn ui_element_bounds(id: &str) -> io::Result<[i32; 4]> {
     let element = lookup(id)?;
     // SAFETY: 读取有效元素的当前边框。
     let rect = unsafe { element.CurrentBoundingRectangle() }.map_err(com)?;
-    bounds(rect).ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("元素 {id} 没有位置")))
+    bounds(rect).ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, format!("Element {id} has no position")))
 }
 
 pub fn ui_input(events: &[InputEvent]) -> io::Result<()> {
@@ -348,5 +348,5 @@ fn find_app(apps: &[UiApp], query: &str) -> io::Result<UiApp> {
     apps.iter()
         .find(|a| Some(a.pid) == pid || a.name.eq_ignore_ascii_case(name))
         .cloned()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("没有找到带窗口的应用 {query}")))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("No app with a window matches {query}")))
 }
