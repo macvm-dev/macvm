@@ -4,7 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// 一台虚拟机的窗口：打开即在本进程启动（或接上已在本进程运行的）虚拟机。
-/// QEMU 引擎的画面经 VNC 显示，在别的进程里运行的也能接上；VZ 的画面只能在运行它的进程里显示。
+/// QEMU 引擎的画面经 VNC 显示，在别的进程里运行的也能接上；VZ 的画面只能在运行它的进程里显示，
+/// 别的进程运行的能挂起就接到本进程（`AppModel.takeOver`），不能的只说明原因。
 struct MachineWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -23,6 +24,8 @@ struct MachineWindow: View {
     @State private var suspending = false
     /// 本窗口启动了虚拟机、VZ 画面还没收到第一帧；在那之前画面是黑的，盖上启动提示。
     @State private var awaitingFirstFrame = false
+    /// 正在把别的进程运行的虚拟机接到本进程，期间它短暂停在挂起状态，窗口不因此关闭。
+    @State private var takingOver = false
     /// 启动提示的文字，挂起的虚拟机是从存档恢复。
     @State private var startingTitle = "正在启动…"
     /// 窗口显示客户机画面期间经代理同步剪贴板；没有画面或客户机不经代理同步时为 nil。
@@ -58,11 +61,15 @@ struct MachineWindow: View {
                     }
             } else if let bundle, config?.engine == .qemu, runner != nil || runningElsewhere {
                 QEMUMachineView(bundle: bundle)
-            } else if runningElsewhere {
+            } else if runningElsewhere, failed || !model.canTakeOver(name) {
                 ContentUnavailableView {
                     Label("在后台进程中运行", systemImage: "terminal")
                 } description: {
-                    Text("这台虚拟机由 macvm start 在另一个进程中运行，VZ 的画面只能在运行它的进程里显示。关机后可在这里重新启动。")
+                    if let failure {
+                        Text(failure).textSelection(.enabled)
+                    } else {
+                        Text("这台虚拟机由 macvm start 在另一个进程中运行，VZ 的画面只能在运行它的进程里显示；它不能挂起，没法转到这里运行。关机后可在这里重新启动。")
+                    }
                 } actions: {
                     Button("关机") { Task { await model.stop(name) } }
                 }
@@ -113,7 +120,17 @@ struct MachineWindow: View {
         }
         .navigationTitle(name)
         .task(id: name) {
-            guard !runningElsewhere else { return }
+            if runningElsewhere {
+                guard model.canTakeOver(name) else { return }
+                startingTitle = "正在转到 App 里运行…"
+                awaitingFirstFrame = true
+                takingOver = true
+                runner = await model.takeOver(name)
+                takingOver = false
+                failed = runner == nil
+                failure = failed ? model.lastError : nil
+                return
+            }
             if model.summary(name)?.state == .suspended { startingTitle = "正在恢复…" }
             awaitingFirstFrame = !model.isRunningHere(name)
             runner = await model.start(name)
@@ -123,7 +140,7 @@ struct MachineWindow: View {
         }
         .onChange(of: isRunning) { wasRunning, running in
             // 虚拟机停止（客户机关机、挂起）后窗口没有内容可显示。
-            if wasRunning, !running { dismiss() }
+            if wasRunning, !running, !takingOver { dismiss() }
         }
         .onChange(of: model.isRunningHere(name)) { _, running in
             if !running { runner = nil }

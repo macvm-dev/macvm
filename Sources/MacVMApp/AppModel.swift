@@ -262,10 +262,44 @@ final class AppModel {
     }
 
     /// 运行中的虚拟机能否在本进程显示画面：QEMU 的画面经 VNC 显示，别的进程运行的也能接上；
-    /// VZ 的画面只能在运行它的进程里显示。
+    /// VZ 的画面只能在运行它的进程里显示，别的进程运行的要先 `takeOver`。
     func canDisplay(_ name: String) -> Bool {
-        isRunningHere(name) || config(of: name)?.engine == .qemu
+        isRunningHere(name) || config(of: name)?.engine == .qemu || canTakeOver(name)
     }
+
+    /// 别的进程运行的 VZ 虚拟机能否接到本进程：那边挂起、本进程从挂起状态恢复。还没问到那边能否挂起时先当能，由 `takeOver` 确认。
+    /// 开了 `VMConfig.serialConsole` 的不行：后台进程为控制台多接了串口，存下的状态与本进程组装的设备对不上。
+    func canTakeOver(_ name: String) -> Bool {
+        guard summary(name)?.state == .running, !isRunningHere(name), let config = config(of: name), config.engine == .vz else { return false }
+        return remoteSuspend[name] != false && !config.serialConsole
+    }
+
+    /// 把别的进程运行的 VZ 虚拟机接到本进程显示：请那边挂起，等它退出后在本进程恢复。
+    /// 挂起失败时虚拟机留在原进程照常运行；恢复失败时停在挂起状态。失败时报告错误并返回 nil。
+    func takeOver(_ name: String) async -> (any MachineRunner)? {
+        setActivity(name, Self.takingOverTitle)
+        defer { if activity[name]?.title == Self.takingOverTitle { setActivity(name, nil) } }
+        do {
+            let bundle = try library.bundle(named: name)
+            let canSuspend = try await Task.detached { try ControlClient.send(.status, to: bundle, timeout: 5).canSuspend }.value
+            remoteSuspend[name] = canSuspend
+            guard canSuspend == true else {
+                throw MacVMError.unsupported("\(name) 在后台进程里不能挂起，没法转到 App 里运行；关机后在这里重新启动即可显示")
+            }
+            try await Self.sendControl(.suspend, to: bundle, timeout: 300)
+            guard try await VMStatus.waitUntilStopped(bundle, timeout: 30) else {
+                throw MacVMError.timeout("\(name) 已挂起，但原来运行它的进程没有退出")
+            }
+            remoteSuspend[name] = nil
+            return try await launch(name)
+        } catch {
+            report(error)
+            refresh()
+            return nil
+        }
+    }
+
+    private static let takingOverTitle = "正在转到 App 里运行…"
 
     /// 是否提供挂起：运行中的以运行它的进程报的为准（别的进程可能用了另一套 QEMU），其余按配置与本机的 QEMU 判断。
     func canSuspend(_ name: String) -> Bool {
