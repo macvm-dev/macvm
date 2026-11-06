@@ -31,6 +31,7 @@ struct Run: AsyncParsableCommand {
     func run() async throws {
         try await Output.run(json: global.json, human: { (r: Result) in detached ? "虚拟机已停止：\(r.reason)" : nil }) {
             let bundle = try VMLibrary.default.bundle(named: name)
+            try bundle.requireNotCreating()
             let config = try bundle.loadConfig()
             let consoleMode: ConfigBuilder.Console
             if console {

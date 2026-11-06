@@ -25,6 +25,7 @@ struct Start: AsyncParsableCommand {
 
     /// 用本 CLI 派生后台进程。
     static func launch(_ bundle: VMBundle, timeout: Int) async throws -> VMSummary {
+        try bundle.requireNotCreating()
         let executable = Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
         return try await DetachedRun.launch(bundle, executable: executable, timeout: timeout)
     }

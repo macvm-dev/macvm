@@ -18,7 +18,7 @@
 | `display <名> [<宽>x<高>]` | 调整运行中虚拟机的显示尺寸，只改本次运行；省略尺寸时恢复为默认尺寸（`set --display` 设的那个）（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `create <名> --os macos [--ipsw 文件] [--resolution 宽x高] [--cpus N] [--memory 8G] [--disk 96G] [--user 用户] [--password 密码] [--no-provision] [--no-tune]` | 从 IPSW 安装 macOS 虚拟机（不给 `--ipsw` 时下载本机支持的最新版本，缓存在下载目录的 `ipsw/`；分辨率默认 1920x1200），首次开机开通 SSH 与代理，主机名设为虚拟机名、时区与主机相同，再执行 `tune` 的全部项；`--no-provision` 装完不开机，`--no-tune` 不调优。`--user` 的规则与上一行相同，`--password` 省略时随机生成，存在包内 `guest-password`。结果为 `VMSummary`；设置主机名或调优出错只写到标准错误，安装本身仍算成功，之后可单独运行 `tune`。只能用 vz 引擎与 NAT 网络安装，不接受 `--image`、`--desktop`、`--iso`、`--share`、`--rosetta`、`--headless` 等 Linux、Windows 的选项；网络与共享目录装好后用 `set` 改 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
-| `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机 |
+| `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机。App 还在创建这台虚拟机或创建中断时报 `unsupported`，经 `ssh` 的 ProxyCommand 自动开机同样如此 |
 | `wait <名>` | 等到代理（或 SSH）可用，未运行时自动启动 |
 | `stop <名> [--force]` / `suspend <名>` | 关机 / 挂起 |
 | `exec <名> [-t] [--cwd 目录] [--user 用户] -- 命令…` | 在客户机执行；`--user` 要经客户机代理，未装代理的虚拟机报 `unsupported` |

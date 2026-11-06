@@ -32,6 +32,13 @@ public struct VMBundle: Sendable, Equatable {
     /// `creationMarkerURL` 里的令牌；没有标记时为 nil。
     public var creationToken: String? { try? String(contentsOf: creationMarkerURL, encoding: .utf8) }
 
+    /// 留着 `creationMarkerURL` 时拒绝：发起方还在创建（安装中的虚拟机占着辅助储存与磁盘），或是中断留下的半成品。
+    public func requireNotCreating() throws {
+        if FileManager.default.fileExists(atPath: creationMarkerURL.path) {
+            throw MacVMError.unsupported("\(name) 还在创建中或创建中断，不能开机：等 App 建完，或在 App 里继续或放弃这次新建")
+        }
+    }
+
     /// 运行时目录里本包文件的名字前缀：虚拟机名加包路径的摘要。运行时目录只按用户区分，
     /// 不同虚拟机目录（如 `MACVM_HOME`）里的同名虚拟机靠摘要分开；摘要要在各进程间一致，不能用 `Hasher`。
     public var runtimeName: String {

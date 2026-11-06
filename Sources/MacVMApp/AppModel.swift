@@ -814,10 +814,13 @@ final class AppModel {
 
     private static let sshKeyTitle = "正在首次开机并配置 SSH 与客户机代理…"
 
-    /// 失败时报告错误并返回 false；任务取消时不报告。
+    /// 失败时报告错误并返回 false；任务取消时不报告。已在别的进程里运行（如 `ssh` 经 `macvm proxy` 把它拉了起来）
+    /// 也算开了机：装公钥与代理都不必在本进程运行。
     private func startAfterInstall(_ name: String) async -> Bool {
         do {
             try await MacOSInstaller.firstBoot { _ = try await launch(name) }
+            return true
+        } catch MacVMError.alreadyRunning where !isRunningHere(name) {
             return true
         } catch {
             if !Task.isCancelled { report(error) }

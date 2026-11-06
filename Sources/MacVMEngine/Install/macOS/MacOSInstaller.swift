@@ -7,21 +7,23 @@ public import MacVMModel
 public enum MacOSInstaller {
     /// 刚装好的虚拟机首次开机：安装用的虚拟机在安装结束后还要一会儿才放开辅助储存，这期间开机会失败，
     /// 隔 `firstBootRetryInterval` 重试 `start`，共 `firstBootAttempts` 次，抛出最后一次的错误；任务取消后不再重试。
-    /// `MacVMError.timeout` 不重试：等启动超时时虚拟机可能还在启动，再开一次只会撞上包锁。
+    /// `MacVMError.timeout` 不重试：等启动超时时虚拟机可能还在启动，再开一次只会撞上包锁；`alreadyRunning` 也不重试。
     public static func firstBoot(isolation: isolated (any Actor)? = #isolation,
                                  _ start: () async throws -> Void) async throws {
         for attempt in 1... {
             do {
                 return try await start()
-            } catch where attempt < firstBootAttempts && !Task.isCancelled && !isTimeout(error) {
+            } catch where attempt < firstBootAttempts && !Task.isCancelled && isRetryable(error) {
                 try await Task.sleep(for: firstBootRetryInterval)
             }
         }
     }
 
-    nonisolated private static func isTimeout(_ error: any Error) -> Bool {
-        if case MacVMError.timeout = error { return true }
-        return false
+    nonisolated private static func isRetryable(_ error: any Error) -> Bool {
+        switch error {
+        case MacVMError.timeout, MacVMError.alreadyRunning: false
+        default: true
+        }
     }
 
     nonisolated static let firstBootAttempts = 10

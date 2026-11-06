@@ -43,6 +43,31 @@ struct MacOSTuningTests {
     }
 }
 
+struct FirstBootTests {
+    @MainActor
+    @Test func doesNotRetryWhenAlreadyRunning() async {
+        var attempts = 0
+        await #expect(throws: MacVMError.self) {
+            try await MacOSInstaller.firstBoot {
+                attempts += 1
+                throw MacVMError.alreadyRunning("vm")
+            }
+        }
+        #expect(attempts == 1)
+    }
+}
+
+struct CreationMarkerStartTests {
+    @Test func bundleWithMarkerRefusesToStart() throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-creating-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        try bundle.requireNotCreating()
+        try Data("token".utf8).write(to: bundle.creationMarkerURL)
+        #expect(throws: MacVMError.self) { try bundle.requireNotCreating() }
+    }
+}
+
 struct GuestScreenLockTests {
     @Test(arguments: [true, false])
     func linuxScriptParsesUnderShell(locks: Bool) throws {
