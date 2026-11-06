@@ -43,6 +43,32 @@ struct MacOSTuningTests {
     }
 }
 
+struct GuestScreenLockTests {
+    @Test(arguments: [true, false])
+    func linuxScriptParsesUnderShell(locks: Bool) throws {
+        let script = GuestScreenLock.linuxScript(locks: locks)
+        #expect(script.contains("lock-enabled=\(locks)"))
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = ["-n", "-c", script]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
+    @Test func macOSPasswordGoesThroughStandardInput() throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-lock-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        #expect(throws: MacVMError.self) { try GuestScreenLock.command(locks: false, os: .macOS, bundle: bundle) }
+        try GuestCredentials.storePassword("p'w d", in: bundle)
+        let (request, input) = try GuestScreenLock.command(locks: false, os: .macOS, bundle: bundle)
+        #expect(String(decoding: input, as: UTF8.self) == "p'w d\n")
+        #expect(!request.argv.joined().contains("p'w d"))
+        #expect(request.argv.last?.contains("-screenLock off") == true)
+    }
+}
+
 struct LinuxDesktopTests {
     @Test func ubuntuPicksLatestPointReleaseOfDesktopArm64() throws {
         let sums = """

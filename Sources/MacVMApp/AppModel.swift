@@ -488,6 +488,22 @@ final class AppModel {
         updateConfig(name, requiresStopped: config(of: name)?.clipboardChangeNeedsStop ?? true) { $0.clipboard = on }
     }
 
+    /// 运行中改了随即在后台写进客户机，写不进去时报错，配置照样保存、下次开机再写。返回是否已保存。
+    /// 同一台的写入依次进行，每次写时重读配置，连着切换几次后客户机停在最后一次的设置上。
+    @discardableResult
+    func setScreenLock(_ name: String, _ on: Bool) -> Bool {
+        guard updateConfig(name, { $0.screenLock = on }) else { return false }
+        guard isRunning(name), let bundle = try? library.bundle(named: name), config(of: name)?.guestAgent == true else { return true }
+        let previous = screenLockWrites[name]
+        screenLockWrites[name] = Task {
+            await previous?.value
+            do { try await Task.detached { try GuestScreenLock.apply(bundle, config: bundle.loadConfig()) }.value } catch { report(error) }
+        }
+        return true
+    }
+
+    @ObservationIgnored private var screenLockWrites: [String: Task<Void, Never>] = [:]
+
     private func isRunning(_ name: String) -> Bool { runners[name] != nil || summary(name)?.state == .running }
 
     func setCPUCount(_ name: String, _ count: Int) {

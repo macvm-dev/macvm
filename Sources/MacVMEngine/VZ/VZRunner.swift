@@ -62,6 +62,7 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     private var guestDisplayFit: Task<Void, Never>?
+    private var screenLockSync: Task<Void, Never>?
     nonisolated private static let guestDisplayRetryInterval = Duration.seconds(1)
     /// 开机后等代理上线的最长次数（按 `guestDisplayRetryInterval` 计）。
     nonisolated private static let guestDisplayAttempts = 180
@@ -146,7 +147,9 @@ public final class VZRunner: NSObject, MachineRunner {
     @discardableResult
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         do {
-            return try await boot(recovery: recovery)
+            let outcome = try await boot(recovery: recovery)
+            screenLockSync = GuestScreenLock.applyAfterBoot(bundle, config: config)
+            return outcome
         } catch {
             finish(.error(describeEngineError(error)))
             throw error
@@ -396,6 +399,7 @@ public final class VZRunner: NSObject, MachineRunner {
 
     private func finish(_ reason: MachineStopReason) {
         guestDisplayFit?.cancel()
+        screenLockSync?.cancel()
         bridges.forEach { $0.close() }
         stopLatch.fire(reason)
     }

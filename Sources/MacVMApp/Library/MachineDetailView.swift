@@ -99,6 +99,13 @@ struct MachineDetailView: View {
                               ? "宿主与客户机互通文本剪贴板，客户机里要有 spice-vdagent；关机后才能修改。客户机里的程序都能读到宿主上复制的内容"
                               : "宿主与客户机互通文本剪贴板：点进虚拟机窗口时把宿主剪贴板交给客户机，离开时取回客户机的。客户机里的程序都能读到宿主上复制的内容")
                 }
+                if let config {
+                    Toggle("空闲后锁屏", isOn: Binding(get: { config.screenLock }, set: { model.setScreenLock(vm.name, $0) }))
+                        .disabled(!config.guestAgent)
+                        .help(config.guestAgent
+                              ? "客户机空闲、显示器休眠后锁屏，回来要输密码；关掉后客户机不锁屏。运行中改了立即生效"
+                              : "要先装上客户机代理")
+                }
                 if let diskSize {
                     LabeledContent("磁盘") {
                         HStack(spacing: 10) {

@@ -21,6 +21,7 @@ struct VMConfigTests {
         #expect(config.networks == [NetworkConfig()])
         #expect(config.audio)
         #expect(!config.microphone)
+        #expect(!config.screenLock)
         #expect(config.installMedia.isEmpty)
     }
 

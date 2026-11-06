@@ -39,6 +39,9 @@ public struct VMConfig: Codable, Sendable, Equatable {
     /// 在宿主与客户机之间同步文本剪贴板。macOS、Windows 客户机经代理同步，随时可改；
     /// Linux 客户机经开机时接上的 SPICE 通道同步，改了要下次开机生效（`clipboardChangeNeedsStop`）。
     public var clipboard: Bool
+    /// 客户机空闲、显示器休眠后锁屏，回来要输密码。装了代理才生效：开机后代理上线时写进客户机，运行中改了立即生效；
+    /// 关着时客户机不锁屏，开着时按客户机系统的默认。macOS 客户机要用包内保存的客户机密码。
+    public var screenLock: Bool
     /// 客户机里已做到的 `GuestRevision`。新建的虚拟机由安装流程做到最新；没有这个字段的旧配置按 0。
     public var guestRevision: Int
 
@@ -62,6 +65,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         serialConsole: Bool = false,
         graphicsAcceleration: Bool = false,
         clipboard: Bool = true,
+        screenLock: Bool = false,
         guestRevision: Int? = nil
     ) {
         self.version = Self.currentVersion
@@ -84,6 +88,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.serialConsole = serialConsole
         self.graphicsAcceleration = graphicsAcceleration
         self.clipboard = clipboard
+        self.screenLock = screenLock
         self.guestRevision = guestRevision ?? GuestRevision.latest(for: os)
     }
 
@@ -109,6 +114,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         serialConsole = try c.decodeIfPresent(Bool.self, forKey: .serialConsole) ?? false
         graphicsAcceleration = try c.decodeIfPresent(Bool.self, forKey: .graphicsAcceleration) ?? false
         clipboard = try c.decodeIfPresent(Bool.self, forKey: .clipboard) ?? true
+        screenLock = try c.decodeIfPresent(Bool.self, forKey: .screenLock) ?? false
         guestRevision = try c.decodeIfPresent(Int.self, forKey: .guestRevision) ?? 0
     }
 

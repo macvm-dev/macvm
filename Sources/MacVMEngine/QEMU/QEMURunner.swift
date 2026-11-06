@@ -20,6 +20,7 @@ public final class QEMURunner: MachineRunner {
     private var bridge: BridgeSession?
     private var gpuDriverSync: Task<Void, Never>?
     private var pageCacheTrim: Task<Void, Never>?
+    private var screenLockSync: Task<Void, Never>?
     /// 从挂起状态恢复期间为真：这时 QEMU 退出由 `start` 当作恢复失败处理，不触发停止回调，只记在 `restoreExited`。
     private var restoring = false
     private var restoreExited = false
@@ -149,6 +150,7 @@ public final class QEMURunner: MachineRunner {
         stateLabel = "running"
         syncGuestGPUDriver()
         trimGuestPageCache()
+        screenLockSync = GuestScreenLock.applyAfterBoot(bundle, config: config)
         return outcome
     }
 
@@ -366,6 +368,7 @@ public final class QEMURunner: MachineRunner {
     private func detachProcess() {
         gpuDriverSync?.cancel()
         pageCacheTrim?.cancel()
+        screenLockSync?.cancel()
         process = nil
         qmp = nil
         stateLabel = "stopped"

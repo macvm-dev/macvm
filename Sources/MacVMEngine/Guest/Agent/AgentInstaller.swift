@@ -190,7 +190,7 @@ public enum AgentInstaller {
         return false
     }
 
-    /// `installOverSSH` 之后等代理上线，上线了才把 `guestAgent` 写回配置；放了显卡驱动包时同时写 `graphicsAcceleration`，
+    /// `installOverSSH` 之后等代理上线，上线了才把 `guestAgent` 写回配置，再按 `VMConfig.screenLock` 设好锁屏（失败不算）；放了显卡驱动包时同时写 `graphicsAcceleration`，
     /// 客户机里有了这个驱动就只能用带 3D 的 QEMU 运行。写回前重读配置：安装期间配置可能被别处改过。
     public static func installAndEnable(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> (online: Bool, gpuDriver: Bool) {
         let gpuDriver = try await installOverSSH(bundle: bundle, config: config, macvmPath: macvmPath)
@@ -199,6 +199,7 @@ public enum AgentInstaller {
         config.guestAgent = true
         if gpuDriver { config.graphicsAcceleration = true }
         try bundle.saveConfig(config)
+        try? GuestScreenLock.apply(bundle, config: config)
         return (true, gpuDriver)
     }
 
