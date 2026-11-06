@@ -5,15 +5,17 @@ import SwiftUI
 
 struct VirtualMachineView: NSViewRepresentable {
     let runner: VZRunner
-    /// 视图收到客户机的第一帧，或认不出第一帧而放弃等待时调用。
-    var onFirstFrame: (() -> Void)?
+    /// 最多等第一帧多久。
+    var firstFrameTimeout = VZRunner.firstFrameTimeout
+    /// 视图收到客户机的第一帧（参数为 true），或等满 `firstFrameTimeout` 放弃（false）时调用。
+    var onFirstFrame: ((Bool) -> Void)?
 
     func makeNSView(context: Context) -> NSView {
         let view = runner.makeDisplayView()
         if let onFirstFrame {
+            let timeout = firstFrameTimeout
             Task {
-                _ = await VZRunner.waitForFirstFrame(in: view)
-                onFirstFrame()
+                onFirstFrame(await VZRunner.waitForFirstFrame(in: view, timeout: timeout))
             }
         }
         return view

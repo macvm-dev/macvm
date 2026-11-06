@@ -336,6 +336,11 @@ final class AppModel {
     /// 进行中的 `launch`，键为虚拟机名。
     @ObservationIgnored private var launches: [String: Task<any MachineRunner, any Error>] = [:]
 
+    /// 本进程最近一次开机是从挂起状态恢复的虚拟机；恢复失败而冷启动的不在其中。
+    @ObservationIgnored private var restoredStarts: Set<String> = []
+
+    func wasRestored(_ name: String) -> Bool { restoredStarts.contains(name) }
+
     private func startRunner(_ name: String) async throws -> any MachineRunner {
         do {
             let bundle = try library.bundle(named: name)
@@ -350,7 +355,7 @@ final class AppModel {
                     self.detach(name)
                 }
             }
-            try await runner.start()
+            if case .restored = try await runner.start() { restoredStarts.insert(name) } else { restoredStarts.remove(name) }
             refresh()
             return runner
         } catch {

@@ -21,9 +21,9 @@ extension VZRunner {
 
     /// 等到 `makeDisplayView` 的视图收到客户机的第一帧；在那之前视图里没有内容，显示为黑屏。
     /// VZ 没有帧到达的回调，这里轮询视图的层里是否已有内容。返回是否等到：
-    /// 视图断开虚拟机、任务取消或过了 `firstFrameTimeout` 都返回 false。
-    public static func waitForFirstFrame(in view: NSView) async -> Bool {
-        let deadline = ContinuousClock.now + firstFrameTimeout
+    /// 视图断开虚拟机、任务取消或过了 `timeout` 都返回 false。
+    public static func waitForFirstFrame(in view: NSView, timeout: Duration = firstFrameTimeout) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
         while !Task.isCancelled, (view as? VZVirtualMachineView)?.virtualMachine != nil, ContinuousClock.now < deadline {
             if hasContents(view.layer) { return true }
             try? await Task.sleep(for: .milliseconds(100))
@@ -32,7 +32,7 @@ extension VZRunner {
     }
 
     /// 层树里的结构不是公开接口，认不出第一帧时等到这么久就放弃。
-    private static let firstFrameTimeout: Duration = .seconds(30)
+    public static let firstFrameTimeout: Duration = .seconds(30)
 
     private static func hasContents(_ layer: CALayer?) -> Bool {
         guard let layer else { return false }

@@ -28,6 +28,8 @@ struct MachineWindow: View {
     @State private var takingOver = false
     /// 启动提示的文字，挂起的虚拟机是从存档恢复。
     @State private var startingTitle = "正在启动…"
+    /// 本窗口的开机是从挂起状态恢复的（含接管别的进程运行的）：客户机已在运行，显示器休眠时不出新帧，不必久等第一帧。
+    @State private var restoring = false
     /// 窗口显示客户机画面期间经代理同步剪贴板；没有画面或客户机不经代理同步时为 nil。
     @State private var clipboard: ClipboardSync?
     /// 进行中的文件复制（拖放、剪贴板里的文件），在画面顶部显示进度。
@@ -55,7 +57,11 @@ struct MachineWindow: View {
         let config = model.config(of: name)
         Group {
             if let vz = runner as? VZRunner {
-                VirtualMachineView(runner: vz, onFirstFrame: awaitingFirstFrame ? { withAnimation { awaitingFirstFrame = false } } : nil)
+                VirtualMachineView(runner: vz, firstFrameTimeout: restoring ? Self.restoredFrameTimeout : VZRunner.firstFrameTimeout,
+                                   onFirstFrame: awaitingFirstFrame ? { arrived in
+                                       withAnimation { awaitingFirstFrame = false }
+                                       if !arrived, restoring { announce("客户机显示器在休眠，移动鼠标或按任意键唤醒") }
+                                   } : nil)
                     .overlay {
                         if awaitingFirstFrame { startingView.transition(.opacity) }
                     }
@@ -125,7 +131,9 @@ struct MachineWindow: View {
                 startingTitle = "正在转到 App 里运行…"
                 awaitingFirstFrame = true
                 takingOver = true
-                runner = await model.takeOver(name)
+                let taken = await model.takeOver(name)
+                restoring = model.wasRestored(name)
+                runner = taken
                 takingOver = false
                 failed = runner == nil
                 failure = failed ? model.lastError : nil
@@ -133,7 +141,9 @@ struct MachineWindow: View {
             }
             if model.summary(name)?.state == .suspended { startingTitle = "正在恢复…" }
             awaitingFirstFrame = !model.isRunningHere(name)
-            runner = await model.start(name)
+            let started = await model.start(name)
+            restoring = model.wasRestored(name)
+            runner = started
             failed = runner == nil
             failure = failed ? model.lastError : nil
             if !(runner is VZRunner) { awaitingFirstFrame = false }
@@ -274,7 +284,10 @@ extension MachineWindow {
             .accessibilityLabel(text)
     }
 
-    /// 改了声音或麦克风后的提示。与本进程开机时的设置不同时，补一句这次开机不能挂起。
+    /// 从挂起状态恢复后等第一帧的时长：客户机显示器醒着时恢复后很快就有画面。
+    fileprivate static let restoredFrameTimeout: Duration = .seconds(3)
+
+    /// 画面顶部的短暂提示。改了声音或麦克风且与本进程开机时的设置不同时，补一句这次开机不能挂起。
     fileprivate func announce(_ text: String) {
         var text = text
         if let runner, runner.canSuspend, let saved = model.config(of: name), saved.audioDiffers(from: runner.config) {
