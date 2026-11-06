@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var capabilities = HostCapabilities.current(probeNetworkHelper: false)
     @AppStorage(StatusMenu.visibleKey) private var showsMenuBarExtra = true
+    @State private var language = AppLanguage.current
 
     var body: some View {
         Form {
@@ -20,6 +21,19 @@ struct SettingsView: View {
             NetworkHelperSection()
             Section("General") {
                 Toggle("Show in Menu Bar", isOn: $showsMenuBarExtra)
+                Picker("Language", selection: Binding(get: { language }, set: {
+                    AppLanguage.set($0)
+                    language = $0
+                })) {
+                    ForEach(AppLanguage.allCases) { Text(verbatim: $0.name).tag($0) }
+                }
+                if AppLanguage.next != AppLanguage.active {
+                    LabeledContent {
+                        Button("Restart MacVM") { AppLanguage.restart() }
+                    } label: {
+                        Text("The new language takes effect after MacVM restarts.").foregroundStyle(.secondary)
+                    }
+                }
             }
             Section {
                 LocationRow(title: "Virtual Machines", url: model.library.root, isCustom: model.settings.libraryPath != nil,

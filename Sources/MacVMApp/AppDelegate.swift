@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         ChildProcesses.terminateAll()
+        AppLanguage.reopenAfterExit()
     }
 
     /// 本进程运行的虚拟机要交出去或停下才能退出：问用户转到后台、挂起还是关机，全部处理完才退出。
@@ -84,7 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: String(l10n: "Cancel")).keyEquivalent = "\u{1b}"
         NSApp.activate()
         let choice = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-        guard actions.indices.contains(choice) else { return .terminateCancel }
+        guard actions.indices.contains(choice) else {
+            AppLanguage.restartRequested = false
+            return .terminateCancel
+        }
         guard !running.isEmpty else { return .terminateNow }
         shuttingDown = true
         switch actions[choice] {
@@ -159,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .alertSecondButtonReturn:
                 await model.forceStopAll()
             default:
+                AppLanguage.restartRequested = false
                 NSApp.reply(toApplicationShouldTerminate: false)
                 return
             }

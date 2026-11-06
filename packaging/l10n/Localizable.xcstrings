@@ -3757,6 +3757,16 @@
         }
       }
     },
+    "Language" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言"
+          }
+        }
+      }
+    },
     "Linux Rosetta" : {
       "shouldTranslate" : false
     },
@@ -5158,6 +5168,16 @@
         }
       }
     },
+    "Restart MacVM" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新启动 MacVM"
+          }
+        }
+      }
+    },
     "Restart the guest right away if an update needs it." : {
       "localizations" : {
         "zh-Hans" : {
@@ -6351,6 +6371,16 @@
         }
       }
     },
+    "System Default" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随系统"
+          }
+        }
+      }
+    },
     "Take Snapshot" : {
       "localizations" : {
         "zh-Hans" : {
@@ -7101,6 +7131,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网络辅助程序没有响应，请在 MacVM 设置中将它关闭后重新打开"
+          }
+        }
+      }
+    },
+    "The new language takes effect after MacVM restarts." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新语言在 MacVM 重新启动后生效。"
           }
         }
       }

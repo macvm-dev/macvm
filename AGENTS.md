@@ -62,7 +62,7 @@
 
 ## 界面语言
 
-- App 与 CLI 支持英文和简体中文，按系统（或「系统设置 › 通用 › 语言与地区」里给 MacVM 单独设的）语言显示，其他语言显示英文。
+- App 与 CLI 支持英文和简体中文，按系统语言显示，其他语言显示英文；也可在 App 设置的「通用 › 语言」（或「系统设置 › 通用 › 语言与地区」）里给 MacVM 单独选，两处写的是 App 偏好域里同一个 `AppleLanguages`，CLI 跟着变。
 - 源码里写英文，英文就是查表的键；中文译文在 `packaging/l10n/Localizable.xcstrings`（Info.plist 里的文案在 `InfoPlist.xcstrings`），`make app` / `make run` 编译成 `.lproj` 放进 App 包。
 - SwiftUI 收 `LocalizedStringKey` 的地方直接写英文字面量；其余给人看的 `String`（错误消息、CLI 输出与帮助）写 `String(l10n: "…")`，字面量要直接写在参数里，编译器才抽得到。日志、发进客户机的内容、客户机代理的消息只写英文，不查表。
 - 改了文案后跑 `make strings`：同步字符串目录，新条目在 Xcode 里打开 `Localizable.xcstrings` 补中文（或直接编辑 JSON），直到它不再报缺译文。
