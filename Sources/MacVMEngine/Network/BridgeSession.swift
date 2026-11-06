@@ -17,6 +17,10 @@ final class BridgeSession: @unchecked Sendable {
         .unsupported(String(l10n: "Bridged networking needs the network helper. Turn it on in MacVM Settings; the first time, also allow MacVM in System Settings › General › Login Items & Extensions."))
     }
 
+    static var unresponsiveError: MacVMError {
+        .timeout(String(l10n: "The network helper isn't responding; turn it off and on again in MacVM Settings"))
+    }
+
     private init(fileHandle: FileHandle, connection: NSXPCConnection, sink: AddressSink) {
         self.fileHandle = fileHandle
         self.connection = connection
@@ -45,7 +49,7 @@ final class BridgeSession: @unchecked Sendable {
         }
         guard done.wait(timeout: .now() + openTimeout) == .success else {
             connection.invalidate()
-            throw MacVMError.timeout(String(l10n: "The network helper isn't responding; turn it off and on again in MacVM Settings"))
+            throw unresponsiveError
         }
         guard let handle = reply.handle else {
             connection.invalidate()
@@ -104,6 +108,13 @@ final class BridgeSession: @unchecked Sendable {
         var message: String?
         var unavailable = false
         var interfaces: [String]?
+    }
+}
+
+extension MacVMError {
+    /// 网络辅助程序未启用、未获允许或没有响应，要到 MacVM 设置的网络辅助程序一栏处理。
+    public var needsNetworkHelperSettings: Bool {
+        self == BridgeSession.unavailableError || self == BridgeSession.unresponsiveError
     }
 }
 

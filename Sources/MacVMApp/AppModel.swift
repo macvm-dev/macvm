@@ -12,7 +12,7 @@ final class AppModel {
     var machines: [VMSummary] = []
     var selection: String?
     var showingCreate = false
-    var lastError: String?
+    var lastError: ReportedError?
     /// 正在进行的长操作（创建、下载、安装），键为虚拟机名；创建时虚拟机包还不存在，`machines` 里没有它。
     /// 字典只在操作开始、结束时变，进度改在 `Activity` 对象上：进度更新只重绘显示它的视图，不牵动整个窗口。
     private(set) var activity: [String: Activity] = [:]
@@ -1024,6 +1024,19 @@ final class AppModel {
     }
 
     func report(_ error: any Error) {
-        lastError = (error as? MacVMError)?.message ?? error.localizedDescription
+        lastError = ReportedError(error)
+    }
+}
+
+/// 报给用户的错误。
+struct ReportedError: Equatable {
+    let message: String
+    /// 能在 MacVM 设置里解决，显示错误的地方给出打开设置的按钮。
+    let opensSettings: Bool
+
+    init(_ error: any Error) {
+        let known = error as? MacVMError
+        message = known?.message ?? error.localizedDescription
+        opensSettings = known?.needsNetworkHelperSettings ?? false
     }
 }

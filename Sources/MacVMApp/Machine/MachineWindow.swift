@@ -10,11 +10,12 @@ struct MachineWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.controlActiveState) private var activeState
+    @Environment(\.openSettings) private var openSettings
     let name: String
     @State private var runner: (any MachineRunner)?
     @State private var failed = false
     /// 启动失败的原因，就地显示：只开着本窗口时也看得到。
-    @State private var failure: String?
+    @State private var failure: ReportedError?
     @State private var showingShares = false
     @State private var showingImages = false
     @State private var choosingImage = false
@@ -72,18 +73,21 @@ struct MachineWindow: View {
                     Label("Running in a Background Process", systemImage: "terminal")
                 } description: {
                     if let failure {
-                        Text(failure).textSelection(.enabled)
+                        Text(failure.message).textSelection(.enabled)
                     } else {
                         Text("This virtual machine was started with macvm start and is running in another process. Only the process running a VZ virtual machine can show its screen, and this one can't be suspended to move it here. Shut it down, then start it again here.")
                     }
                 } actions: {
                     Button("Shut Down") { Task { await model.stop(name) } }
+                    if failure?.opensSettings == true { Button("Open Settings") { openSettings() } }
                 }
             } else if failed {
                 ContentUnavailableView {
                     Label("Couldn't Start", systemImage: "exclamationmark.triangle")
                 } description: {
-                    if let failure { Text(failure).textSelection(.enabled) }
+                    if let failure { Text(failure.message).textSelection(.enabled) }
+                } actions: {
+                    if failure?.opensSettings == true { Button("Open Settings") { openSettings() } }
                 }
             } else {
                 startingView
