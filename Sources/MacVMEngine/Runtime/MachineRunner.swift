@@ -25,18 +25,31 @@ public enum MachineStartOutcome: Sendable {
 }
 
 /// 运行器的停止信号：只在首次 `fire` 时记下原因、释放包锁、回调 `onStop` 并唤醒所有等待者。
+/// 也维护包内 `VMBundle.poweredOffMarkerURL`：开机成功时删掉，关机或断电停下时写入。
 @MainActor
 final class StopLatch {
     private(set) var reason: MachineStopReason?
     var onStop: ((MachineStopReason) -> Void)?
+    private let bundle: VMBundle
     private let lock: ProcessLock
     private var waiters: [CheckedContinuation<MachineStopReason, Never>] = []
 
-    init(lock: ProcessLock) { self.lock = lock }
+    init(bundle: VMBundle, lock: ProcessLock) {
+        self.bundle = bundle
+        self.lock = lock
+    }
+
+    /// 运行器开机成功后调用。
+    func started() {
+        try? FileManager.default.removeItem(at: bundle.poweredOffMarkerURL)
+    }
 
     func fire(_ reason: MachineStopReason) {
         guard self.reason == nil else { return }
         self.reason = reason
+        if reason == .guestShutdown || reason == .forced {
+            FileManager.default.createFile(atPath: bundle.poweredOffMarkerURL.path, contents: nil)
+        }
         lock.release()
         onStop?(reason)
         let waiters = waiters

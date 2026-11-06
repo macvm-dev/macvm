@@ -31,7 +31,7 @@ struct Proxy: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         abstract: "把标准输入输出接到客户机的 TCP 端口，供 ssh 的 ProxyCommand 使用。",
-        discussion: "虚拟机未运行时自动在后台启动。"
+        discussion: "虚拟机未运行时自动在后台启动；上次是关机或断电停下的不启动，先用 macvm start 开机。"
     )
 
     @Argument(help: "虚拟机名称。") var name: String
@@ -43,6 +43,8 @@ struct Proxy: AsyncParsableCommand {
         try await Output.run(json: false, human: { (_: Empty) in nil }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             if BundleLock.holder(of: bundle) == nil {
+                // ssh 客户端断线后会自动重连，不能把用户刚关掉的虚拟机重新开起来。
+                if bundle.wasPoweredOff { throw MacVMError.notRunning("\(name)（已关机，用 macvm start \(name) 或在 App 里开机后再连）") }
                 _ = try await Start.launch(bundle, timeout: timeout)
             }
             var config = try bundle.loadConfig()

@@ -75,3 +75,20 @@ struct AttachedImageTests {
         #expect(AttachedImage.prefersReadOnly(dir.appending(path: "d.img")))
     }
 }
+
+@MainActor
+struct StopLatchTests {
+    @Test(arguments: [(MachineStopReason.guestShutdown, true), (.forced, true), (.suspended, false), (.error("崩溃"), false)])
+    func poweredOffMarkerFollowsStopReason(reason: MachineStopReason, marked: Bool) throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-latch-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        FileManager.default.createFile(atPath: bundle.poweredOffMarkerURL.path, contents: nil)
+
+        let latch = StopLatch(bundle: bundle, lock: try BundleLock.acquire(bundle))
+        latch.started()
+        #expect(!bundle.wasPoweredOff)
+        latch.fire(reason)
+        #expect(bundle.wasPoweredOff == marked)
+    }
+}

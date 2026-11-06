@@ -25,7 +25,7 @@ public final class VZRunner: NSObject, MachineRunner {
         guard VZVirtualMachine.isSupported else {
             throw MacVMError.unsupported("本机不支持虚拟化（需要 Apple Silicon，且进程签名带 com.apple.security.virtualization）")
         }
-        stopLatch = StopLatch(lock: try BundleLock.acquire(bundle))
+        stopLatch = StopLatch(bundle: bundle, lock: try BundleLock.acquire(bundle))
         self.bundle = bundle
         config = try bundle.loadConfig()
         var builder = ConfigBuilder(bundle: bundle, config: config)
@@ -148,6 +148,7 @@ public final class VZRunner: NSObject, MachineRunner {
     public func start(recovery: Bool = false) async throws -> MachineStartOutcome {
         do {
             let outcome = try await boot(recovery: recovery)
+            stopLatch.started()
             screenLockSync = GuestScreenLock.applyAfterBoot(bundle, config: config)
             return outcome
         } catch {

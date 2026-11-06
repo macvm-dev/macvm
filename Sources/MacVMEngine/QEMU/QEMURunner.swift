@@ -28,7 +28,7 @@ public final class QEMURunner: MachineRunner {
     /// `display` 为 true 时由 QEMU 自己开一个 Cocoa 窗口显示画面。
     public init(bundle: VMBundle, display: Bool = false) throws {
         qemu = try QEMUInstallation.require()
-        stopLatch = StopLatch(lock: try BundleLock.acquire(bundle))
+        stopLatch = StopLatch(bundle: bundle, lock: try BundleLock.acquire(bundle))
         self.bundle = bundle
         self.display = display
         config = try bundle.loadConfig()
@@ -148,6 +148,7 @@ public final class QEMURunner: MachineRunner {
             pressKeysForInstallMedia()
         }
         stateLabel = "running"
+        stopLatch.started()
         syncGuestGPUDriver()
         trimGuestPageCache()
         screenLockSync = GuestScreenLock.applyAfterBoot(bundle, config: config)

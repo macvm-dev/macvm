@@ -23,7 +23,7 @@
 | `stop <名> [--force]` / `suspend <名>` | 关机 / 挂起 |
 | `exec <名> [-t] [--cwd 目录] [--user 用户] -- 命令…` | 在客户机执行；`--user` 要经客户机代理，未装代理的虚拟机报 `unsupported` |
 | `cp <来源>… <目标目录>` | 经客户机代理在宿主与客户机之间复制文件或目录：来源与目标中恰好一方写成 `<虚拟机>:<客户机上的绝对路径>`（冒号前不含 `/` 的才算虚拟机名，含冒号的本地路径写成 `./a:b`），客户机来源要来自同一台虚拟机；目标必须是已有目录，不是时报 `invalid_config`。保留目录结构与修改时间，宿主与 macOS、Linux 客户机之间还保留权限位与符号链接（Windows 客户机里跳过符号链接，文件名里 Windows 不认的字符换成 `_`）。与目标里已有项重名的顶层项编号改名（`a.txt` → `a 2.txt`，Windows 客户机里是 `a (2).txt`），不覆盖。结果为 `{files}`，各顶层项实际复制到的位置。虚拟机未运行时自动在后台启动；没装代理或代理不支持时报 `unsupported` |
-| `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand |
+| `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand。`proxy` 在虚拟机未运行时自动在后台开机，但上次是关机或断电停下的（App 里关机、`stop`、客户机里关机）不开，报 `not_running`，等 `start` 或在 App 里开机后再连；挂起或出错停下的照常自动开机 |
 | `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名即虚拟机名 |
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
 | `template save <虚拟机> [<模板>]` / `template ls` / `template rm <模板>` | 把已关机的虚拟机存为模板（模板名缺省与虚拟机同名；运行中报 `already_running`，挂起时报 `invalid_config`；不含快照）/ 列出模板，结果为 `TemplateSummary` 数组（`name`、`os`、`engine`、`cpuCount`、`memorySize`、`diskSize`、`path`）/ 删除模板。找不到模板报 `template_not_found` |
@@ -93,6 +93,6 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 
 ## 与 runode 配合
 
-- 把虚拟机当远端主机：`macvm ssh-config --install`，runode 读取 `~/.ssh/config` 后列出各虚拟机名。连接经 `macvm proxy` 走 vsock，虚拟机未运行时自动启动。
+- 把虚拟机当远端主机：`macvm ssh-config --install`，runode 读取 `~/.ssh/config` 后列出各虚拟机名。连接经 `macvm proxy` 走 vsock，虚拟机未运行时自动启动；关了机的不会被断线重连拉起来。
 - 在面板里开客户机 shell：`runode open --right -- macvm exec dev -t`。
 - 任务板的 agent 前缀：`macvm exec dev -t --cwd <客户机路径> --`，配合 `create --share 目录` 让项目目录在客户机里可见。`--cwd` 原样交给客户机，不做路径换算：共享目录在 Linux 客户机里挂在 `/mnt/<名称>`（创建时就有的共享目录开机自动挂载），macOS 客户机里在 `/Volumes/My Shared Files/<名称>`，与宿主上的路径不同，不能直接写 `"$PWD"`。

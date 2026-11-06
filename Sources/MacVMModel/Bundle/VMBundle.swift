@@ -29,6 +29,11 @@ public struct VMBundle: Sendable, Equatable {
     /// 包里留着这个文件、内容又与发起方记下的令牌相同，就是它中断时留下的半成品。
     public var creationMarkerURL: URL { url.appending(path: "creating") }
 
+    /// 存在即表示虚拟机上次是关机或断电停下的（不是挂起或出错），由运行它的进程写入，下次开机成功时删掉。
+    public var poweredOffMarkerURL: URL { url.appending(path: "powered-off") }
+
+    public var wasPoweredOff: Bool { FileManager.default.fileExists(atPath: poweredOffMarkerURL.path) }
+
     /// `creationMarkerURL` 里的令牌；没有标记时为 nil。
     public var creationToken: String? { try? String(contentsOf: creationMarkerURL, encoding: .utf8) }
 

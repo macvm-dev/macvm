@@ -27,7 +27,7 @@ macvm cp 'win:C:\Users\me\Desktop\a.txt' .    # 客户机 → 宿主，客户机
 ## SSH 与端口
 
 - `macvm ssh <名>`：登录 shell。
-- `macvm ssh-config --install`：生成 `~/.config/macvm/ssh_config`（之后 `create` / `rm` 自动更新）并在 `~/.ssh/config` 开头加入 Include，之后 `ssh <虚拟机名>`、`scp`、`rsync` 都能直接用，主机名就是虚拟机名；连接经 `macvm proxy` 走，虚拟机未运行时自动启动。
+- `macvm ssh-config --install`：生成 `~/.config/macvm/ssh_config`（之后 `create` / `rm` 自动更新）并在 `~/.ssh/config` 开头加入 Include，之后 `ssh <虚拟机名>`、`scp`、`rsync` 都能直接用，主机名就是虚拟机名；连接经 `macvm proxy` 走，虚拟机未运行时自动启动；上次是关机停下的不自动启动（报 `not_running`），先 `macvm start <名>`。
 - `macvm proxy <名> --port N`：把标准输入输出接到客户机的 TCP 端口（默认 22），用作 ssh 的 ProxyCommand；代理还没装时加 `--tcp` 直连客户机 IP。
 - `macvm ip <名> --json [--wait 秒]`：客户机 IP（NAT 下从 DHCP 租约查，桥接下客户机拿到地址前查不到）。
 
