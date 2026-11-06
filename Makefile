@@ -1,11 +1,11 @@
-# 唯一构建入口。签名身份默认 ad-hoc；发布时传 SIGN_IDENTITY="Developer ID Application: …"。
+# 唯一构建入口。签名身份见 DEV_IDENTITY；要指定时传 SIGN_IDENTITY="Developer ID Application: …"，SIGN_IDENTITY=- 强制 ad-hoc。
 SIGN_IDENTITY ?= -
 ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 # 钥匙串里唯一的 Developer ID Application 证书，零张或多张时为空；用到时才查。
 DEVELOPER_ID   = $(shell security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"$$/\1/p' | awk '{ n++; id = $$0 } END { if (n == 1) print id }')
-# 开发构建（sign、run、agent）的签名身份：没传 SIGN_IDENTITY（命令行与环境变量都没有）时用 DEVELOPER_ID，没有才 ad-hoc。
+# 开发构建（sign、run、agent、app）的签名身份：没传 SIGN_IDENTITY（命令行与环境变量都没有）时用 DEVELOPER_ID，没有才 ad-hoc。
 # ad-hoc 签名没有团队 ID：launchd 按 cdhash 认网络辅助程序，客户机按 cdhash 记代理的辅助功能与屏幕录制授权，每次重新构建都要重来；
 # 客户机「登录项」也认不出代理所属的 App 包，只显示可执行文件名。
 DEV_IDENTITY   = $(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID),-),$(SIGN_IDENTITY))
@@ -59,7 +59,7 @@ icon:
 	scripts/build-icon.sh
 
 app:
-	CONFIG=release SIGN_IDENTITY="$(SIGN_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+	CONFIG=release SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 
 # 产出公证过的 dist/MacVM.app 与 dist/MacVM.dmg。公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用 DEVELOPER_ID，没有就停下。
 release:
