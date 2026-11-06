@@ -14,7 +14,7 @@ DEV_IDENTITY   = $(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
 SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
-.PHONY: build sign run test test-swift test-guest lint lint-guest strings agent boot qemu icon app release clean
+.PHONY: build sign run test test-swift test-guest lint lint-guest strings agent boot qemu icon app install release clean
 
 build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
@@ -64,6 +64,10 @@ icon:
 
 app:
 	CONFIG=release SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+
+# 用 dist/MacVM.app 替换 /Applications/MacVM.app；不重新构建，先 make app 或 make release。
+install:
+	scripts/install-app.sh
 
 # 产出公证过的 dist/MacVM.app 与 dist/MacVM.dmg。公证不收 ad-hoc 签名：没传 SIGN_IDENTITY 时用 DEVELOPER_ID，没有就停下。
 release:

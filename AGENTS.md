@@ -49,6 +49,7 @@
 - 开发构建一律用团队 ID 签名：`make sign`、`make run`、`make agent`、`make app` 在钥匙串里有唯一一张 Developer ID Application 证书时用它签名，没有才 ad-hoc，`SIGN_IDENTITY=-` 强制 ad-hoc。ad-hoc 签名的代理每次重编后客户机里都要重新授权，「登录项」里也只显示 `macvm-agent`。
 - `make sign` 构建并签名，之后才能运行 `.build/debug/macvm`（VZ 要求 `com.apple.security.virtualization`）。
 - `make run` 先编译客户机代理与引导程序（`make agent boot`），再把调试版组装成 `.build/MacVM.app`（带 CLI、客户机程序与已编译的 QEMU）并在前台运行；自带的 QEMU 不自动编译，用 `make qemu`。
+- `make install` 用 `dist/MacVM.app` 替换 `/Applications/MacVM.app`（不重新构建，先 `make app` 或 `make release`）：正在运行的先走正常退出流程，用户取消退出就不替换，装好后重新打开。
 - 本仓库所在卷大小写不敏感，产品名不能只差大小写（CLI 叫 `macvm`，App 叫 `MacVMApp`）。
 - 测试时用 `MACVM_HOME=<临时目录>` 隔离虚拟机目录。
 - 构建、测试一律走 `make`：直接 `swift build` 不带 `SWIFT_FLAGS`，App 会以旧版外观显示。
