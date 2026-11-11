@@ -1770,6 +1770,22 @@
         }
       }
     },
+    "Couldn't apply these tuning steps in %@: %@. Run macvm tune %@ in Terminal to try again" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't apply these tuning steps in %1$@: %2$@. Run macvm tune %3$@ in Terminal to try again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 里这些调优项没能生效：%@。可以在终端里运行 macvm tune %@ 重试"
+          }
+        }
+      }
+    },
     "Couldn't apply: %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5118,6 +5134,16 @@
         }
       }
     },
+    "Reduce Idle Resource Usage" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "降低空闲时的资源占用"
+          }
+        }
+      }
+    },
     "Remove Shared Folder" : {
       "localizations" : {
         "zh-Hans" : {
@@ -7647,6 +7673,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开声音"
+          }
+        }
+      }
+    },
+    "Turns off Spotlight indexing, system sleep, the screen saver, automatic updates, and window animations, and turns on Reduce Transparency and Reduce Motion in the guest. To undo this later, run macvm tune %@ --revert in Terminal." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在客户机里关闭聚焦索引、系统睡眠、屏幕保护程序、自动更新和窗口动画，并打开「降低透明度」和「减弱动态效果」。之后要恢复，在终端里运行 macvm tune %@ --revert。"
           }
         }
       }

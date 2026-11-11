@@ -39,6 +39,8 @@ struct CreationRequest: Codable, Sendable, Equatable {
     var password: String?
     /// 桌面版不自动安装，开机后在窗口里图形安装；nil 等同 false。
     var manualInstall: Bool?
+    /// 新装的 macOS 首次开机开通后执行 `MacOSTuning` 的全部项；nil 等同 true。
+    var tune: Bool?
     /// 建包时作为 `VMBundle.creationMarkerURL` 的令牌写进包里，用来认出本请求留下的半成品。
     var id = UUID()
 }

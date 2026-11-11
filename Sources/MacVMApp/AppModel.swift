@@ -795,7 +795,7 @@ final class AppModel {
                     // 模板里的系统已装好，建完直接开机。
                     openMachineWindow(name)
                 } else if request.os == .macOS {
-                    setUpGuestOnFirstBoot(name, openMachineWindow: openMachineWindow)
+                    setUpGuestOnFirstBoot(name, tune: request.tune ?? true, openMachineWindow: openMachineWindow)
                 }
             } catch {
                 if Task.isCancelled {
@@ -817,9 +817,10 @@ final class AppModel {
     func creatingOS(_ name: String) -> GuestOS? { runningCreations[name]?.os }
 
     /// 新建的 macOS 虚拟机首次开机，等远程登录可用后用密码登录一次装入 macvm 公钥，之后 SSH 都走密钥；
-    /// 再把客户机主机名设为虚拟机名、时区设为宿主时区，App 带着 macOS 版客户机代理时经 SSH 装上代理。
+    /// 再把客户机主机名设为虚拟机名、时区设为宿主时区，App 带着 macOS 版客户机代理时经 SSH 装上代理，
+    /// `tune` 时最后执行 `MacOSTuning` 的全部项。
     /// 不会自动开通时不开机：用户要先在窗口里走完设置助理。失败只报告，不影响虚拟机本身。
-    private func setUpGuestOnFirstBoot(_ name: String, openMachineWindow: @escaping @MainActor (String) -> Void) {
+    private func setUpGuestOnFirstBoot(_ name: String, tune: Bool, openMachineWindow: @escaping @MainActor (String) -> Void) {
         guard let bundle = try? library.bundle(named: name), MacOSProvisioning.willApply(to: bundle),
               let user = try? bundle.loadConfig().guestUser, let password = GuestCredentials.password(for: bundle) else { return }
         sshKeyTasks[name] = Task {
@@ -842,8 +843,19 @@ final class AppModel {
                     report(error)
                 }
                 if AgentInstaller.binary(for: .macOS) != nil {
-                    _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: CLILocation.path)
-                    configRevision += 1
+                    // 代理没装上不影响调优。
+                    do {
+                        _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: CLILocation.path)
+                        configRevision += 1
+                    } catch where !Task.isCancelled {
+                        report(error)
+                    }
+                }
+                if tune {
+                    let failed = try await MacOSTuning.run(bundle: bundle, config: bundle.loadConfig(), macvmPath: CLILocation.path).failed
+                    if !failed.isEmpty {
+                        report(MacVMError.engine(String(l10n: "Couldn't apply these tuning steps in \(name): \(failed.map(\.rawValue).joinedAsList()). Run macvm tune \(name) in Terminal to try again")))
+                    }
                 }
             } catch where !Task.isCancelled {
                 report(error)

@@ -25,6 +25,7 @@ struct CreateSheet: View {
     @State private var password = ""
     @State private var revealsPassword = false
     @State private var manualInstall = false
+    @State private var tune = true
     /// 点了「从微软下载」的时刻；之后「下载」文件夹里出现的 Windows ISO 自动选上。
     @State private var downloadRequestedAt: Date?
     /// 输入框里的数字无效的 `NumberField`，按标题记。
@@ -53,6 +54,11 @@ struct CreateSheet: View {
                     NumberField(title: "Memory", unit: "GB", value: $memoryGB, invalid: invalid("memory"), range: ResourceRange.memoryGB)
                     NumberField(title: "Disk", unit: "GB (uses space only as needed)", value: $diskGB, invalid: invalid("disk"), range: diskRange, step: 16)
                     if os == .linux, template == nil { Toggle("Rosetta (run x86_64 programs)", isOn: $rosetta) }
+                    if tunesGuest {
+                        Toggle("Reduce Idle Resource Usage", isOn: $tune)
+                        Text("Turns off Spotlight indexing, system sleep, the screen saver, automatic updates, and window animations, and turns on Reduce Transparency and Reduce Motion in the guest. To undo this later, run macvm tune \(finalName) --revert in Terminal.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 if setsPassword {
                     Section {
@@ -216,6 +222,8 @@ struct CreateSheet: View {
         default: os == .macOS || os == .windows
         }
     }
+    /// 新装的 macOS 首次开机能自动开通时才连得上 SSH 去调优。
+    private var tunesGuest: Bool { os == .macOS && template == nil && MacOSProvisioning.isSupported }
     /// 用户名留空时用主机用户名，它也要合规；密码留空时按系统默认处理，不另做检查。
     private var accountProblem: String? {
         if user.isEmpty, (try? GuestAccount.validate(user: NSUserName())) == nil {
@@ -273,7 +281,8 @@ struct CreateSheet: View {
                                       productKey: os == .windows && template == nil && !productKey.isEmpty ? productKey : nil,
                                       user: setsPassword && !user.isEmpty ? user : nil,
                                       password: setsPassword && !password.isEmpty ? password : nil,
-                                      manualInstall: desktop?.supportsUnattended == true && manualInstall ? true : nil)
+                                      manualInstall: desktop?.supportsUnattended == true && manualInstall ? true : nil,
+                                      tune: tunesGuest && !tune ? false : nil)
         let openWindow = openWindow
         dismiss()
         model.create(request) { openWindow(id: "machine", value: $0) }

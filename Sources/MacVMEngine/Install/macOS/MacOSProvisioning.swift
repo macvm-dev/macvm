@@ -18,10 +18,14 @@ public enum MacOSProvisioning {
         try GuestCredentials.storePassword(credentials.password, in: bundle)
     }
 
+    /// 宿主系统能在首次开机时自动开通。
+    public static var isSupported: Bool {
+        if #available(macOS 27, *) { true } else { false }
+    }
+
     /// 下次 `start` 会自动开通：有待开通的凭据且系统支持。
     public static func willApply(to bundle: VMBundle) -> Bool {
-        guard #available(macOS 27, *) else { return false }
-        return FileManager.default.fileExists(atPath: pendingURL(bundle).path)
+        isSupported && FileManager.default.fileExists(atPath: pendingURL(bundle).path)
     }
 
     /// 有待开通的凭据且系统支持时，写入启动选项并返回 true。
