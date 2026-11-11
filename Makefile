@@ -14,7 +14,7 @@ DEV_IDENTITY   = $(if $(filter file,$(origin SIGN_IDENTITY)),$(or $(DEVELOPER_ID
 SDK_PATH      := $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
 SWIFT_FLAGS   := $(if $(SDK_PATH),-Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $(SDK_PATH),$(warning 找不到 macOS SDK（xcrun --sdk macosx --show-sdk-path），App 将以旧版外观构建))
 
-.PHONY: build sign run test test-swift test-guest lint lint-guest strings agent boot qemu icon app install release clean
+.PHONY: build sign run test test-swift test-guest lint lint-guest strings agent boot qemu icon app install release tag clean
 
 build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
@@ -82,6 +82,10 @@ release:
 	scripts/notarize.sh dist/MacVM.app; \
 	SIGN_IDENTITY="$$id" scripts/make-dmg.sh dist/MacVM.app dist/MacVM.dmg; \
 	scripts/notarize.sh dist/MacVM.dmg
+
+# 发版：把版本号改成 VERSION 并提交，在这个提交上打 v$(VERSION) 标签，与当前分支一起推送，标签触发 Release 工作流。
+tag:
+	scripts/tag-release.sh "$(VERSION)"
 
 clean:
 	rm -rf .build dist guest/target

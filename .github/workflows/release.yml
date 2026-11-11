@@ -27,17 +27,23 @@ jobs:
       - name: 版本号
         id: version
         run: |
+          plist_version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)
+          cargo_version=$(sed -nE '/^\[workspace\.package\]/,/^\[/ s/^version = "([^"]*)"/\1/p' guest/Cargo.toml)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # 标签要打在把版本号改成它的提交上（make tag），发布出去的与仓库里的版本号、构建号一致。
             version=${GITHUB_REF_NAME#v}
+            [ "$plist_version" = "$version" ] && [ "$cargo_version" = "$version" ] || {
+              echo "${GITHUB_REF_NAME} 所在提交的版本号是 ${plist_version}（Info.plist）、${cargo_version}（guest/Cargo.toml），与标签不符；用 make tag VERSION=${version} 发版" >&2
+              exit 1
+            }
           else
-            version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)-dev
+            version=$plist_version-dev
+            # 客户机程序的 Cargo 版本号要求完整的 x.y.z。
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "版本号须为 x.y.z：$version" >&2; exit 1; }
+            plutil -replace CFBundleShortVersionString -string "$version" packaging/Info.plist
+            sed -i '' -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$version\"/" guest/Cargo.toml
+            grep -q "^version = \"$version\"" guest/Cargo.toml || { echo "没能改写客户机程序的版本号" >&2; exit 1; }
           fi
-          # 客户机程序的 Cargo 版本号要求完整的 x.y.z。
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "版本号须为 x.y.z：$version" >&2; exit 1; }
-          plutil -replace CFBundleShortVersionString -string "$version" packaging/Info.plist
-          plutil -replace CFBundleVersion -string "$GITHUB_RUN_NUMBER" packaging/Info.plist
-          sed -i '' -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$version\"/" guest/Cargo.toml
-          grep -q "^version = \"$version\"" guest/Cargo.toml || { echo "没能改写客户机程序的版本号" >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: 安装构建依赖
@@ -203,46 +209,3 @@ jobs:
       - name: 清理钥匙串
         if: always()
         run: '[ -z "${KEYCHAIN:-}" ] || security delete-keychain "$KEYCHAIN"'
-
-  # 把仓库里的版本号推进到刚发布的版本，本地构建与不带标签的手动运行随之一致。
-  bump-version:
-    needs: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: 提交版本号
-        run: |
-          version=${GITHUB_REF_NAME#v}
-          # 预发布版不回写；main 上的版本已不低于它（给旧版本补发修订）时也不回写。
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "预发布版 $version，不回写"; exit 0; }
-          plist=packaging/Info.plist
-          current=$(grep -A1 '<key>CFBundleShortVersionString</key>' "$plist" | sed -nE 's|.*<string>([^<]*)</string>.*|\1|p')
-          [ -n "$current" ] || { echo "读不到 $plist 里的版本号" >&2; exit 1; }
-          if [ "$current" = "$version" ] || [ "$(printf '%s\n' "$current" "$version" | sort -V | tail -1)" != "$version" ]; then
-            echo "main 上的版本号 $current 不低于 $version，不回写"; exit 0
-          fi
-
-          sed -i -E '/<key>CFBundleShortVersionString<\/key>/{n;s|<string>[^<]*</string>|<string>'"$version"'</string>|}' "$plist"
-          grep -A1 '<key>CFBundleShortVersionString</key>' "$plist" | grep -q "<string>$version</string>" \
-            || { echo "没能改写 $plist 的版本号" >&2; exit 1; }
-          # Sparkle 按 CFBundleVersion 比新旧，main 上的也跟上，本地构建才不会把刚发布的版本当成更新。
-          sed -i -E '/<key>CFBundleVersion<\/key>/{n;s|<string>[^<]*</string>|<string>'"$GITHUB_RUN_NUMBER"'</string>|}' "$plist"
-          grep -A1 '<key>CFBundleVersion</key>' "$plist" | grep -q "<string>$GITHUB_RUN_NUMBER</string>" \
-            || { echo "没能改写 $plist 的构建号" >&2; exit 1; }
-          sed -i -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$version\"/" guest/Cargo.toml
-          grep -q "^version = \"$version\"" guest/Cargo.toml || { echo "没能改写客户机程序的版本号" >&2; exit 1; }
-          cargo update --workspace --manifest-path guest/Cargo.toml
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
-          git commit -am "chore: 版本号改为 $version"
-          # 发布期间 main 可能有新提交，推送被拒时变基后重试。
-          for _ in 1 2 3; do
-            git push origin HEAD:main && exit 0
-            git pull --rebase origin main
-          done
-          exit 1
