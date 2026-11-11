@@ -23,6 +23,8 @@ done
 mkdir -p "$APP/Contents/Resources/en.lproj"
 cp "$BIN/MacVMApp" "$APP/Contents/MacOS/MacVM"
 cp "$BIN/macvm" "$APP/Contents/Resources/bin/macvm"
+# 给 agent 用的技能，App 菜单里可以装进各 agent 的技能目录。
+cp -R skills "$APP/Contents/Resources/skills"
 # 网络辅助程序由 App 经 SMAppService 注册成 launchd 守护进程，路径与 plist 里的 BundleProgram 对应。
 cp "$BIN/macvm-netd" "$APP/Contents/MacOS/macvm-netd"
 cp packaging/launchd/cn.barey.macvm.netd.plist "$APP/Contents/Library/LaunchDaemons/"

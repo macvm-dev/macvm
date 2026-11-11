@@ -50,6 +50,8 @@
    sudo mkdir -p /usr/local/bin && sudo ln -sf /Applications/MacVM.app/Contents/Resources/bin/macvm /usr/local/bin/macvm
    ```
 
+4. 想让 Claude Code、Codex 等 agent 帮你操作虚拟机，选菜单「MacVM › 安装 Agent 技能…」：App 打开终端运行 `npx skills add`（需要 Node.js），在里面选要装给哪些 agent，之后每次打开 App 会自动更新已装的技能。
+
 想自己编译，见[从源码构建](#从源码构建)。
 
 ## 快速上手

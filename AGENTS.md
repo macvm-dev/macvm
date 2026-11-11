@@ -19,7 +19,7 @@
 | `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物）、界面文案的字符串目录（`l10n`） |
 | `scripts` | Makefile 调用的脚本 |
 | `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
-| `skills` | 给其他应用与 agent 用的技能：`macvm` 教它们用 CLI 操作虚拟机 |
+| `skills` | 给其他应用与 agent 用的技能：`macvm` 教它们用 CLI 操作虚拟机；打包进 App，App 菜单「安装 Agent 技能…」在终端里用 `npx skills add` 装给各 agent |
 
 `MacVMEngine` 按关注点分子目录：
 

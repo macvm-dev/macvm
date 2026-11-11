@@ -3497,6 +3497,16 @@
         }
       }
     },
+    "Install Agent Skill…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 Agent 技能…"
+          }
+        }
+      }
+    },
     "Install or update the agent." : {
       "localizations" : {
         "zh-Hans" : {
@@ -8650,6 +8660,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未说明原因"
+          }
+        }
+      }
+    },
+    "npx wasn't found. Install Node.js (https://nodejs.org), then choose Install Agent Skill… again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到 npx。请先安装 Node.js（https://nodejs.org），再选一次「安装 Agent 技能…」。"
           }
         }
       }
