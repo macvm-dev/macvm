@@ -21,6 +21,7 @@ struct MacVMApp: App {
         .defaultSize(width: 840, height: 580)
         .commands {
             SidebarCommands()
+            CommandGroup(after: .appInfo) { UpdateMenu() }
             CommandGroup(after: .appSettings) { SkillMenu() }
             CommandGroup(replacing: .newItem) {
                 Button("New Virtual Machine…") { model.showingCreate = true }

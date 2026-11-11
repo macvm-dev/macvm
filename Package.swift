@@ -16,6 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.1"),
     ],
     targets: [
         .target(name: "MacVMModel", swiftSettings: strict),
@@ -35,8 +36,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacVMApp",
-            dependencies: ["MacVMModel", "MacVMEngine"],
-            swiftSettings: strict
+            dependencies: ["MacVMModel", "MacVMEngine", .product(name: "Sparkle", package: "Sparkle")],
+            swiftSettings: strict,
+            // App 包里 Sparkle.framework 放在 Contents/Frameworks。
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .executableTarget(name: "MacVMNetHelper", dependencies: ["MacVMModel"], swiftSettings: strict),
         .testTarget(name: "MacVMModelTests", dependencies: ["MacVMModel"], swiftSettings: strict),

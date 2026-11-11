@@ -152,6 +152,27 @@ jobs:
           (cd dist && shasum -a 256 "$(basename "$dmg")") > "$dmg.sha256"
           echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
 
+      # Sparkle 的 appcast 作为发布资源上传：App 的 SUFeedURL 经 releases/latest/download 取最新正式版的那份，资源名不能改。
+      # 发布说明同时用作 GitHub Release 的正文与 Sparkle 更新窗口里的说明。
+      - name: 生成发布说明与 appcast
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          [ -n "$SPARKLE_PRIVATE_KEY" ] || { echo "缺少 secret SPARKLE_PRIVATE_KEY" >&2; exit 1; }
+          dmg=${{ steps.package.outputs.dmg }}
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body > dist/release-notes.md
+          feed=$RUNNER_TEMP/appcast
+          mkdir -p "$feed"
+          cp "$dmg" "$feed/"
+          cp dist/release-notes.md "$feed/$(basename "$dmg" .dmg).md"
+          echo "$SPARKLE_PRIVATE_KEY" | .build/artifacts/sparkle/Sparkle/bin/generate_appcast --ed-key-file - \
+            --embed-release-notes --maximum-deltas 0 \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
+            --link "https://github.com/$GITHUB_REPOSITORY/releases" "$feed"
+          cp "$feed/appcast.xml" dist/appcast.xml
+
       - name: 上传 artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
@@ -166,8 +187,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "MacVM ${{ steps.version.outputs.version }}" \
-            "${{ steps.package.outputs.dmg }}" "${{ steps.package.outputs.dmg }}.sha256"
+          version=${{ steps.version.outputs.version }}
+          # 只有比现有最新版高的正式版才标为最新：SUFeedURL 取最新版的 appcast，构建号又按发布先后递增，
+          # 预发布版或给旧版本补发的修订成了最新版，已装的 App 会经 appcast 更新（或降级）到它。
+          latest=(--latest)
+          current=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          if [[ "$version" == *-* ]]; then
+            latest=(--prerelease --latest=false)
+          elif [ -n "$current" ] && [ "$(printf '%s\n' "${current#v}" "$version" | sort -V | tail -1)" != "$version" ]; then
+            latest=(--latest=false)
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag "${latest[@]}" --notes-file dist/release-notes.md --title "MacVM $version" \
+            "${{ steps.package.outputs.dmg }}" "${{ steps.package.outputs.dmg }}.sha256" dist/appcast.xml
 
       - name: 清理钥匙串
         if: always()
@@ -198,6 +229,10 @@ jobs:
           sed -i -E '/<key>CFBundleShortVersionString<\/key>/{n;s|<string>[^<]*</string>|<string>'"$version"'</string>|}' "$plist"
           grep -A1 '<key>CFBundleShortVersionString</key>' "$plist" | grep -q "<string>$version</string>" \
             || { echo "没能改写 $plist 的版本号" >&2; exit 1; }
+          # Sparkle 按 CFBundleVersion 比新旧，main 上的也跟上，本地构建才不会把刚发布的版本当成更新。
+          sed -i -E '/<key>CFBundleVersion<\/key>/{n;s|<string>[^<]*</string>|<string>'"$GITHUB_RUN_NUMBER"'</string>|}' "$plist"
+          grep -A1 '<key>CFBundleVersion</key>' "$plist" | grep -q "<string>$GITHUB_RUN_NUMBER</string>" \
+            || { echo "没能改写 $plist 的构建号" >&2; exit 1; }
           sed -i -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$version\"/" guest/Cargo.toml
           grep -q "^version = \"$version\"" guest/Cargo.toml || { echo "没能改写客户机程序的版本号" >&2; exit 1; }
           cargo update --workspace --manifest-path guest/Cargo.toml

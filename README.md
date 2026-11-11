@@ -52,6 +52,8 @@
 
 4. 想让 Claude Code、Codex 等 agent 帮你操作虚拟机，选菜单「MacVM › 安装 Agent 技能…」：App 打开终端运行 `npx skills add`（需要 Node.js），在里面选要装给哪些 agent，之后每次打开 App 会自动更新已装的技能。
 
+有新版时 App 会提示更新（用 [Sparkle](https://sparkle-project.org)），也可以随时选「MacVM › 检查更新…」，或在「设置 › 通用」里关掉自动检查。
+
 想自己编译，见[从源码构建](#从源码构建)。
 
 ## 快速上手

@@ -21,6 +21,7 @@ struct SettingsView: View {
             NetworkHelperSection()
             Section("General") {
                 Toggle("Show in Menu Bar", isOn: $showsMenuBarExtra)
+                AutomaticUpdateToggle()
                 Picker("Language", selection: Binding(get: { language }, set: {
                     AppLanguage.set($0)
                     language = $0

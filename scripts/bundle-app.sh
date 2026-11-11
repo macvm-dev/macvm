@@ -42,6 +42,11 @@ if [ -n "$QEMU_DIR" ]; then
 else
   echo "未找到自带 QEMU（make qemu），App 将使用 Homebrew 的 QEMU" >&2
 fi
+# 检查与安装更新用的 Sparkle。App 没开沙盒，用不到它的 XPC 服务。
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$BIN/Sparkle.framework" "$SPARKLE"
+rm -rf "$SPARKLE/XPCServices" "$SPARKLE/Versions/B/XPCServices"
 if [ -n "${PROVISIONING_PROFILE:-}" ]; then
   cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
 fi
@@ -68,6 +73,10 @@ if [ -d "$APP/Contents/Resources/QEMU" ]; then
   done
   ENTITLEMENTS=packaging/entitlements/qemu.entitlements sign "$APP/Contents/Resources/QEMU/bin/qemu-system-aarch64"
 fi
+# Sparkle 由内而外重签，与 App 同一身份，hardened runtime 的库校验才放行。
+sign_plain "$SPARKLE/Versions/B/Autoupdate"
+sign_plain "$SPARKLE/Versions/B/Updater.app"
+sign_plain "$SPARKLE"
 sign "$APP"
 codesign --verify --strict --deep "$APP"
 echo "$APP"
