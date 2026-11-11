@@ -59,7 +59,7 @@
 ## CLI 契约
 
 - 所有命令支持 `--json`，输出一行 `JSONEnvelope`；错误码与退出码在 `MacVMError` 定义，已发布的值不能改。
-- 改命令或选项时同步更新 `docs/cli.md`，以及 `skills/macvm` 里讲到它的地方。
+- 改命令或选项时同步更新 `docs/cli.md`，以及 `skills/macvm` 里讲到它的地方（技能用英文写）。
 
 ## 界面语言
 

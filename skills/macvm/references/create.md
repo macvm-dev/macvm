@@ -1,38 +1,38 @@
-# 新建虚拟机
+# Creating a VM
 
-名字只能用字母、数字与 `. _ -`，最长 40。`--cpus` 默认 4、不超过主机核数；`--memory` 默认 8G、不超过主机内存一半；`--disk` 是稀疏文件，按实际写入占用。
+Names may contain only letters, digits and `. _ -`, up to 40 characters. `--cpus` defaults to 4 and cannot exceed the host's core count; `--memory` defaults to 8G and cannot exceed half the host's memory; `--disk` is a sparse file that only occupies what is actually written.
 
-## 选哪种
+## Which kind
 
-| 需要 | 命令 | 说明 |
+| Need | Command | Notes |
 | --- | --- | --- |
-| 命令行 Linux（最快，推荐） | `macvm create dev --image debian-13` 或 `--image ubuntu-24.04` | 云镜像，首次下载后缓存；开机即带登录用户与 macvm 专用 SSH 密钥，可直接 `exec` / `ssh` |
-| 带桌面的 Ubuntu | `macvm create desk --desktop ubuntu-desktop` | 离线无人值守安装，命令等到装好的系统里代理响应才返回；系统为英文、时区同主机 |
-| 带桌面的 Fedora | `macvm create desk --desktop fedora-workstation` | 开机后要在窗口里手动图形安装，不适合无人值守 |
-| Windows 11 | `macvm create win --os windows` | 从微软下载 ARM64 ISO 无人值守安装，总是先用 qemu 引擎部署；装好带用户、OpenSSH 与代理，关机卸下安装介质后自动再开机。`--product-key` 才会激活 |
-| macOS | `macvm create mac --os macos` | 不给 `--ipsw` 时下载本机支持的最新版（约 15–20 GB）；装好自动登录、开 SSH、装代理并做降占用调优。网络与共享目录装好后用 `set` 改 |
-| 从模板复制（任何系统） | `macvm create dev2 --template base` | 零拷贝或整盘复制；换新的机器标识与 MAC。模板由 `macvm template save <虚拟机> [<模板>]` 存下 |
-| 自己的安装盘 | `macvm create box --os linux --iso 文件` | 开机从 ISO 安装，要在窗口里操作 |
+| Command-line Linux (fastest, recommended) | `macvm create dev --image debian-13` or `--image ubuntu-24.04` | Cloud image, cached after the first download; boots with a login user and the macvm SSH key, ready for `exec` / `ssh` |
+| Ubuntu with a desktop | `macvm create desk --desktop ubuntu-desktop` | Offline unattended install; the command returns only once the agent in the installed system responds. The system is in English with the host's time zone |
+| Fedora with a desktop | `macvm create desk --desktop fedora-workstation` | After boot the graphical installer must be completed by hand in the window; not suitable for unattended use |
+| Windows 11 | `macvm create win --os windows` | Downloads the ARM64 ISO from Microsoft and installs unattended, always deploying with the qemu engine first; the result has a user, OpenSSH and the agent, and after shutting down to eject the install media it boots again automatically. Activation only with `--product-key` |
+| macOS | `macvm create mac --os macos` | Without `--ipsw`, downloads the latest version this host supports (about 15–20 GB); once installed it logs in automatically, enables SSH, installs the agent and applies tuning to reduce resource use. Change network and shared folders with `set` after install |
+| Copy a template (any OS) | `macvm create dev2 --template base` | Zero-copy or full-disk copy; gets a new machine identifier and MAC. Templates are saved with `macvm template save <vm> [<template>]` |
+| Your own install disc | `macvm create box --os linux --iso FILE` | Boots from the ISO to install; must be operated in the window |
 
-用户名默认与主机用户同名（`--user` 可改）；密码用 `--password` 指定，省略时云镜像只能用密钥登录，Ubuntu 桌面版、Windows、macOS 随机生成，存在虚拟机包内的 `guest-password`。
+The user name defaults to the host user's name (change with `--user`). Set the password with `--password`; when omitted, cloud images allow key login only, while Ubuntu Desktop, Windows and macOS get a random password stored in `guest-password` inside the VM bundle.
 
-## 引擎
+## Engine
 
-`--engine vz`（默认，占用最低）或 `qemu`。
+`--engine vz` (default, lowest overhead) or `qemu`.
 
-- macOS 客户机只能用 vz。
-- Windows 安装总是 qemu；装好后可 `macvm set win --engine vz`，但 vz 下 Windows 分辨率固定 1024x768、没有声音。Windows 要 3D、声音、跟随窗口的分辨率就留在 qemu。
-- 共享目录（virtio-fs）与 Rosetta 只在 vz 下可用。
+- macOS guests can only use vz.
+- Windows always installs with qemu; afterwards you can `macvm set win --engine vz`, but under vz Windows is fixed at 1024x768 with no sound. Keep Windows on qemu if it needs 3D, sound, or a resolution that follows the window.
+- Shared folders (virtio-fs) and Rosetta are only available under vz.
 
-## 网络
+## Network
 
-`--network nat`（默认）或 `bridged[:网卡]`（如 `bridged:en0`，可用网卡见 `macvm doctor --json`）。桥接要用户在 App 设置里启用网络辅助程序，`doctor` 的 `bridgedNetworking` 为 true 才可用，否则开机报 `unsupported`。改网络只能在关机时。
+`--network nat` (default) or `bridged[:interface]` (e.g. `bridged:en0`; available interfaces are listed by `macvm doctor --json`). Bridging requires the user to enable the network helper in the App's settings; it is available only when `bridgedNetworking` in `doctor` is true, otherwise booting fails with `unsupported`. The network can only be changed while shut down.
 
-## 共享目录
+## Shared folders
 
-`--share 主机路径[:名称][:ro]`，可重复；只用于 vz 引擎的 macOS、Linux 客户机。客户机里的路径与宿主不同：Linux 在 `/mnt/<名称>`，macOS 在 `/Volumes/My Shared Files/<名称>`。
+`--share HOST_PATH[:NAME][:ro]`, repeatable; only for macOS and Linux guests on the vz engine. The path inside the guest differs from the host: on Linux it is `/mnt/<NAME>`, on macOS `/Volumes/My Shared Files/<NAME>`.
 
-## 建好之后
+## After creation
 
-- `macvm set <名> --cpus N --memory 8G --disk-size 256G …` 改配置，要关机；`--disk-size` 只能扩大，客户机分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。
-- 不确定本机能力时先 `macvm doctor --json`。
+- `macvm set <name> --cpus N --memory 8G --disk-size 256G …` changes configuration and requires shutdown; `--disk-size` can only grow, and the guest partition must be extended separately (Linux created from a cloud image extends it automatically on next boot).
+- When unsure what this host supports, run `macvm doctor --json` first.
