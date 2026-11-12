@@ -3,7 +3,8 @@ import MacVMEngine
 import MacVMModel
 
 /// 跟着虚拟机窗口的焦点经客户机代理同步剪贴板：窗口成为主窗口时把宿主剪贴板推给客户机，失去主窗口时把客户机剪贴板取回宿主。
-/// 只在焦点切换时同步，不轮询。剪贴板里有文件时复制文件本身（不超过 `GuestClipboard.maxFiles`），进度经 `GuestTransferActivity` 显示在窗口里。
+/// 窗口是主窗口期间宿主剪贴板也会变（剪贴板管理器、通用剪贴板、后台程序），这期间每 `pollInterval` 看一次 `changeCount`，变了就再推；
+/// 客户机剪贴板只在离开窗口时取回，不轮询。剪贴板里有文件时复制文件本身（不超过 `GuestClipboard.maxFiles`），进度经 `GuestTransferActivity` 显示在窗口里。
 @MainActor
 final class ClipboardSync {
     private let bundle: VMBundle
@@ -16,8 +17,33 @@ final class ClipboardSync {
     private var hostChangeCount: Int?
     /// 进行中的文件复制；焦点再切换时取消，免得旧的复制完成后盖掉新的剪贴板。
     private var transfer: GuestTransferActivity?
+    /// 窗口是主窗口期间监视宿主剪贴板的定时器。
+    private var poller: Timer?
+    /// 上次 `push` 时宿主剪贴板的 `changeCount`：推送失败时不随轮询反复重试，等剪贴板再变或窗口再切回。
+    private var observedChangeCount: Int?
+    private static let pollInterval: TimeInterval = 0.5
 
     init(bundle: VMBundle) { self.bundle = bundle }
+
+    /// 窗口是主窗口期间宿主剪贴板变了就推给客户机；`ClipboardSync` 释放后定时器自行失效。
+    private func startPolling() {
+        guard poller == nil else { return }
+        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] timer in
+            let alive = MainActor.assumeIsolated { () -> Bool in
+                guard let self else { return false }
+                if NSPasteboard.general.changeCount != self.observedChangeCount { self.push() }
+                return true
+            }
+            if !alive { timer.invalidate() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        poller = timer
+    }
+
+    private func stopPolling() {
+        poller?.invalidate()
+        poller = nil
+    }
 
     /// 设了 `MACVM_CLIPBOARD_DEBUG` 时把每次同步写到标准错误。
     nonisolated private static let debug = ProcessInfo.processInfo.environment["MACVM_CLIPBOARD_DEBUG"] != nil
@@ -27,11 +53,13 @@ final class ClipboardSync {
         FileHandle.standardError.write(Data("[clipboard] \(Date().timeIntervalSince1970) \(name) \(message())\n".utf8))
     }
 
-    /// 窗口成为主窗口时调用。宿主剪贴板没变时只记下客户机当前的内容，作为离开时比较的基准。
+    /// 窗口成为主窗口时调用，之后宿主剪贴板每变一次再调用一次。宿主剪贴板没变时只记下客户机当前的内容，作为离开时比较的基准。
     func push() {
+        startPolling()
         transfer?.progress.cancel()
         let pasteboard = NSPasteboard.general
         let changeCount = pasteboard.changeCount
+        observedChangeCount = changeCount
         let bundle = bundle
         let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         if changeCount != hostChangeCount, !urls.isEmpty {
@@ -99,6 +127,7 @@ final class ClipboardSync {
 
     /// 窗口失去主窗口时调用。
     func pull() {
+        stopPolling()
         let bundle = bundle
         Self.log(bundle.name, "pull")
         queue.async {
