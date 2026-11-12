@@ -45,6 +45,7 @@ struct MacVMApp: App {
 
         Settings {
             SettingsView()
+                .reportsErrors()
                 .environment(model)
         }
 

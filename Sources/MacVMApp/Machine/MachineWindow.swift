@@ -17,6 +17,7 @@ struct MachineWindow: View {
     @State private var failure: ReportedError?
     @State private var showingShares = false
     @State private var showingImages = false
+    @State private var showingForwards = false
     @State private var choosingImage = false
     /// 改了声音或麦克风后在画面顶部短暂显示的说明。
     @State private var notice: String?
@@ -125,6 +126,7 @@ struct MachineWindow: View {
             withAnimation { notice = nil }
         }
         .navigationTitle(name)
+        .reportsErrors()
         .task(id: name) {
             if runningElsewhere {
                 guard model.canTakeOver(name) else { return }
@@ -135,8 +137,7 @@ struct MachineWindow: View {
                 restoring = model.wasRestored(name)
                 runner = taken
                 takingOver = false
-                failed = runner == nil
-                failure = failed ? model.lastError : nil
+                recordFailure()
                 return
             }
             if model.summary(name)?.state == .suspended { startingTitle = String(l10n: "Resuming…") }
@@ -144,8 +145,7 @@ struct MachineWindow: View {
             let started = await model.start(name)
             restoring = model.wasRestored(name)
             runner = started
-            failed = runner == nil
-            failure = failed ? model.lastError : nil
+            recordFailure()
             if !(runner is VZRunner) { awaitingFirstFrame = false }
         }
         .onChange(of: isRunning) { wasRunning, running in
@@ -187,6 +187,8 @@ struct MachineWindow: View {
                     Button { showingShares = true } label: { Label("Shared Folders", systemImage: "folder") }
                         .help("Shared Folders")
                 }
+                Button { showingForwards = true } label: { Label("Port Forwarding", systemImage: "arrow.right.arrow.left") }
+                    .help("Port Forwarding")
                 if let config, config.supportsMicrophone {
                     Button {
                         let on = !config.microphone
@@ -231,6 +233,7 @@ struct MachineWindow: View {
         }
         // 用 sheet 而不是 popover：添加时要弹文件选择面板，popover 一失去焦点就关闭。
         .sheet(isPresented: $showingShares) { SharesSheet(name: name) }
+        .sheet(isPresented: $showingForwards) { ForwardsSheet(name: name) }
         .fileImporter(isPresented: $choosingImage, allowedContentTypes: ImagesPopover.imageTypes, allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result, !urls.isEmpty else { return }
             Task {
@@ -284,6 +287,14 @@ extension MachineWindow {
             .accessibilityLabel(text)
     }
 
+    /// 开机失败的原因由窗口正中显示，从 `lastError` 取走，免得再弹一次错误弹窗。
+    /// 必须紧跟在 `start` / `takeOver` 返回之后、中间不能有挂起点，弹窗才来不及出现。
+    fileprivate func recordFailure() {
+        failed = runner == nil
+        failure = failed ? model.lastError : nil
+        if failed { model.lastError = nil }
+    }
+
     /// 从挂起状态恢复后等第一帧的时长：客户机显示器醒着时恢复后很快就有画面。
     fileprivate static let restoredFrameTimeout: Duration = .seconds(3)
 
@@ -324,6 +335,31 @@ private struct SharesSheet: View {
         }
         .frame(width: 460)
         .acceptsShareDrops(vmName: name, editable: editable)
+        .reportsErrors()
+    }
+}
+
+private struct ForwardsSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let name: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                if let config = model.config(of: name) {
+                    ForwardsSection(vmName: name, config: config)
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 460)
+        .reportsErrors()
     }
 }
 

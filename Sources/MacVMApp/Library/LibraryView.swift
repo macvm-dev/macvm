@@ -27,12 +27,7 @@ struct LibraryView: View {
             }
         }
         .sheet(isPresented: $model.showingCreate) { CreateSheet() }
-        .alert("The Operation Couldn't Be Completed", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } }),
-               presenting: model.lastError) { error in
-            Button("OK") { model.lastError = nil }
-        } message: { error in
-            Text(error.message)
-        }
+        .reportsErrors()
     }
 
     private static let sidebarIdealWidth: CGFloat = 240
