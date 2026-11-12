@@ -4,3 +4,4 @@
 guest/target/
 *.xcodeproj/
 .DS_Store
+.codegraph/
