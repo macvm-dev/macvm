@@ -33,12 +33,12 @@ public enum GuestConnection {
     }
 
     /// 经网络直连客户机 `ip` 上的 `port`。连的是代理端口时先过 `AgentToken.authenticate`。
-    static func direct(_ ip: String, port: UInt16, bundle: VMBundle, config: VMConfig) throws -> UnixSocket {
+    static func direct(_ ip: String, port: UInt16, bundle: VMBundle) throws -> UnixSocket {
         let fd = tcpConnect(ip, port)
         guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't connect to \(ip):\(port)")) }
         let socket = UnixSocket(fd: fd)
         if UInt32(port) == AgentProtocol.port {
-            try AgentToken.authenticate(socket, bundle: bundle, bridged: config.networks.first?.mode == .bridged)
+            try AgentToken.authenticate(socket, bundle: bundle)
         }
         return socket
     }

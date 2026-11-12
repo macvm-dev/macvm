@@ -139,9 +139,6 @@ struct QEMUCommand {
             case .nat:
                 let forwards = Self.forwardedPorts.map { "hostfwd=unix:\(Self.optionValue(Self.portSocket(bundle, port: $0).path))-:\($0)" }.joined(separator: ",")
                 a += ["-netdev", "user,id=net0,\(forwards)"]
-            case .bridged:
-                // `BridgeSession` 的 socket 作为 QEMU 的标准输入交给它：`Process` 只把标准输入输出传给子进程。
-                a += ["-netdev", "dgram,id=net0,local.type=fd,local.str=0"]
             case .vmnetShared, .vmnetHost:
                 throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support vmnet networking"))
             }

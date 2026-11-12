@@ -781,12 +781,12 @@
         }
       }
     },
-    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--network bridged puts the guest directly on the host's local network; turn on the network helper in the app's settings first. Without an interface name, it uses the first interface that can be bridged at boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine." : {
+    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--network bridged 让客户机直接接入主机所在的局域网，要先在 App 的设置里启用网络辅助程序。不写网卡名时，开机时使用第一块可桥接的网卡。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。"
+            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。"
           }
         }
       }
@@ -1139,82 +1139,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动安装"
-          }
-        }
-      }
-    },
-    "Bridged Networking" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接网络"
-          }
-        }
-      }
-    },
-    "Bridged networking connects the guest directly to your Mac's local network. To use it, enable the network helper in Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接网络让客户机直接接入 Mac 所在的局域网。要使用它，先在设置里启用网络辅助程序"
-          }
-        }
-      }
-    },
-    "Bridged networking needs a fixed MAC address" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接网络需要固定的 MAC 地址"
-          }
-        }
-      }
-    },
-    "Bridged networking needs the network helper. Turn it on in MacVM Settings; the first time, also allow MacVM in System Settings › General › Login Items & Extensions." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接网络需要网络辅助程序。在 MacVM 的设置里启用它；第一次启用时，还要在「系统设置 › 通用 › 登录项与扩展」里允许 MacVM。"
-          }
-        }
-      }
-    },
-    "Bridged networking puts virtual machines directly on your Mac's local network, where they get addresses from the router. To send and receive network traffic, it needs a network helper that runs with administrator privileges. After you enable it, allow MacVM in System Settings › General › Login Items & Extensions." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接网络让虚拟机直接接入 Mac 所在的局域网，从路由器获取地址。收发网络流量需要一个以管理员权限运行的网络辅助程序。启用后，在「系统设置 › 通用 › 登录项与扩展」里允许 MacVM。"
-          }
-        }
-      }
-    },
-    "Bridged: %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接：%@"
-          }
-        }
-      }
-    },
-    "Bridged: %@ (%@)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Bridged: %1$@ (%2$@)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接：%@（%@）"
           }
         }
       }
@@ -1844,22 +1768,6 @@
         }
       }
     },
-    "Couldn't bridge to %@: %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Couldn't bridge to %1$@: %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接到 %@ 失败：%@"
-          }
-        }
-      }
-    },
     "Couldn't clone %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1974,16 +1882,6 @@
         }
       }
     },
-    "Couldn't disable: %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停用失败：%@"
-          }
-        }
-      }
-    },
     "Couldn't duplicate the connection" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2006,16 +1904,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "推出 %@ 失败：%@"
-          }
-        }
-      }
-    },
-    "Couldn't enable: %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用失败：%@"
           }
         }
       }
@@ -2046,22 +1934,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "找不到 %@ 的 IP 地址"
-          }
-        }
-      }
-    },
-    "Couldn't find a bridgeable network interface named %@; available: %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Couldn't find a bridgeable network interface named %1$@; available: %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到可桥接的网卡 %@，可用：%@"
           }
         }
       }
@@ -2264,16 +2136,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法解析客户机代理返回的辅助功能树：%@"
-          }
-        }
-      }
-    },
-    "Couldn't re-enable: %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新启用失败：%@"
           }
         }
       }
@@ -2870,16 +2732,6 @@
         }
       }
     },
-    "Disable" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停用"
-          }
-        }
-      }
-    },
     "Discard" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3186,36 +3038,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "元素编号（来自 ui snapshot）。"
-          }
-        }
-      }
-    },
-    "Enable" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用"
-          }
-        }
-      }
-    },
-    "Enabled" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已启用"
-          }
-        }
-      }
-    },
-    "Enabled but not responding" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已启用，但没有响应"
           }
         }
       }
@@ -4291,9 +4113,6 @@
         }
       }
     },
-    "NAT" : {
-      "shouldTranslate" : false
-    },
     "Name" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4320,46 +4139,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新虚拟机的名称。"
-          }
-        }
-      }
-    },
-    "Network" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络"
-          }
-        }
-      }
-    },
-    "Network Helper" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络辅助程序"
-          }
-        }
-      }
-    },
-    "Network: nat (default) or bridged[:interface]." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络：nat（默认）或 bridged[:网卡名]。"
-          }
-        }
-      }
-    },
-    "Network: nat or bridged[:interface]." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络：nat 或 bridged[:网卡名]。"
           }
         }
       }
@@ -4584,16 +4363,6 @@
         }
       }
     },
-    "Not enabled" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未启用"
-          }
-        }
-      }
-    },
     "Not supported on this Mac or VM" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4710,26 +4479,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 MacVM"
-          }
-        }
-      }
-    },
-    "Open Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开设置"
-          }
-        }
-      }
-    },
-    "Open System Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开系统设置"
           }
         }
       }
@@ -5070,26 +4819,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出会中断 %@ 正在进行的任务，这些任务不会自动继续。"
-          }
-        }
-      }
-    },
-    "Re-enable" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新启用"
-          }
-        }
-      }
-    },
-    "Re-enable the Network Helper?" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新启用网络辅助程序？"
           }
         }
       }
@@ -5991,12 +5720,12 @@
         }
       }
     },
-    "Shut down to change processors, memory, network, sound, microphone, and disk size." : {
+    "Shut down to change processors, memory, sound, microphone, and disk size." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关机后可修改处理器、内存、网络、声音、麦克风与磁盘容量。"
+            "value" : "关机后可修改处理器、内存、声音、麦克风与磁盘容量。"
           }
         }
       }
@@ -6643,6 +6372,16 @@
         }
       }
     },
+    "The QEMU engine only forwards guest ports %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QEMU 引擎只转发客户机端口 %@"
+          }
+        }
+      }
+    },
     "The SHA-256 checksum of %@ doesn't match the published one, so the file was deleted; try again" : {
       "localizations" : {
         "zh-Hans" : {
@@ -6719,22 +6458,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "后台进程的日志写在虚拟机包内的 run.log。"
-          }
-        }
-      }
-    },
-    "The bundle for %@ has no shared token, so the guest agent can't be reached over bridged networking; reinstall it with macvm agent install %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The bundle for %1$@ has no shared token, so the guest agent can't be reached over bridged networking; reinstall it with macvm agent install %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 的包里没有共享令牌，无法通过桥接网络连接客户机代理；请用 macvm agent install %@ 重新安装"
           }
         }
       }
@@ -7125,16 +6848,6 @@
         }
       }
     },
-    "The helper will be turned off and back on. Virtual machines using bridged networking will lose their network connection." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络辅助程序会先关闭再重新打开。使用桥接网络的虚拟机会断开网络连接。"
-          }
-        }
-      }
-    },
     "The image archive doesn't contain a .%@ disk" : {
       "localizations" : {
         "zh-Hans" : {
@@ -7181,16 +6894,6 @@
         }
       }
     },
-    "The network helper isn't responding; turn it off and on again in MacVM Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络辅助程序没有响应，请在 MacVM 设置中将它关闭后重新打开"
-          }
-        }
-      }
-    },
     "The new language takes effect after MacVM restarts." : {
       "localizations" : {
         "zh-Hans" : {
@@ -7223,16 +6926,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新尺寸在虚拟机关机前一直有效。省略尺寸会恢复默认尺寸，默认尺寸可用 macvm set --display 修改。VZ 下的 Windows 分辨率固定，不能调整。"
-          }
-        }
-      }
-    },
-    "The number of bridges doesn't match the number of network adapters in the configuration" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接数量与配置里的网卡数量不符"
           }
         }
       }
@@ -7419,16 +7112,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本机不支持虚拟化（需要 Apple 芯片，且 App 的签名带有 com.apple.security.virtualization 权限）"
-          }
-        }
-      }
-    },
-    "This Mac has no bridgeable network interface" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机没有可桥接的网卡"
           }
         }
       }
@@ -7743,26 +7426,6 @@
         }
       }
     },
-    "Unavailable outside the app bundle" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不在 App 包内运行时不可用"
-          }
-        }
-      }
-    },
-    "Unknown" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知"
-          }
-        }
-      }
-    },
     "Unknown desktop edition %@; available: %@" : {
       "localizations" : {
         "en" : {
@@ -7801,16 +7464,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未知镜像 %@，可选：%@"
-          }
-        }
-      }
-    },
-    "Unknown network mode %@; use nat or bridged[:interface]" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知网络模式 %@，请用 nat 或 bridged[:网卡名]"
           }
         }
       }
@@ -8201,16 +7854,6 @@
         }
       }
     },
-    "Waiting for approval in System Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在等待在系统设置中允许"
-          }
-        }
-      }
-    },
     "While running, only macOS guests started in this app can change shared folders. For other virtual machines, shut down first." : {
       "localizations" : {
         "zh-Hans" : {
@@ -8277,16 +7920,6 @@
         }
       }
     },
-    "Windows must be installed with NAT networking; change it afterward with macvm set --network" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Windows 必须用 NAT 网络安装，装好后可用 macvm set --network 修改"
-          }
-        }
-      }
-    },
     "Windows needs PMU emulation, which Virtualization.framework doesn't provide on this version of macOS" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8323,16 +7956,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Windows：virtio-win 驱动 ISO，省略时下载并缓存。"
-          }
-        }
-      }
-    },
-    "With NAT networking, the QEMU engine only forwards guest ports %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用 NAT 网络时，QEMU 引擎只转发客户机端口 %@"
           }
         }
       }
@@ -8519,16 +8142,6 @@
         }
       }
     },
-    "first available interface" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "第一个可用的网卡"
-          }
-        }
-      }
-    },
     "got a data frame before any file entry" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8614,16 +8227,6 @@
         }
       }
     },
-    "macOS must be installed with NAT networking; change it afterward with macvm set --network" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 必须用 NAT 网络安装，装好后可用 macvm set --network 修改"
-          }
-        }
-      }
-    },
     "macOS on this Mac is too old to install %@ (%@)" : {
       "localizations" : {
         "en" : {
@@ -8660,12 +8263,12 @@
         }
       }
     },
-    "macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,\nturns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, and runs every macvm tune step (skip with --no-tune).\n  macvm create mac --os macos\nWindows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.\n  macvm create dev --image debian-13 --memory 8G\nLinux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;\nadd --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.\n  macvm create desk --desktop ubuntu-desktop\nInstallation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\nTemplates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), --network, and --engine.\n  macvm create dev2 --template dev-base" : {
+    "macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,\nturns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, and runs every macvm tune step (skip with --no-tune).\n  macvm create mac --os macos\nWindows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.\n  macvm create dev --image debian-13 --memory 8G\nLinux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;\nadd --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.\n  macvm create desk --desktop ubuntu-desktop\nInstallation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\nTemplates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), and --engine.\n  macvm create dev2 --template dev-base" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、\n自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名，再执行 macvm tune 的全部项（--no-tune 跳过）。\n  macvm create mac --os macos\nWindows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。\n  macvm create dev --image debian-13 --memory 8G\nLinux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，\n加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。\n  macvm create desk --desktop ubuntu-desktop\n安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\n模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--network、--engine。\n  macvm create dev2 --template dev-base"
+            "value" : "macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、\n自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名，再执行 macvm tune 的全部项（--no-tune 跳过）。\n  macvm create mac --os macos\nWindows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。\n  macvm create dev --image debian-13 --memory 8G\nLinux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，\n加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。\n  macvm create desk --desktop ubuntu-desktop\n安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\n模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--engine。\n  macvm create dev2 --template dev-base"
           }
         }
       }
@@ -8903,32 +8506,12 @@
         }
       }
     },
-    "✓ Bridged networking" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "✓ 桥接网络"
-          }
-        }
-      }
-    },
     "✓ QEMU engine: %@" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "✓ QEMU 引擎：%@"
-          }
-        }
-      }
-    },
-    "✗ Bridged networking (turn on the network helper in the app's settings)" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "✗ 桥接网络（请在 App 设置中打开网络辅助程序）"
           }
         }
       }

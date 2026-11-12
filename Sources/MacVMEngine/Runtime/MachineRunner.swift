@@ -125,15 +125,13 @@ public enum RunnerFactory {
         }
     }
 
-    /// 已在运行时先报 `alreadyRunning`：`prepare` 会重建包内文件、`BridgeSession.openAll` 要等辅助进程，
-    /// 都不能在运行中的虚拟机上做；包锁要到运行器建好时才取得。
+    /// 已在运行时先报 `alreadyRunning`：`prepare` 会重建包内文件，不能在运行中的虚拟机上做；包锁要到运行器建好时才取得。
     @MainActor
     public static func make(_ bundle: VMBundle, console: ConfigBuilder.Console = .none, display: Bool = false) async throws -> any MachineRunner {
         if BundleLock.holder(of: bundle) != nil { throw MacVMError.alreadyRunning(bundle.name) }
         try await prepare(bundle)
-        let config = try bundle.loadConfig()
-        return switch config.engine {
-        case .vz: try VZRunner(bundle: bundle, console: console, bridges: try await BridgeSession.openAll(for: config, bundle: bundle))
+        return switch try bundle.loadConfig().engine {
+        case .vz: try VZRunner(bundle: bundle, console: console)
         case .qemu: try QEMURunner(bundle: bundle, display: display)
         }
     }

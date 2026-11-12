@@ -29,7 +29,7 @@ macvm cp 'win:C:\Users\me\Desktop\a.txt' .    # guest → host; write guest path
 - `macvm ssh <name>`: login shell.
 - `macvm ssh-config --install`: generates `~/.config/macvm/ssh_config` (kept up to date by later `create` / `rm`) and adds an Include at the top of `~/.ssh/config`. After that `ssh <vm-name>`, `scp` and `rsync` work directly with the VM name as the host name; connections go through `macvm proxy`, which starts the VM if it is not running — unless it was last stopped by a shutdown, in which case it reports `not_running` and you run `macvm start <name>` first.
 - `macvm proxy <name> --port N`: connects standard input and output to a TCP port in the guest (default 22), for use as an ssh ProxyCommand; add `--tcp` to connect straight to the guest IP when the agent is not installed yet.
-- `macvm ip <name> --json [--wait SECONDS]`: the guest IP (looked up from DHCP leases under NAT; under bridging it is unknown until the guest obtains an address).
+- `macvm ip <name> --json [--wait SECONDS]`: the guest IP on the host's NAT network (looked up from DHCP leases).
 
 ## Guest agent
 

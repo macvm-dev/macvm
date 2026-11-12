@@ -40,12 +40,12 @@ struct VMTemplateTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let template = try await VMTemplate.save(makeSource(), as: "base", in: templates)
         let vm = try await VMTemplate.instantiate(template, as: "dev", in: library, cpuCount: 4, memorySize: 4 << 30, diskSize: 32 << 30) {
-            $0.setNetwork(.bridged, interface: "en0")
+            $0.audio = false
         }
 
         let config = try vm.loadConfig()
         #expect(config.name == "dev" && config.cpuCount == 4 && config.memorySize == 4 << 30)
-        #expect(config.networks.first?.mode == .bridged && config.networks.first?.macAddress != "02:00:00:00:00:01")
+        #expect(!config.audio && config.networks.first?.macAddress != "02:00:00:00:00:01")
         #expect(try DiskImage.allocatedSize(at: vm.diskURL).logical == 32 << 30)
         #expect(try Data(contentsOf: vm.machineIdentifierURL) != Data(contentsOf: template.machineIdentifierURL))
         #expect(try library.bundle(named: "dev") == vm)

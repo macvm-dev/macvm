@@ -10,7 +10,7 @@ Names may contain only letters, digits and `. _ -`, up to 40 characters. `--cpus
 | Ubuntu with a desktop | `macvm create desk --desktop ubuntu-desktop` | Offline unattended install; the command returns only once the agent in the installed system responds. The system is in English with the host's time zone |
 | Fedora with a desktop | `macvm create desk --desktop fedora-workstation` | After boot the graphical installer must be completed by hand in the window; not suitable for unattended use |
 | Windows 11 | `macvm create win --os windows` | Downloads the ARM64 ISO from Microsoft and installs unattended, always deploying with the qemu engine first; the result has a user, OpenSSH and the agent, and after shutting down to eject the install media it boots again automatically. Activation only with `--product-key` |
-| macOS | `macvm create mac --os macos` | Without `--ipsw`, downloads the latest version this host supports (about 15–20 GB); once installed it logs in automatically, enables SSH, installs the agent and applies tuning to reduce resource use. Change network and shared folders with `set` after install |
+| macOS | `macvm create mac --os macos` | Without `--ipsw`, downloads the latest version this host supports (about 15–20 GB); once installed it logs in automatically, enables SSH, installs the agent and applies tuning to reduce resource use. Add shared folders with `set` after install |
 | Copy a template (any OS) | `macvm create dev2 --template base` | Zero-copy or full-disk copy; gets a new machine identifier and MAC. Templates are saved with `macvm template save <vm> [<template>]` |
 | Your own install disc | `macvm create box --os linux --iso FILE` | Boots from the ISO to install; must be operated in the window |
 
@@ -23,10 +23,6 @@ The user name defaults to the host user's name (change with `--user`). Set the p
 - macOS guests can only use vz.
 - Windows always installs with qemu; afterwards you can `macvm set win --engine vz`, but under vz Windows is fixed at 1024x768 with no sound. Keep Windows on qemu if it needs 3D, sound, or a resolution that follows the window.
 - Shared folders (virtio-fs) and Rosetta are only available under vz.
-
-## Network
-
-`--network nat` (default) or `bridged[:interface]` (e.g. `bridged:en0`; available interfaces are listed by `macvm doctor --json`). Bridging requires the user to enable the network helper in the App's settings; it is available only when `bridgedNetworking` in `doctor` is true, otherwise booting fails with `unsupported`. The network can only be changed while shut down.
 
 ## Shared folders
 

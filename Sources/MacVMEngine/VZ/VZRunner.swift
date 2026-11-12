@@ -20,8 +20,7 @@ public final class VZRunner: NSObject, MachineRunner {
         set { stopLatch.onStop = newValue }
     }
 
-    /// `bridges` 是 `BridgeSession.openAll` 为本包配置打开的桥接。
-    init(bundle: VMBundle, console: ConfigBuilder.Console = .none, bridges: [BridgeSession]) throws {
+    init(bundle: VMBundle, console: ConfigBuilder.Console = .none) throws {
         guard VZVirtualMachine.isSupported else {
             throw MacVMError.unsupported(String(l10n: "This Mac doesn't support virtualization (it needs Apple silicon and an app signed with the com.apple.security.virtualization entitlement)"))
         }
@@ -30,14 +29,7 @@ public final class VZRunner: NSObject, MachineRunner {
         config = try bundle.loadConfig()
         var builder = ConfigBuilder(bundle: bundle, config: config)
         builder.console = console
-        BridgeSession.clearAddress(of: bundle)
-        var pending = bridges.makeIterator()
-        builder.openBridge = { _ in
-            guard let session = pending.next() else { throw MacVMError.engine(String(l10n: "The number of bridges doesn't match the number of network adapters in the configuration")) }
-            return session.fileHandle
-        }
         vzConfiguration = try builder.build()
-        self.bridges = bridges
         virtualMachine = VZVirtualMachine(configuration: vzConfiguration)
         super.init()
         virtualMachine.delegate = self
@@ -52,8 +44,8 @@ public final class VZRunner: NSObject, MachineRunner {
             let size = WindowsSupport.displaySize
             for _ in 0..<Self.guestDisplayAttempts {
                 guard !Task.isCancelled else { return }
-                if let ip = GuestAddress.current(bundle, config),
-                   Self.callAgent(bundle, config, ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
+                if let ip = GuestAddress.current(config),
+                   Self.callAgent(bundle, ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
                     return
                 }
                 try? await Task.sleep(for: Self.guestDisplayRetryInterval)
@@ -70,9 +62,7 @@ public final class VZRunner: NSObject, MachineRunner {
     nonisolated private static let displaySwitchTimeout = 20
 
     /// 读文件，不要在主线程反复调用。
-    private var guestIP: String? { GuestAddress.current(bundle, config) }
-    /// 开着的桥接，关机时拆掉。
-    private var bridges: [BridgeSession]
+    private var guestIP: String? { GuestAddress.current(config) }
 
     public var stateLabel: String { virtualMachine.state.label }
 
@@ -199,8 +189,8 @@ public final class VZRunner: NSObject, MachineRunner {
             let bundle = bundle, config = config
             let agent = config.guestAgent, user = config.guestUser
             Task.detached { [weak self] in
-                if let ip = GuestAddress.current(bundle, config) {
-                    if agent, Self.callAgent(bundle, config, ip, .shutdown(reboot: false)) { return }
+                if let ip = GuestAddress.current(config) {
+                    if agent, Self.callAgent(bundle, ip, .shutdown(reboot: false)) { return }
                     if let user, Self.sshShutdown(user: user, ip: ip) { return }
                 }
                 try? await self?.pressPowerButton()
@@ -288,8 +278,8 @@ public final class VZRunner: NSObject, MachineRunner {
     }
 
     /// 经网络直连 Windows 客户机的代理发一个请求，返回是否成功。
-    nonisolated private static func callAgent(_ bundle: VMBundle, _ config: VMConfig, _ ip: String, _ request: AgentProtocol.Request, timeout: Int = 3) -> Bool {
-        guard let socket = try? GuestConnection.direct(ip, port: UInt16(AgentProtocol.port), bundle: bundle, config: config) else { return false }
+    nonisolated private static func callAgent(_ bundle: VMBundle, _ ip: String, _ request: AgentProtocol.Request, timeout: Int = 3) -> Bool {
+        guard let socket = try? GuestConnection.direct(ip, port: UInt16(AgentProtocol.port), bundle: bundle) else { return false }
         return AgentClient.call(request, over: socket, timeout: timeout)
     }
 
@@ -372,8 +362,8 @@ public final class VZRunner: NSObject, MachineRunner {
             guard let ip = guestIP else {
                 throw MacVMError.io(String(l10n: "\(bundle.name)'s IP address isn't known yet"))
             }
-            let bundle = bundle, config = config
-            let fd = try await Task.detached { try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle, config: config).duplicateDescriptor() }.value
+            let bundle = bundle
+            let fd = try await Task.detached { try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle).duplicateDescriptor() }.value
             return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
         }
         let connection = Unchecked(value: try await connectToGuest(port: port))
@@ -401,7 +391,6 @@ public final class VZRunner: NSObject, MachineRunner {
     private func finish(_ reason: MachineStopReason) {
         guestDisplayFit?.cancel()
         screenLockSync?.cancel()
-        bridges.forEach { $0.close() }
         stopLatch.fire(reason)
     }
 }

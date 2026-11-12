@@ -553,10 +553,6 @@ final class AppModel {
         updateConfig(name, requiresStopped: true) { $0.memorySize = UInt64(gigabytes) << 30 }
     }
 
-    func setNetwork(_ name: String, _ mode: NetworkConfig.Mode, interface: String?) {
-        updateConfig(name, requiresStopped: true) { $0.setNetwork(mode, interface: interface) }
-    }
-
     func addShares(_ name: String, _ urls: [URL]) {
         updateShares(name) { config in
             for url in urls { try config.addShare(hostPath: url.standardizedFileURL.path) }
@@ -1043,12 +1039,8 @@ final class AppModel {
 /// 报给用户的错误。
 struct ReportedError: Equatable {
     let message: String
-    /// 能在 MacVM 设置里解决，显示错误的地方给出打开设置的按钮。
-    let opensSettings: Bool
 
     init(_ error: any Error) {
-        let known = error as? MacVMError
-        message = known?.message ?? error.localizedDescription
-        opensSettings = known?.needsNetworkHelperSettings ?? false
+        message = (error as? MacVMError)?.message ?? error.localizedDescription
     }
 }

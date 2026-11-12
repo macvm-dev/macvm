@@ -210,18 +210,29 @@ public struct DisplayConfig: Codable, Sendable, Equatable {
 }
 
 public struct NetworkConfig: Codable, Sendable, Equatable {
-    public enum Mode: String, Codable, Sendable { case nat, bridged, vmnetShared, vmnetHost }
+    public enum Mode: String, Codable, Sendable { case nat, vmnetShared, vmnetHost }
 
     public var mode: Mode
-    /// `bridged` 时为主机网卡 BSD 名（如 en0）。
-    public var interface: String?
     /// 形如 `xx:xx:xx:xx:xx:xx` 的本地管理地址；为空时由引擎生成并回写。
     public var macAddress: String?
 
-    public init(mode: Mode = .nat, interface: String? = nil, macAddress: String? = nil) {
+    public init(mode: Mode = .nat, macAddress: String? = nil) {
         self.mode = mode
-        self.interface = interface
         self.macAddress = macAddress
+    }
+
+    /// `bridged` 按 `nat` 读，MAC 地址照旧，客户机里的网卡配置仍对得上。
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decode(String.self, forKey: .mode)
+        if raw == "bridged" {
+            mode = .nat
+        } else if let mode = Mode(rawValue: raw) {
+            self.mode = mode
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .mode, in: c, debugDescription: "Unknown network mode \(raw)")
+        }
+        macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
     }
 }
 
@@ -303,15 +314,5 @@ extension VMConfig {
         let before = shares.count
         shares.removeAll { $0.hostPath == pathOrTag || $0.tag == pathOrTag }
         guard shares.count < before else { throw MacVMError.invalidConfig(String(l10n: "No shared folder matches \(pathOrTag)")) }
-    }
-}
-
-extension VMConfig {
-    /// 改第一块网卡的网络模式，保留它的 MAC 地址：客户机按 MAC 认网卡，换了地址网络配置就对不上。
-    /// `interface` 只用于 `bridged`，为 nil 时开机桥接到第一块可桥接的网卡。
-    public mutating func setNetwork(_ mode: NetworkConfig.Mode, interface: String? = nil) {
-        let mac = networks.first?.macAddress
-        let net = NetworkConfig(mode: mode, interface: mode == .bridged ? interface : nil, macAddress: mac)
-        if networks.isEmpty { networks = [net] } else { networks[0] = net }
     }
 }

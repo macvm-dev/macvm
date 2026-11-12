@@ -52,18 +52,11 @@ struct DHCPLeasesTests {
 }
 
 struct GuestAddressTests {
-    @Test func bridgedReadsAddressFileAndNATReadsLeases() throws {
-        try RuntimeDirectory.ensure()
-        let bundle = VMBundle(url: URL(filePath: "/vms/guest-address-test-\(UUID().uuidString).macvm"))
-        var config = VMConfig(name: bundle.name, os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [],
-                              networks: [NetworkConfig(mode: .bridged, macAddress: "02:00:00:0a:0b:0c")])
-        defer { try? FileManager.default.removeItem(at: bundle.bridgedAddressURL) }
-        #expect(GuestAddress.current(bundle, config) == nil)
-        try Data("192.168.1.23\n".utf8).write(to: bundle.bridgedAddressURL)
-        #expect(GuestAddress.current(bundle, config) { Issue.record("桥接不该读租约"); return nil } == "192.168.1.23")
-
-        config.setNetwork(.nat)
+    @Test func readsLeaseByMAC() {
+        let config = VMConfig(name: "x", os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [],
+                              networks: [NetworkConfig(macAddress: "02:00:00:0a:0b:0c")])
         let leases = "{\n\tname=x\n\tip_address=192.168.64.5\n\thw_address=1,2:0:0:a:b:c\n\tlease=0x70000000\n}"
-        #expect(GuestAddress.current(bundle, config) { leases } == "192.168.64.5")
+        #expect(GuestAddress.current(config) { leases } == "192.168.64.5")
+        #expect(GuestAddress.current(config) { nil } == nil)
     }
 }

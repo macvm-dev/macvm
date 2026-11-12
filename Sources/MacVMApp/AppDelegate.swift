@@ -29,7 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CLIInstaller.installIfNeeded()
         SkillInstaller.updateInstalled()
         AppUpdater.start()
-        NetworkHelperRegistration.reconcile()
         // 直接运行可执行文件（不经 LaunchServices）启动时系统不会激活 App，窗口压在启动它的终端后面。
         NSApp.activate(ignoringOtherApps: true)
     }

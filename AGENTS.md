@@ -11,12 +11,11 @@
 | `Sources/MacVMEngine` | 引擎：配置构建、运行、安装、存储、网络、USB、代理客户端 |
 | `Sources/MacVMApp` | SwiftUI 应用 |
 | `Sources/MacVMCLI` | `macvm` 命令，每个子命令一个文件 |
-| `Sources/MacVMNetHelper` | 网络辅助程序 macvm-netd：以 root 运行的 launchd 守护进程，经 XPC 替引擎建 vmnet 桥接 |
 | `guest` | 放进客户机的 Rust 程序（一个 Cargo workspace，`make agent` / `make boot` 编译，产物在 `.build/guest`） |
 | `guest/agent` | 客户机代理 macvm-agent；`agent-platform` 是各系统的实现，`agent-protocol` 是协议类型与黄金样例（`fixtures`） |
 | `guest/boot` | UEFI 引导程序 macvm-boot：在 VZ 上启动 Windows 用的帧缓冲垫片 |
 | `qemu` | App 自带 QEMU 的源码清单、补丁与 SPICE 显示库（`make qemu` 编译，产物在 `.build/qemu`） |
-| `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、网络辅助程序的 launchd plist（`launchd`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物）、界面文案的字符串目录（`l10n`） |
+| `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物）、界面文案的字符串目录（`l10n`） |
 | `scripts` | Makefile 调用的脚本 |
 | `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
 | `skills` | 给其他应用与 agent 用的技能：`macvm` 教它们用 CLI 操作虚拟机；打包进 App，App 菜单「安装 Agent 技能…」在终端里用 `npx skills add` 装给各 agent |
@@ -31,18 +30,17 @@
 | `Install` | 创建虚拟机（`VMFactory`）与各客户机系统的安装，按 `macOS` / `Linux` / `Windows` 分 |
 | `Guest` | 与客户机通信：代理（`Agent`）、SSH（`SSH`）、端口连接、随程序分发的客户机文件 |
 | `Storage` | 包内文件：磁盘镜像、机器标识、克隆、快照 |
-| `Network` | 网卡附件、DHCP 租约、经网络辅助程序的桥接与客户机 IP |
+| `Network` | 网卡附件、DHCP 租约与客户机 IP |
 | `Download` | 镜像、安装盘、IPSW 的分块并行下载与进度回报 |
 | `Host` | 宿主系统设施：硬件、能力、entitlement、子进程、Unix socket |
 
 ## 分层
 
-依赖只能自上而下：`MacVMModel` ← `MacVMPrivate` ← `MacVMEngine` ← `MacVMApp` / `MacVMCLI`；`MacVMNetHelper` 以 root 运行，只依赖 `MacVMModel`。`make lint` 检查：
+依赖只能自上而下：`MacVMModel` ← `MacVMPrivate` ← `MacVMEngine` ← `MacVMApp` / `MacVMCLI`。`make lint` 检查：
 
 - 只有 `MacVMEngine` 可以 import Virtualization；
 - 只有 `MacVMPrivate` 可以出现私有选择子（以 `_` 开头的 `NSSelectorFromString`）；
-- `MacVMApp` 与 `MacVMCLI` 互不依赖；
-- `MacVMNetHelper` 不依赖 `MacVMEngine` 与 `MacVMPrivate`。
+- `MacVMApp` 与 `MacVMCLI` 互不依赖。
 
 ## 构建
 

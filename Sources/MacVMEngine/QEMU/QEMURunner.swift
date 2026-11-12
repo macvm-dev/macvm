@@ -17,7 +17,6 @@ public final class QEMURunner: MachineRunner {
     private let display: Bool
     private var process: Process?
     private var qmp: QMPClient?
-    private var bridge: BridgeSession?
     private var gpuDriverSync: Task<Void, Never>?
     private var pageCacheTrim: Task<Void, Never>?
     private var screenLockSync: Task<Void, Never>?
@@ -171,17 +170,13 @@ public final class QEMURunner: MachineRunner {
         return AgentClient.call(.shutdown(reboot: reboot), over: socket, timeout: 3)
     }
 
-    /// NAT 下经 QEMU 转发到 Unix socket 的端口，只有 `QEMUCommand.forwardedPorts`；桥接下直连客户机 IP 上的任意端口。
+    /// 经 QEMU 转发到 Unix socket 的端口，只有 `QEMUCommand.forwardedPorts`。
     nonisolated static func connectToGuest(_ bundle: VMBundle, _ config: VMConfig, port: UInt32) throws -> UnixSocket {
-        if config.networks.first?.mode == .bridged {
-            guard let ip = GuestAddress.current(bundle, config) else { throw MacVMError.io(String(l10n: "\(bundle.name)'s IP address isn't known yet")) }
-            return try GuestConnection.direct(ip, port: UInt16(port), bundle: bundle, config: config)
-        }
         guard QEMUCommand.forwardedPorts.contains(port) else {
-            throw MacVMError.unsupported(String(l10n: "With NAT networking, the QEMU engine only forwards guest ports \(QEMUCommand.forwardedPorts.map(String.init).joinedAsList())"))
+            throw MacVMError.unsupported(String(l10n: "The QEMU engine only forwards guest ports \(QEMUCommand.forwardedPorts.map(String.init).joinedAsList())"))
         }
         let socket = try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path)
-        if port == AgentProtocol.port { try AgentToken.authenticate(socket, bundle: bundle, bridged: false) }
+        if port == AgentProtocol.port { try AgentToken.authenticate(socket, bundle: bundle) }
         return socket
     }
 
@@ -280,13 +275,6 @@ public final class QEMURunner: MachineRunner {
         command.incoming = incoming
         let arguments = try command.arguments()
 
-        closeBridge()
-        if let net = config.networks.first, net.mode == .bridged {
-            BridgeSession.clearAddress(of: bundle)
-            let bundle = bundle
-            bridge = try await Task.detached { try BridgeSession.open(net, bundle: bundle) }.value
-        }
-
         let process = Process()
         process.executableURL = qemu.binary
         process.arguments = arguments
@@ -295,7 +283,7 @@ public final class QEMURunner: MachineRunner {
         if !qemu.environment.isEmpty {
             process.environment = ProcessInfo.processInfo.environment.merging(qemu.environment) { $1 }
         }
-        process.standardInput = bridge?.fileHandle ?? FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
         let stderr = StderrTail()
         process.standardError = stderr.pipe
         let token = ObjectIdentifier(process)
@@ -304,7 +292,6 @@ public final class QEMURunner: MachineRunner {
             Task { @MainActor in self?.processExited(token, status: status) }
         }
         do { try process.run() } catch {
-            closeBridge()
             throw MacVMError.engine(String(l10n: "Couldn't start QEMU: \(error.localizedDescription)"))
         }
         self.process = process
@@ -347,7 +334,6 @@ public final class QEMURunner: MachineRunner {
     /// 结束当前 QEMU 进程并等它退出。先摘下 `process`，它的退出不再触发停止回调，由调用方决定停止原因。
     /// 主循环卡住时 QMP 不应答、SIGTERM 也没人处理，所以 `quit` 只等有限时间，之后依次 SIGTERM、SIGKILL。
     private func terminate() async {
-        defer { closeBridge() }
         let current = process, client = qmp
         detachProcess()
         guard let process = current, process.isRunning else { return }
@@ -379,7 +365,6 @@ public final class QEMURunner: MachineRunner {
     private func processExited(_ token: ObjectIdentifier, status: Int32) {
         guard let process, ObjectIdentifier(process) == token else { return }
         detachProcess()
-        closeBridge()
         if restoring {
             restoreExited = true
             return
@@ -388,11 +373,6 @@ public final class QEMURunner: MachineRunner {
     }
 
     private func finish(_ reason: MachineStopReason) { stopLatch.fire(reason) }
-
-    private func closeBridge() {
-        bridge?.close()
-        bridge = nil
-    }
 
     /// 开了 3D 加速的 Windows：代理上线后把自带的驱动包推过去。驱动要与自带 QEMU 的图形组件配套，
     /// 升级 App 换了图形组件而客户机还是旧驱动时，桌面合成会崩溃；换了驱动就重启客户机，桌面合成才用上新驱动。

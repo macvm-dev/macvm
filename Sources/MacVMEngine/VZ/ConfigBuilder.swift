@@ -15,8 +15,6 @@ public struct ConfigBuilder {
     public let bundle: VMBundle
     public let config: VMConfig
     public var console: Console = .none
-    /// 为要开机的虚拟机建桥接，返回接给网卡的 socket；为 nil 时桥接网卡接临时 socket，只用于校验配置。
-    var openBridge: ((NetworkConfig) throws -> FileHandle)?
 
     public init(bundle: VMBundle, config: VMConfig) {
         self.bundle = bundle
@@ -133,7 +131,7 @@ public struct ConfigBuilder {
     private func configureNetwork(_ vz: VZVirtualMachineConfiguration) throws {
         vz.networkDevices = try config.networks.map { net in
             let device = VZVirtioNetworkDeviceConfiguration()
-            device.attachment = try NetworkAttachments.make(for: net, bridge: net.mode == .bridged ? openBridge?(net) : nil)
+            device.attachment = try NetworkAttachments.make(for: net)
             if let text = net.macAddress {
                 guard let mac = VZMACAddress(string: text) else { throw MacVMError.invalidConfig(String(l10n: "Invalid MAC address: \(text)")) }
                 device.macAddress = mac

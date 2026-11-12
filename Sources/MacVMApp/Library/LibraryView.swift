@@ -6,7 +6,6 @@ import SwiftUI
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         @Bindable var model = model
@@ -30,15 +29,7 @@ struct LibraryView: View {
         .sheet(isPresented: $model.showingCreate) { CreateSheet() }
         .alert("The Operation Couldn't Be Completed", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } }),
                presenting: model.lastError) { error in
-            if error.opensSettings {
-                Button("Open Settings") {
-                    model.lastError = nil
-                    openSettings()
-                }
-                Button("Cancel", role: .cancel) { model.lastError = nil }
-            } else {
-                Button("OK") { model.lastError = nil }
-            }
+            Button("OK") { model.lastError = nil }
         } message: { error in
             Text(error.message)
         }

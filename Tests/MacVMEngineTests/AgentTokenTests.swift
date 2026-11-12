@@ -45,19 +45,18 @@ struct AgentTokenTests {
         #expect(throws: (any Error).self) { try AgentToken.authenticate(closedHost, token: "secret", name: "vm") }
     }
 
-    @Test func bundleWithoutTokenOnlyWorksWhenNotBridged() throws {
+    @Test func bundleWithoutTokenSkipsAuthentication() throws {
         let dir = FileManager.default.temporaryDirectory.appending(path: "agent-token-\(UUID().uuidString).macvm")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let bundle = VMBundle(url: dir)
         let (host, _) = try connected()
-        #expect(throws: (any Error).self) { try AgentToken.authenticate(host, bundle: bundle, bridged: true) }
-        #expect(throws: Never.self) { try AgentToken.authenticate(host, bundle: bundle, bridged: false) }
+        #expect(throws: Never.self) { try AgentToken.authenticate(host, bundle: bundle) }
 
         try AgentToken.store("secret", in: bundle)
         let (tokenHost, agent) = try connected()
         try agent.writeLine(Data(#"{"challenge":"xyz"}"#.utf8))
-        try AgentToken.authenticate(tokenHost, bundle: bundle, bridged: true)
+        try AgentToken.authenticate(tokenHost, bundle: bundle)
         let line = try #require(try agent.readLine())
         #expect(line == Data(#"{"auth":"\#(AgentToken.answer(token: "secret", challenge: "xyz"))"}"#.utf8))
     }

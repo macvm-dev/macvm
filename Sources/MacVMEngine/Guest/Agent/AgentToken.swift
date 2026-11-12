@@ -42,15 +42,9 @@ public enum AgentToken {
         return mac.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// 经 TCP 连上代理端口后调用：包里有令牌就过质询。没有令牌时不认证，只在宿主是客户机默认网关时连得上，
-    /// 所以桥接网络下（`bridged`）直接报错。
-    static func authenticate(_ socket: UnixSocket, bundle: VMBundle, bridged: Bool) throws {
-        guard let token = read(bundle) else {
-            guard !bridged else {
-                throw MacVMError.invalidConfig(String(l10n: "The bundle for \(bundle.name) has no shared token, so the guest agent can't be reached over bridged networking; reinstall it with macvm agent install \(bundle.name)"))
-            }
-            return
-        }
+    /// 经 TCP 连上代理端口后调用：包里有令牌就过质询。没有令牌时不认证，代理只放行来自客户机默认网关（即宿主）的连接。
+    static func authenticate(_ socket: UnixSocket, bundle: VMBundle) throws {
+        guard let token = read(bundle) else { return }
         try authenticate(socket, token: token, name: bundle.name)
     }
 

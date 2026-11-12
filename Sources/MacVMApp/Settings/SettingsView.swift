@@ -5,7 +5,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    @State private var capabilities = HostCapabilities.current(probeNetworkHelper: false)
+    @State private var capabilities = HostCapabilities.current()
     @AppStorage(StatusMenu.visibleKey) private var showsMenuBarExtra = true
     @State private var language = AppLanguage.current
 
@@ -18,7 +18,6 @@ struct SettingsView: View {
                 capability("Windows Guests", capabilities.windows)
                 capability("Linux Rosetta", capabilities.rosetta)
             }
-            NetworkHelperSection()
             Section("General") {
                 Toggle("Show in Menu Bar", isOn: $showsMenuBarExtra)
                 AutomaticUpdateToggle()

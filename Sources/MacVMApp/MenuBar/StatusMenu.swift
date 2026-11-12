@@ -22,11 +22,7 @@ struct StatusMenu: View {
         VStack(spacing: 0) {
             header
             if let error = model.lastError {
-                ErrorBanner(error: error, openSettings: {
-                    model.lastError = nil
-                    NSApp.activate()
-                    openSettings()
-                }, dismiss: { model.lastError = nil })
+                ErrorBanner(error: error, dismiss: { model.lastError = nil })
             }
             separator
             if isEmpty {
@@ -484,18 +480,12 @@ private struct SectionTitle: View {
 /// 面板里的操作失败时就地提示；主窗口不一定开着，弹窗看不到。
 private struct ErrorBanner: View {
     let error: ReportedError
-    let openSettings: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(error.message).font(.callout).lineLimit(4).fixedSize(horizontal: false, vertical: true)
-                if error.opensSettings {
-                    Button("Open Settings", action: openSettings).controlSize(.small)
-                }
-            }
+            Text(error.message).font(.callout).lineLimit(4).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             IconButton(systemImage: "xmark", help: "Close") { dismiss() }
                 .padding(.top, -5)

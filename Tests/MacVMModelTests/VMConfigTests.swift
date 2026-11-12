@@ -7,7 +7,7 @@ struct VMConfigTests {
         let config = VMConfig(
             name: "dev", os: .linux, cpuCount: 4, memorySize: 4 << 30,
             disks: [DiskConfig(path: "disk.img", bus: .nvme, sync: .none)],
-            networks: [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01")],
+            networks: [NetworkConfig(macAddress: "02:00:00:00:00:01")],
             shares: [ShareConfig(hostPath: "/tmp", tag: "tmp", readOnly: true, samePath: true)],
             rosetta: true, installMedia: ["/x.iso"]
         )
@@ -82,7 +82,6 @@ struct VMLibraryTests {
         let a = VMBundle(url: URL(filePath: "/x/a/dev.macvm"))
         let b = VMBundle(url: URL(filePath: "/x/b/dev.macvm"))
         #expect(a.controlSocketURL != b.controlSocketURL)
-        #expect(a.bridgedAddressURL != b.bridgedAddressURL)
         #expect(a.controlSocketURL == VMBundle(url: URL(filePath: "/x/a/dev.macvm/")).controlSocketURL)
     }
 }
@@ -170,47 +169,15 @@ struct GuestAccountTests {
     }
 }
 
-struct NetworkSettingTests {
-    @Test func switchingModeKeepsMACAndDropsInterfaceForNAT() {
-        var config = VMConfig(name: "a", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [],
-                              networks: [NetworkConfig(macAddress: "02:00:00:00:00:01")])
-        config.setNetwork(.bridged, interface: "en0")
-        #expect(config.networks == [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01")])
-        config.setNetwork(.nat, interface: "en0")
-        #expect(config.networks == [NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01")])
-    }
-}
-
-struct ARPSnoopTests {
-    let mac: [UInt8] = [0x02, 0, 0, 0x0a, 0x0b, 0x0c]
-
-    /// 以太网头 + ARP 请求，发送方是 `sender`/`ip`。
-    func arp(sender: [UInt8], ip: [UInt8], etherSource: [UInt8]? = nil) -> [UInt8] {
-        let broadcast = [UInt8](repeating: 0xff, count: 6)
-        var frame = broadcast + (etherSource ?? sender) + [0x08, 0x06]
-        frame += [0, 1, 0x08, 0, 6, 4, 0, 1] + sender + ip + [UInt8](repeating: 0, count: 6) + [192, 168, 1, 1]
-        return frame
+struct NetworkConfigTests {
+    @Test func bridgedConfigReadsAsNATKeepingMAC() throws {
+        let json = #"{"mode":"bridged","interface":"en0","macAddress":"02:00:00:00:00:01"}"#
+        let net = try JSONDecoder().decode(NetworkConfig.self, from: Data(json.utf8))
+        #expect(net == NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01"))
     }
 
-    func address(_ frame: [UInt8]) -> String? {
-        frame.withUnsafeBytes { ARPSnoop.senderAddress(in: $0, from: mac) }
-    }
-
-    @Test func readsSenderAddress() {
-        #expect(address(arp(sender: mac, ip: [192, 168, 1, 23])) == "192.168.1.23")
-    }
-
-    @Test func ignoresProbesLinkLocalAndOtherHosts() {
-        #expect(address(arp(sender: mac, ip: [0, 0, 0, 0])) == nil)
-        #expect(address(arp(sender: mac, ip: [169, 254, 3, 4])) == nil)
-        #expect(address(arp(sender: [0x02, 0, 0, 0, 0, 9], ip: [192, 168, 1, 9])) == nil)
-        #expect(address(arp(sender: [0x02, 0, 0, 0, 0, 9], ip: [192, 168, 1, 9], etherSource: mac)) == nil)
-        #expect(address(Array(arp(sender: mac, ip: [192, 168, 1, 23]).prefix(41))) == nil)
-    }
-
-    @Test func parsesMAC() {
-        #expect(ARPSnoop.parseMAC("02:00:00:0a:0b:0c") == mac)
-        #expect(ARPSnoop.parseMAC("2:0:0:a:b:c") == nil)
-        #expect(ARPSnoop.parseMAC("02:00:00:0a:0b") == nil)
+    @Test func unknownModeIsRejected() {
+        let json = #"{"mode":"carrier-pigeon"}"#
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(NetworkConfig.self, from: Data(json.utf8)) }
     }
 }

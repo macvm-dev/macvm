@@ -19,7 +19,7 @@ struct Create: AsyncParsableCommand {
           macvm create desk --desktop ubuntu-desktop
         Installation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).
           macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso
-        Templates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), --network, and --engine.
+        Templates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), and --engine.
           macvm create dev2 --template dev-base
         """)
     )
@@ -67,9 +67,6 @@ struct Create: AsyncParsableCommand {
     @Option(help: ArgumentHelp(String(l10n: "Shared folder as host-path[:tag][:ro] (repeatable).")))
     var share: [String] = []
 
-    @Option(help: ArgumentHelp(String(l10n: "Network: nat (default) or bridged[:interface].")))
-    var network: String?
-
     @Flag(help: ArgumentHelp(String(l10n: "Linux: enable Rosetta to run x86_64 programs.")))
     var rosetta = false
 
@@ -115,7 +112,6 @@ struct Create: AsyncParsableCommand {
             if let option = macOnly.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) is only for macOS guests")) }
             if os == .windows {
                 if image != nil || desktop != nil { throw MacVMError.invalidConfig(String(l10n: "--image and --desktop are only for Linux guests")) }
-                if let network, network != "nat" { throw MacVMError.invalidConfig(String(l10n: "Windows must be installed with NAT networking; change it afterward with macvm set --network")) }
                 let ignored: [(String, Bool)] = [
                     ("--share", !share.isEmpty), ("--rosetta", rosetta), ("--headless", headless != nil),
                     ("--console", console), ("--manual-install", manualInstall),
@@ -133,7 +129,7 @@ struct Create: AsyncParsableCommand {
             let options = VMFactory.Options(
                 name: name, os: os, cpuCount: cpuCount,
                 memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
-                installMedia: installMedia, network: try Self.parseNetwork(network ?? "nat"),
+                installMedia: installMedia,
                 shares: try Self.shareConfigs(share, name: name, os: os, engine: engine ?? .vz), rosetta: rosetta, serialConsole: console,
                 image: try image.map(LinuxImage.named), desktop: desktop, unattended: !manualInstall, user: user ?? NSUserName(), password: password,
                 showProgress: interactive, headless: headless
@@ -169,11 +165,9 @@ struct Create: AsyncParsableCommand {
         if let osOption, osOption != (try template.loadConfig()).os {
             throw MacVMError.invalidConfig(String(l10n: "Template \(name) isn't a \(osOption.rawValue) guest"))
         }
-        let network = try network.map(Self.parseNetwork)
         let bundle = try await VMTemplate.instantiate(
             template, as: self.name, cpuCount: cpuCount, memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse)
         ) { config in
-            if let network { config.setNetwork(network.mode, interface: network.interface) }
             if let engine { try config.switchEngine(to: engine) }
         }
         SSHConfigCommand.refresh()
@@ -205,7 +199,6 @@ struct Create: AsyncParsableCommand {
             ("--product-key", productKey != nil), ("--no-install", noInstall), ("--console", console), ("--engine qemu", engine == .qemu),
         ]
         if let option = unsupported.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) doesn't apply to macOS guests")) }
-        if let network, network != "nat" { throw MacVMError.invalidConfig(String(l10n: "macOS must be installed with NAT networking; change it afterward with macvm set --network")) }
         if !share.isEmpty { throw MacVMError.invalidConfig(String(l10n: "macOS installs without shared folders; add them afterward with macvm set --add-share")) }
         try Self.validateDefaultUser(user)
         let user = user ?? NSUserName()
@@ -302,15 +295,6 @@ struct Create: AsyncParsableCommand {
         guard finished else { throw MacVMError.timeout(String(l10n: "The guest didn't shut down after the installation finished")) }
         say(String(l10n: "Windows is ready: macvm exec \(name) -- whoami (password in \(GuestCredentials.passwordURL(bundle).path))"))
         return try VMStatus.summary(of: bundle)
-    }
-
-    static func parseNetwork(_ text: String) throws -> NetworkConfig {
-        let parts = text.split(separator: ":", maxSplits: 1).map(String.init)
-        switch parts.first {
-        case "nat": return NetworkConfig(mode: .nat)
-        case "bridged": return NetworkConfig(mode: .bridged, interface: parts.count > 1 ? parts[1] : nil)
-        default: throw MacVMError.invalidConfig(String(l10n: "Unknown network mode \(text); use nat or bridged[:interface]"))
-        }
     }
 
     /// 没给 `--user` 时登录用户取主机用户名，它不一定满足 `GuestAccount.validate(user:)`，要在安装开始前报错。

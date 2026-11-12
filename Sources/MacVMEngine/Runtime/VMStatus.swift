@@ -22,7 +22,7 @@ public enum VMStatus {
         let state: VMSummary.State = pid != nil ? .running : (bundle.hasSavedState ? .suspended : .stopped)
         // 客户机在租约里报的是安装时由虚拟机名规整出的主机名。
         let hostname = CloudInit.hostname(for: config.name, fallback: config.name)
-        let ip = pid == nil ? nil : GuestAddress.current(bundle, config, hostname: hostname) { leases.text }
+        let ip = pid == nil ? nil : GuestAddress.current(config, hostname: hostname) { leases.text }
         return VMSummary(
             name: config.name, os: config.os, state: state,
             cpuCount: config.cpuCount, memorySize: config.memorySize,

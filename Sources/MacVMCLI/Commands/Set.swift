@@ -13,7 +13,6 @@ struct Set: AsyncParsableCommand {
         --clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.
         --screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.
         --disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.
-        --network bridged puts the guest directly on the host's local network; turn on the network helper in the app's settings first. Without an interface name, it uses the first interface that can be bridged at boot.
         --remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.
         """)
     )
@@ -28,7 +27,6 @@ struct Set: AsyncParsableCommand {
     @Option(help: ArgumentHelp(String(l10n: "Sync the text clipboard: on or off."))) var clipboard: Toggle?
     @Option(help: ArgumentHelp(String(l10n: "Lock the screen when the guest is idle: on or off."))) var screenLock: Toggle?
     @Option(help: ArgumentHelp(String(l10n: "Grow the system disk to this size, e.g. 256G (disks can't shrink)."))) var diskSize: String?
-    @Option(help: ArgumentHelp(String(l10n: "Network: nat or bridged[:interface]."))) var network: String?
     @Option(help: ArgumentHelp(String(l10n: "Add a shared folder as host-path[:name][:ro] (repeatable)."))) var addShare: [String] = []
     @Option(help: ArgumentHelp(String(l10n: "Remove a shared folder by host path or name (repeatable)."))) var removeShare: [String] = []
 
@@ -43,7 +41,7 @@ struct Set: AsyncParsableCommand {
             let bundle = try VMLibrary.default.bundle(named: name)
             var config = try bundle.loadConfig()
             let onlyLive = engine == nil && cpuCount == nil && memory == nil && display == nil
-                && diskSize == nil && network == nil && addShare.isEmpty && removeShare.isEmpty
+                && diskSize == nil && addShare.isEmpty && removeShare.isEmpty
                 && (clipboard == nil || !config.clipboardChangeNeedsStop)
             if !onlyLive { try bundle.requireStopped() }
             if let retina { config.display.retina = retina == .on }
@@ -55,11 +53,6 @@ struct Set: AsyncParsableCommand {
                 try config.removeShare(config.shares.first { $0.tag == share || $0.hostPath == path }?.hostPath ?? share)
             }
             if let engine { try config.switchEngine(to: engine) }
-            if let network {
-                let net = try Create.parseNetwork(network)
-                if let interface = net.interface { _ = try NetworkAttachments.bridgeInterface(named: interface) }
-                config.setNetwork(net.mode, interface: net.interface)
-            }
             if let cpuCount { config.cpuCount = cpuCount }
             if let memory { config.memorySize = try ByteSize.parse(memory) }
             if let display, let (width, height) = Display.parse(display) {

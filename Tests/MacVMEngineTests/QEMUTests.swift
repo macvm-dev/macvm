@@ -23,17 +23,6 @@ struct QEMUCommandTests {
         #expect(args.contains("mac=02:00:00:00:00:01"))
     }
 
-    @Test func bridgedNetworkReadsFramesFromStandardInput() throws {
-        let bundle = VMBundle(url: URL(filePath: "/vms/deb.macvm"))
-        let config = VMConfig(name: "deb", os: .linux, engine: .qemu, cpuCount: 2, memorySize: 2 << 30,
-                              disks: [DiskConfig(path: "disk.img", bus: .virtio)],
-                              networks: [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01")])
-        let args = try QEMUCommand(bundle: bundle, config: config, qemu: qemu).arguments().joined(separator: " ")
-        #expect(args.contains("-netdev dgram,id=net0,local.type=fd,local.str=0"))
-        #expect(!args.contains("hostfwd"))
-        #expect(args.contains("mac=02:00:00:00:00:01"))
-    }
-
     @Test func installedWindowsUsesVirtioGPU() throws {
         let bundle = VMBundle(url: URL(filePath: "/vms/win.macvm"))
         var config = VMConfig(name: "win", os: .windows, engine: .qemu, cpuCount: 2, memorySize: 4 << 30,
