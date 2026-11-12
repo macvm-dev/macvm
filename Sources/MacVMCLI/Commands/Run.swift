@@ -56,6 +56,8 @@ struct Run: AsyncParsableCommand {
             case .restored: log("Resumed from the suspended state")
             case .restoreFailed(let reason): log("Couldn't resume from the suspended state (\(reason)); did a cold boot instead")
             }
+            // 端口被占这类失败不影响开机，只记进日志。
+            if let error = await Task.detached(operation: { server.applyForwards() }).value { log("Port forwarding: \(error.message)") }
 
             let reason = await runner.waitUntilStopped()
             if detached { log("Stopped: \(reason.label)") }

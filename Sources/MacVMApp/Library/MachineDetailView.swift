@@ -147,6 +147,9 @@ struct MachineDetailView: View {
             if let config, config.supportsShares || !config.shares.isEmpty {
                 SharesSection(vmName: vm.name, config: config, editable: editable || model.canEditSharesLive(vm.name))
             }
+            if let config {
+                ForwardsSection(vmName: vm.name, config: config)
+            }
             SnapshotsSection(vmName: vm.name, state: vm.state, busy: busy)
         }
         .formStyle(.grouped)

@@ -357,6 +357,10 @@ final class AppModel {
             }
             if case .restored = try await runner.start() { restoredStarts.insert(name) } else { restoredStarts.remove(name) }
             refresh()
+            // 端口被占这类失败不影响开机，只报给用户。
+            Task {
+                if let error = await Task.detached(operation: { server.applyForwards() }).value { report(error) }
+            }
             return runner
         } catch {
             release(name)
@@ -566,6 +570,29 @@ final class AppModel {
     func setShareReadOnly(_ name: String, hostPath: String, _ readOnly: Bool) {
         updateShares(name) { config in
             for i in config.shares.indices where config.shares[i].hostPath == hostPath { config.shares[i].readOnly = readOnly }
+        }
+    }
+
+    /// 随时可改；运行中的虚拟机经运行它的进程（可能就是本进程）立即重设监听，监听失败时配置照样保存并报错。
+    func addForward(_ name: String, _ forward: PortForward) {
+        updateForwards(name) { try $0.addForward(forward) }
+    }
+
+    func removeForward(_ name: String, _ forward: PortForward) {
+        updateForwards(name) { try $0.removeForward(forward.spec) }
+    }
+
+    private func updateForwards(_ name: String, _ change: (inout VMConfig) throws -> Void) {
+        guard updateConfig(name, change), isRunning(name), let bundle = try? library.bundle(named: name) else { return }
+        let server = servers[name]
+        Task {
+            do {
+                if let server {
+                    if let error = await Task.detached(operation: { server.applyForwards() }).value { throw error }
+                } else {
+                    try await Task.detached { try ControlClient.applyForwards(bundle) }.value
+                }
+            } catch { report(error) }
         }
     }
 

@@ -44,6 +44,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public var screenLock: Bool
     /// 客户机里已做到的 `GuestRevision`。新建的虚拟机由安装流程做到最新；没有这个字段的旧配置按 0。
     public var guestRevision: Int
+    /// 运行期间由运行它的进程在宿主上监听；运行中改了经控制请求 `applyForwards` 立即生效。
+    public var forwards: [PortForward]
 
     public init(
         name: String,
@@ -66,7 +68,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
         graphicsAcceleration: Bool = false,
         clipboard: Bool = true,
         screenLock: Bool = false,
-        guestRevision: Int? = nil
+        guestRevision: Int? = nil,
+        forwards: [PortForward] = []
     ) {
         self.version = Self.currentVersion
         self.name = name
@@ -90,6 +93,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.clipboard = clipboard
         self.screenLock = screenLock
         self.guestRevision = guestRevision ?? GuestRevision.latest(for: os)
+        self.forwards = forwards
     }
 
     public init(from decoder: any Decoder) throws {
@@ -116,6 +120,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         clipboard = try c.decodeIfPresent(Bool.self, forKey: .clipboard) ?? true
         screenLock = try c.decodeIfPresent(Bool.self, forKey: .screenLock) ?? false
         guestRevision = try c.decodeIfPresent(Int.self, forKey: .guestRevision) ?? 0
+        forwards = try c.decodeIfPresent([PortForward].self, forKey: .forwards) ?? []
     }
 
     /// 改剪贴板同步是否要先关机：Linux 客户机的 SPICE 通道是开机时接上的设备，挂起的存档也认这套设备。

@@ -14,6 +14,7 @@ struct Set: AsyncParsableCommand {
         --screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.
         --disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.
         --remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.
+        --add-forward forwards a TCP port on the host to a port in the guest while the VM runs, written as [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect. You can change forwards while the VM is running; they take effect right away. --remove-forward takes the host port, address:host-port, or the full forward, and runs before --add-forward.
         """)
     )
 
@@ -29,6 +30,8 @@ struct Set: AsyncParsableCommand {
     @Option(help: ArgumentHelp(String(l10n: "Grow the system disk to this size, e.g. 256G (disks can't shrink)."))) var diskSize: String?
     @Option(help: ArgumentHelp(String(l10n: "Add a shared folder as host-path[:name][:ro] (repeatable)."))) var addShare: [String] = []
     @Option(help: ArgumentHelp(String(l10n: "Remove a shared folder by host path or name (repeatable)."))) var removeShare: [String] = []
+    @Option(help: ArgumentHelp(String(l10n: "Forward a host TCP port to the guest as [address:]host-port:guest-port (repeatable)."))) var addForward: [String] = []
+    @Option(help: ArgumentHelp(String(l10n: "Remove a port forward by host port, address:host-port, or the full forward (repeatable)."))) var removeForward: [String] = []
 
     enum Toggle: String, ExpressibleByArgument { case on, off }
 
@@ -63,9 +66,15 @@ struct Set: AsyncParsableCommand {
             for spec in try addShare.map(Create.parseShare) {
                 try config.addShare(hostPath: spec.hostPath, tag: spec.tag, readOnly: spec.readOnly)
             }
+            for forward in removeForward { try config.removeForward(forward) }
+            for forward in try addForward.map(PortForward.parse) { try config.addForward(forward) }
             // 磁盘在所有配置改动校验之后才扩大：配置有错时镜像保持原样。
             if let diskSize { try DiskImage.grow(at: bundle.diskURL, to: ByteSize.parse(diskSize)) }
             try bundle.saveConfig(config)
+            // 监听失败时配置照样保存、命令报错。
+            if !(addForward.isEmpty && removeForward.isEmpty), BundleLock.holder(of: bundle) != nil {
+                try ControlClient.applyForwards(bundle)
+            }
             if screenLock != nil, config.guestAgent, BundleLock.holder(of: bundle) != nil {
                 try GuestScreenLock.apply(bundle, config: config)
             }

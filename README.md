@@ -128,7 +128,16 @@ macvm ssh-config --install        # 之后直接 ssh dev
 
 ## 网络连接方式
 
-客户机在 Mac 内置的 NAT 网络里，能上网，Mac 能访问客户机，局域网里的其他设备访问不到。
+客户机在 Mac 内置的 NAT 网络里，能上网，Mac 能访问客户机，局域网里的其他设备访问不到。要从 Mac 的 localhost 或局域网访问客户机里的服务，用端口转发：在虚拟机详情页的「端口转发」里添加，或者用命令行：
+
+```sh
+macvm set dev --add-forward 8080:80          # 虚拟机运行期间，localhost:8080 接到客户机的 80 端口
+macvm set dev --add-forward 0.0.0.0:2222:22  # 局域网里的其他设备也能连
+macvm set dev --remove-forward 8080
+macvm forward dev 3000:3000                  # 临时转发，按 Ctrl-C 结束，不改配置
+```
+
+运行中增删立即生效。只转发 TCP。更多细节见 [docs/cli.md](docs/cli.md) 的「端口转发」一节。
 
 ## 数据存放位置
 

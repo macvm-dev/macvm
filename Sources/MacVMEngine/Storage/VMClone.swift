@@ -19,6 +19,8 @@ public enum VMClone {
             try MachineIdentity.regenerate(in: target, os: config.os)
             config.name = name
             for i in config.networks.indices { config.networks[i].macAddress = NetworkAttachments.randomMACAddress() }
+            // 宿主端口同一时刻只能一台监听，不随克隆带走。
+            config.forwards = []
 
             // 新 instance-id 让 cloud-init 当作新机器重跑：改主机名、重新生成主机密钥、按新 MAC 配网。
             if config.disks.contains(where: { $0.path == CloudInit.seedFileName }), let user = config.guestUser {

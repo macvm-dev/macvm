@@ -6,6 +6,9 @@ public final class ControlServer: @unchecked Sendable {
     private let socket: UnixSocket
     private let path: String
     private let runner: any MachineRunner
+    private let bundle: VMBundle
+    /// 本虚拟机配置里的端口转发，随本对象监听、随 `close` 停止。
+    public let forwarder: PortForwarder
     private let inode: ino_t
     /// 管道两端：`close` 往写端写，接收线程据此退出，线程放开对本对象的引用后监听 fd 随之关闭。
     private let wake: (read: Int32, write: Int32)
@@ -27,6 +30,11 @@ public final class ControlServer: @unchecked Sendable {
         var st = stat()
         inode = stat(path, &st) == 0 ? st.st_ino : 0
         self.runner = runner
+        bundle = runner.bundle
+        let name = bundle.name
+        forwarder = PortForwarder(bundle: bundle) { forward, error in
+            NSLog("macvm: %@ port forward %@: %@", name, forward.spec, (error as? MacVMError)?.message ?? error.localizedDescription)
+        }
         let thread = Thread { [self] in acceptLoop() }
         thread.name = "macvm.control"
         thread.start()
@@ -37,8 +45,19 @@ public final class ControlServer: @unchecked Sendable {
         Darwin.close(wake.write)
     }
 
-    /// 停止接收新请求，已建立的连接不受影响。只删除仍是本进程创建的 socket 文件，不误删新进程刚建的同名 socket。
+    /// 按配置里的 `VMConfig.forwards` 监听，返回监听失败的合成错误。读配置文件，阻塞。
+    @discardableResult
+    public func applyForwards() -> MacVMError? {
+        do {
+            return PortForwarder.combined(forwarder.apply(try bundle.loadConfig().forwards))
+        } catch {
+            return error as? MacVMError ?? .engine(error.localizedDescription)
+        }
+    }
+
+    /// 停止接收新请求与端口转发的新连接，已建立的连接不受影响。只删除仍是本进程创建的 socket 文件，不误删新进程刚建的同名 socket。
     public func close() {
+        forwarder.close()
         var st = stat()
         if stat(path, &st) == 0, st.st_ino == inode { unlink(path) }
         var byte: UInt8 = 0
@@ -47,27 +66,31 @@ public final class ControlServer: @unchecked Sendable {
 
     private func acceptLoop() {
         while let client = socket.accept(cancel: wake.read) {
-            Task.detached { [runner] in await Self.serve(client, runner: runner) }
+            Task.detached { [self] in await serve(client) }
         }
     }
 
-    private static func serve(_ client: UnixSocket, runner: any MachineRunner) async {
+    private func serve(_ client: UnixSocket) async {
         client.setTimeout(seconds: 30)
         let response: ControlResponse
         do {
             guard let line = try client.readLine() else { return }
             let request = try JSONDecoder().decode(ControlRequest.self, from: line)
-            if case .connect(let port) = request {
-                await bridge(client, toGuestPort: port, runner: runner)
+            switch request {
+            case .connect(let port):
+                await Self.bridge(client, toGuestPort: port, runner: runner)
                 return
+            case .applyForwards:
+                response = applyForwards().map { ControlResponse(failure: $0) } ?? ControlResponse(ok: true)
+            default:
+                response = await Self.handle(request, runner: runner)
             }
-            response = await handle(request, runner: runner)
         } catch let error as MacVMError {
             response = ControlResponse(failure: error)
         } catch {
             response = ControlResponse(ok: false, errorCode: "bad_request", message: "\(error)")
         }
-        reply(response, to: client)
+        Self.reply(response, to: client)
     }
 
     @discardableResult
@@ -107,7 +130,7 @@ public final class ControlServer: @unchecked Sendable {
     private static func handle(_ request: ControlRequest, runner: any MachineRunner) async -> ControlResponse {
         do {
             switch request {
-            case .status, .connect: break
+            case .status, .connect, .applyForwards: break
             case .stop(force: false): try runner.requestStop()
             case .stop(force: true): try await runner.forceStop()
             case .suspend: try await runner.suspend()
@@ -131,6 +154,15 @@ public enum ControlClient {
     /// 发出请求，失败的响应转成对应的 `MacVMError` 抛出。
     public static func perform(_ request: ControlRequest, on bundle: VMBundle, timeout: Int = 60) throws {
         if let error = try send(request, to: bundle, timeout: timeout).failure { throw error }
+    }
+
+    /// 请运行虚拟机的进程按刚保存的配置重设端口转发。不认识这个请求的旧进程报 `unsupported`。
+    public static func applyForwards(_ bundle: VMBundle) throws {
+        let response = try send(.applyForwards, to: bundle, timeout: 10)
+        if response.errorCode == "bad_request" {
+            throw MacVMError.unsupported(String(l10n: "\(bundle.name) was started by an older MacVM; port forwards take effect the next time it starts"))
+        }
+        if let error = response.failure { throw error }
     }
 
     /// 经运行虚拟机的进程连到客户机端口，返回已切换为字节管道的连接。

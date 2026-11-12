@@ -15,6 +15,21 @@ public enum GuestConnection {
         return try await connect(to: bundle, port: port, timeout: timeout)
     }
 
+    /// 端口转发用：立即连一次，不等客户机就绪，返回的 fd 由调用方关闭。阻塞，不要在主线程调用。
+    /// 装有代理时经代理连客户机的 `127.0.0.1:port`，只监听本机回环的服务也连得上；
+    /// 否则 QEMU 引擎经它的用户态网络转发，VZ 引擎直连客户机 IP。
+    static func openForward(_ bundle: VMBundle, port: UInt16) throws -> Int32 {
+        let config = try bundle.loadConfig()
+        if config.guestAgent { return try AgentClient.forward(bundle, port: port).duplicateDescriptor() }
+        if config.engine == .qemu { return try ControlClient.openGuestPort(bundle, port: UInt32(port)).duplicateDescriptor() }
+        guard let ip = try VMStatus.summary(of: bundle).ipAddress else {
+            throw MacVMError.io(String(l10n: "\(bundle.name)'s IP address isn't known yet"))
+        }
+        let fd = tcpConnect(ip, port)
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't connect to \(ip):\(String(port))")) }
+        return fd
+    }
+
     public static func connect(to bundle: VMBundle, port: UInt16, timeout: TimeInterval = 60) async throws -> Int32 {
         guard BundleLock.holder(of: bundle) != nil else { throw MacVMError.notRunning(bundle.name) }
         guard let ip = try await VMStatus.waitForIPAddress(bundle, timeout: timeout, interval: 0.5) else { throw MacVMError.timeout(String(l10n: "Couldn't find \(bundle.name)'s IP address")) }
@@ -28,14 +43,14 @@ public enum GuestConnection {
             fd = tcpConnect(target, port, timeout: min(connectTimeout, max(deadline.timeIntervalSinceNow, 0.1)))
             return fd >= 0
         }
-        guard fd >= 0 else { throw MacVMError.timeout(String(l10n: "Timed out connecting to \(target):\(port)")) }
+        guard fd >= 0 else { throw MacVMError.timeout(String(l10n: "Timed out connecting to \(target):\(String(port))")) }
         return fd
     }
 
     /// 经网络直连客户机 `ip` 上的 `port`。连的是代理端口时先过 `AgentToken.authenticate`。
     static func direct(_ ip: String, port: UInt16, bundle: VMBundle) throws -> UnixSocket {
         let fd = tcpConnect(ip, port)
-        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't connect to \(ip):\(port)")) }
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't connect to \(ip):\(String(port))")) }
         let socket = UnixSocket(fd: fd)
         if UInt32(port) == AgentProtocol.port {
             try AgentToken.authenticate(socket, bundle: bundle)

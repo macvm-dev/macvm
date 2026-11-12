@@ -466,6 +466,16 @@
         }
       }
     },
+    "%@ was started by an older MacVM; port forwards take effect the next time it starts" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 是由旧版 MacVM 启动的，端口转发下次开机后生效"
+          }
+        }
+      }
+    },
     "%@ was suspended, but its background process didn't exit" : {
       "localizations" : {
         "zh-Hans" : {
@@ -781,12 +791,12 @@
         }
       }
     },
-    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine." : {
+    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.\n--add-forward forwards a TCP port on the host to a port in the guest while the VM runs, written as [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect. You can change forwards while the VM is running; they take effect right away. --remove-forward takes the host port, address:host-port, or the full forward, and runs before --add-forward." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。"
+            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。\n--add-forward 在虚拟机运行期间把宿主的 TCP 端口转发到客户机端口，写法为 [地址:]宿主端口:客户机端口。地址默认 127.0.0.1（只有本机能连），用 0.0.0.0 让局域网里的其他设备也能连。虚拟机运行中也能修改，立即生效。--remove-forward 认宿主端口、地址:宿主端口或完整写法，先于 --add-forward 执行。"
           }
         }
       }
@@ -951,6 +961,16 @@
         }
       }
     },
+    "Add Port Forward" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加端口转发"
+          }
+        }
+      }
+    },
     "Add Virtual Machines to ~/.ssh/config" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1033,6 +1053,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分配伪终端（交互程序需要）。"
+          }
+        }
+      }
+    },
+    "Allow other devices on the network to connect" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许局域网里的其他设备连接"
           }
         }
       }
@@ -1282,6 +1312,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "经 SSH 修改客户机里的系统设置，虚拟机未运行时会先开机。各项：\n  spotlight     关闭聚焦索引（访达和聚焦不能再搜索文件内容）\n  sleep         关闭系统睡眠、磁盘睡眠和 Power Nap（显示器仍会睡眠）\n  screensaver   关闭屏幕保护程序\n  updates       关闭自动检查、下载和安装系统更新\n  animations    关闭窗口和程序坞动画\n  transparency  打开「降低透明度」和「减弱动态效果」；SSH 没有完全磁盘访问权限时会失败，\n                需要在客户机的「系统设置 > 辅助功能 > 显示」里手动打开\nspotlight、sleep 和 updates 需要 sudo，会用虚拟机包里保存的客户机密码（用 macvm create --os macos 创建的虚拟机都有）。\n--revert 把所选各项恢复为系统默认。"
+          }
+        }
+      }
+    },
+    "Changes take effect right away, even while running. Forwards are active while the virtual machine is running." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改动立即生效，运行中也可修改。虚拟机运行期间转发有效。"
           }
         }
       }
@@ -1778,18 +1818,18 @@
         }
       }
     },
-    "Couldn't connect to %@:%u" : {
+    "Couldn't connect to %@:%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Couldn't connect to %1$@:%2$u"
+            "value" : "Couldn't connect to %1$@:%2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "连接 %@:%u 失败"
+            "value" : "无法连接 %@:%@"
           }
         }
       }
@@ -2074,6 +2114,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安装 macOS 失败：%@"
+          }
+        }
+      }
+    },
+    "Couldn't listen on %@:%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't listen on %1$@:%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法监听 %@:%@"
+          }
+        }
+      }
+    },
+    "Couldn't listen on %@:%@: the port is already in use" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't listen on %1$@:%2$@: the port is already in use"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法监听 %@:%@：端口已被占用"
           }
         }
       }
@@ -3002,6 +3074,16 @@
         }
       }
     },
+    "Each forward is [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect.\nNothing is saved in the VM's configuration; to forward ports whenever the VM runs, use macvm set --add-forward.\nOnce every port is listening, the command prints the result (one line with --json) and keeps running. It exits when you press Ctrl-C, or with not_running when the VM stops.\n  macvm forward dev 8080:80 0.0.0.0:2222:22" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每条转发写作 [地址:]宿主端口:客户机端口。地址默认 127.0.0.1（只有本机能连），用 0.0.0.0 让局域网里的其他设备也能连。\n不写进虚拟机的配置；要在虚拟机每次运行时都转发，用 macvm set --add-forward。\n全部端口开始监听后，命令输出结果（加 --json 时为一行）并继续运行；按 Ctrl-C 退出，虚拟机停下时以 not_running 退出。\n  macvm forward dev 8080:80 0.0.0.0:2222:22"
+          }
+        }
+      }
+    },
     "Either the sources or the destination must be a guest path (<vm>:<path>)" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3102,6 +3184,72 @@
         }
       }
     },
+    "Forward a host TCP port to the guest as [address:]host-port:guest-port (repeatable)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把宿主 TCP 端口转发到客户机，写法 [地址:]宿主端口:客户机端口（可重复）。"
+          }
+        }
+      }
+    },
+    "Forward a host TCP port to the guest as [address:]host-port:guest-port (repeatable); see macvm set." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把宿主 TCP 端口转发到客户机，写法 [地址:]宿主端口:客户机端口（可重复）；详见 macvm set。"
+          }
+        }
+      }
+    },
+    "Forward a port on your Mac to a port in the guest, so apps can connect to services in the guest through localhost." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把 Mac 上的端口转发到客户机端口，App 就能经 localhost 连到客户机里的服务。"
+          }
+        }
+      }
+    },
+    "Forward host TCP ports to a running VM until you press Ctrl-C." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把宿主 TCP 端口转发到运行中的虚拟机，直到按 Ctrl-C。"
+          }
+        }
+      }
+    },
+    "Forwarding %@:%@ → guest port %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Forwarding %1$@:%2$@ → guest port %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在转发 %@:%@ → 客户机端口 %@"
+          }
+        }
+      }
+    },
+    "Forwards as [address:]host-port:guest-port." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转发，写法 [地址:]宿主端口:客户机端口。"
+          }
+        }
+      }
+    },
     "GB" : {
       "shouldTranslate" : false
     },
@@ -3131,6 +3279,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "生成 ssh 配置，之后用 `ssh <名称>` 就能连接各台虚拟机。"
+          }
+        }
+      }
+    },
+    "Give at least one forward, e.g. 8080:80" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少给出一条转发，如 8080:80"
           }
         }
       }
@@ -3181,6 +3339,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "客户机系统：linux（默认）、windows、macos。"
+          }
+        }
+      }
+    },
+    "Guest Port" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "客户机端口"
           }
         }
       }
@@ -3281,6 +3449,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "水平滚动格数，正值向右滚动。"
+          }
+        }
+      }
+    },
+    "Host port %@ is already forwarded (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Host port %1$@ is already forwarded (%2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宿主端口 %@ 已在转发（%@）"
           }
         }
       }
@@ -3718,6 +3902,16 @@
         }
       }
     },
+    "Listening on %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "监听 %@"
+          }
+        }
+      }
+    },
     "Local IPSW File…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3804,6 +3998,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "为云镜像、自动安装的 Ubuntu 桌面版与 Windows 创建的登录用户（默认与主机用户同名）。"
+          }
+        }
+      }
+    },
+    "Mac Port" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 端口"
+          }
+        }
+      }
+    },
+    "Mac port %@ is already forwarded." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 端口 %@ 已在转发。"
           }
         }
       }
@@ -4193,6 +4407,16 @@
         }
       }
     },
+    "No Port Forwards" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有端口转发"
+          }
+        }
+      }
+    },
     "No Shared Folders" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4303,6 +4527,16 @@
         }
       }
     },
+    "No port forward matches %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有与 %@ 匹配的端口转发"
+          }
+        }
+      }
+    },
     "No shared folder matches %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4349,6 +4583,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未运行"
+          }
+        }
+      }
+    },
+    "Not an IPv4 address: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不是 IPv4 地址：%@"
           }
         }
       }
@@ -4533,6 +4777,16 @@
         }
       }
     },
+    "Other devices on the network can connect" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局域网里的其他设备也能连接"
+          }
+        }
+      }
+    },
     "Output the result as JSON." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4619,6 +4873,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "性能核"
+          }
+        }
+      }
+    },
+    "Port Forwarding" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口转发"
+          }
+        }
+      }
+    },
+    "Port forward must be [address:]host-port:guest-port, e.g. 8080:80: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口转发的写法须为 [地址:]宿主端口:客户机端口，如 8080:80：%@"
+          }
+        }
+      }
+    },
+    "Port must be a number from 1 to 65535: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口须为 1 到 65535 的数字：%@"
           }
         }
       }
@@ -4873,12 +5157,32 @@
         }
       }
     },
+    "Remove Port Forward" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除端口转发"
+          }
+        }
+      }
+    },
     "Remove Shared Folder" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "移除共享目录"
+          }
+        }
+      }
+    },
+    "Remove a port forward by host port, address:host-port, or the full forward (repeatable)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按宿主端口、地址:宿主端口或完整写法移除端口转发（可重复）。"
           }
         }
       }
@@ -7116,6 +7420,16 @@
         }
       }
     },
+    "This Mac only" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有本机"
+          }
+        }
+      }
+    },
     "This can't be undone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -7186,18 +7500,18 @@
         }
       }
     },
-    "Timed out connecting to %@:%u" : {
+    "Timed out connecting to %@:%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Timed out connecting to %1$@:%2$u"
+            "value" : "Timed out connecting to %1$@:%2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "连接 %@:%u 超时"
+            "value" : "连接 %@:%@ 超时"
           }
         }
       }

@@ -14,6 +14,8 @@ public enum ControlRequest: Codable, Sendable, Equatable {
     case screenshot(path: String)
     /// 把显示输出调整为 `width`×`height` 像素。
     case display(width: Int, height: Int)
+    /// 重读配置里的 `VMConfig.forwards`，让宿主上的监听与之一致。
+    case applyForwards
 
     private enum CodingKeys: String, CodingKey { case op, force, port, path, width, height }
 
@@ -28,6 +30,7 @@ public enum ControlRequest: Codable, Sendable, Equatable {
         case "resume": self = .resume
         case "screenshot": self = .screenshot(path: try c.decode(String.self, forKey: .path))
         case "display": self = .display(width: try c.decode(Int.self, forKey: .width), height: try c.decode(Int.self, forKey: .height))
+        case "apply-forwards": self = .applyForwards
         case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "Unknown operation \(op)")
         }
     }
@@ -52,6 +55,7 @@ public enum ControlRequest: Codable, Sendable, Equatable {
             try c.encode("display", forKey: .op)
             try c.encode(width, forKey: .width)
             try c.encode(height, forKey: .height)
+        case .applyForwards: try c.encode("apply-forwards", forKey: .op)
         }
     }
 }

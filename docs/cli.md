@@ -6,14 +6,15 @@
 
 - 加 `--json` 时标准输出恰好一行：成功 `{"schemaVersion":1,"result":…}`，失败 `{"schemaVersion":1,"error":{"code":"…","message":"…"}}`。
 - 不加 `--json` 时输出面向人阅读，格式不保证稳定。
+- `forward` 在全部端口监听成功后输出这一行，随后继续运行，退出时不再输出。
 - `exec`、`ssh`、`proxy` 不支持 `--json`：它们的标准输入输出属于客户机命令，`exec` 的退出码就是客户机命令的退出码。
 
 ## 命令
 
 | 命令 | 作用 |
 | --- | --- |
-| `create <名> [--image ID \| --desktop ID [--manual-install] \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--password 密码] [--product-key 密钥]` | 创建 Linux / Windows 虚拟机（macOS 见下一行）；Windows 不接受 `--share`、`--rosetta`、`--headless`、`--console`、`--manual-install`；`--share 路径[:名称][:ro]` 的名称规则与 `set --add-share` 相同，不能与 `--engine qemu` 同用；`--user` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录用户名（默认与主机用户同名，主机用户名不合下列规则时须自己指定；用户名须为 1–20 个小写字母、数字或 `_ . -`、以字母或 `_` 开头，且不能是 root、administrator 等系统账户），`--password` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录密码（不能为空、首尾不能有空格、不能含换行等控制字符）并存进包内 `guest-password`（云镜像省略时只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 省略时随机生成），云镜像与 Windows 的 SSH 始终只认密钥，时区与主机相同；`--image` 的云镜像下载解包后缓存在下载目录的 `images/`，之后一直用这份、不再检查发行方是否更新，要换新版须删掉那里对应的 `.raw`；`--desktop ubuntu-desktop\|fedora-workstation` 下载发行方最新的 arm64 桌面版安装 ISO（校验 SHA-256，缓存在下载目录的 `iso/`）：Ubuntu 默认无人值守安装（缓存里另存一份内核参数带 `autoinstall` 的引导副本 `<名>.autoinstall.iso`，安装环境里关掉网络、只用安装盘里的软件包离线安装，不装更新；命令开机后等到装好的系统里的客户机代理响应才返回，安装盘与种子盘下次开机时卸下；需要随程序分发的 Linux 版客户机代理；装好即带登录用户、macvm 专用 SSH 公钥、免密 sudo 与客户机代理，系统语言为英文（en_US.UTF-8）、时区同主机、键盘为美式，之后卸下安装盘），加 `--manual-install` 则和 Fedora 一样开机后在窗口里完成图形安装；Windows 从原版 ISO 无人值守部署，不给 `--iso` 时从微软下载 Windows 11 ARM64 ISO（语言取系统首选语言里微软提供的第一个，都没有时用英语；缓存在下载目录的 `windows/`，下完新版后删掉旧的，仍被还没装完的虚拟机当安装介质的除外；问不到微软或微软拒绝时用缓存里的，缓存里也没有时报错，可到 https://www.microsoft.com/software-download/windows11arm64 手动下载后用 `--iso` 指定），给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态）；装好后关机卸下并删除安装盘与数据盘，再开机，命令返回时虚拟机在运行 |
-| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off] [--clipboard on\|off] [--screen-lock on\|off] [--disk-size 256G] [--add-share 路径[:名称][:ro]]… [--remove-share 路径或名称]…` | 修改已关机虚拟机的配置，可切换引擎；运行中报 `already_running`，挂起时报 `invalid_config`。只改 `--retina` 时运行中也可，应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效）。`--clipboard` 开关应用窗口与客户机之间的剪贴板同步（默认开，客户机里的程序都能读到宿主上复制的内容）：macOS、Windows 客户机经客户机代理同步文本与文件，窗口成为主窗口时及其间宿主剪贴板变化时交出宿主剪贴板、离开时取回客户机的，文件总量超过 2 GiB 时不复制，运行中也可修改；Linux 客户机经 spice-vdagent 同步（vz 引擎有画面时、自带的 QEMU），要关机后修改。`--screen-lock` 设定客户机空闲、显示器休眠后是否锁屏（默认关：不锁屏，显示器照常休眠），经客户机代理写进客户机，运行中也可修改并立即生效，写不进去时配置照样保存、命令报错，下次开机代理上线时再写；macOS 客户机要用包内保存的客户机密码，没装代理时只保存配置。`--disk-size` 只扩大系统盘镜像、不能缩小，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。共享目录只用于 vz 引擎的 macOS、Linux 客户机，名称缺省取目录名（Linux 只留 ASCII 字母数字与 `._-`，重名加 `-2`…），不超过 36 字节；先执行 `--remove-share` 再执行 `--add-share`，移除后加回即可改只读。有共享目录或开着 Rosetta 时不能切到 qemu（报 `unsupported`） |
+| `create <名> [--image ID \| --desktop ID [--manual-install] \| --iso 文件] [--os linux\|windows] [--engine vz\|qemu] [--password 密码] [--product-key 密钥] [--forward 转发]…` | 创建 Linux / Windows 虚拟机（macOS 见下一行）；`--forward` 写法与 `set --add-forward` 相同，装好后写进配置（所有 `create` 形式都接受）；Windows 不接受 `--share`、`--rosetta`、`--headless`、`--console`、`--manual-install`；`--share 路径[:名称][:ro]` 的名称规则与 `set --add-share` 相同，不能与 `--engine qemu` 同用；`--user` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录用户名（默认与主机用户同名，主机用户名不合下列规则时须自己指定；用户名须为 1–20 个小写字母、数字或 `_ . -`、以字母或 `_` 开头，且不能是 root、administrator 等系统账户），`--password` 设置云镜像、自动安装的 Ubuntu 桌面版或 Windows 的登录密码（不能为空、首尾不能有空格、不能含换行等控制字符）并存进包内 `guest-password`（云镜像省略时只能用 SSH 密钥登录，Ubuntu 桌面版与 Windows 省略时随机生成），云镜像与 Windows 的 SSH 始终只认密钥，时区与主机相同；`--image` 的云镜像下载解包后缓存在下载目录的 `images/`，之后一直用这份、不再检查发行方是否更新，要换新版须删掉那里对应的 `.raw`；`--desktop ubuntu-desktop\|fedora-workstation` 下载发行方最新的 arm64 桌面版安装 ISO（校验 SHA-256，缓存在下载目录的 `iso/`）：Ubuntu 默认无人值守安装（缓存里另存一份内核参数带 `autoinstall` 的引导副本 `<名>.autoinstall.iso`，安装环境里关掉网络、只用安装盘里的软件包离线安装，不装更新；命令开机后等到装好的系统里的客户机代理响应才返回，安装盘与种子盘下次开机时卸下；需要随程序分发的 Linux 版客户机代理；装好即带登录用户、macvm 专用 SSH 公钥、免密 sudo 与客户机代理，系统语言为英文（en_US.UTF-8）、时区同主机、键盘为美式，之后卸下安装盘），加 `--manual-install` 则和 Fedora 一样开机后在窗口里完成图形安装；Windows 从原版 ISO 无人值守部署，不给 `--iso` 时从微软下载 Windows 11 ARM64 ISO（语言取系统首选语言里微软提供的第一个，都没有时用英语；缓存在下载目录的 `windows/`，下完新版后删掉旧的，仍被还没装完的虚拟机当安装介质的除外；问不到微软或微软拒绝时用缓存里的，缓存里也没有时报错，可到 https://www.microsoft.com/software-download/windows11arm64 手动下载后用 `--iso` 指定），给了 `--product-key` 则首次登录后用它联网激活（不给就停在通用密钥的未激活状态）；装好后关机卸下并删除安装盘与数据盘，再开机，命令返回时虚拟机在运行 |
+| `set <名> [--engine vz\|qemu] [--cpus N] [--memory 8G] [--display 宽x高] [--retina on\|off] [--clipboard on\|off] [--screen-lock on\|off] [--disk-size 256G] [--add-share 路径[:名称][:ro]]… [--remove-share 路径或名称]… [--add-forward 转发]… [--remove-forward 转发]…` | 修改已关机虚拟机的配置，可切换引擎；运行中报 `already_running`，挂起时报 `invalid_config`。只改 `--retina`、端口转发时运行中也可，端口转发见下文「端口转发」；应用的画面窗口下次调整尺寸时生效（在应用里切换则立即生效）。`--clipboard` 开关应用窗口与客户机之间的剪贴板同步（默认开，客户机里的程序都能读到宿主上复制的内容）：macOS、Windows 客户机经客户机代理同步文本与文件，窗口成为主窗口时及其间宿主剪贴板变化时交出宿主剪贴板、离开时取回客户机的，文件总量超过 2 GiB 时不复制，运行中也可修改；Linux 客户机经 spice-vdagent 同步（vz 引擎有画面时、自带的 QEMU），要关机后修改。`--screen-lock` 设定客户机空闲、显示器休眠后是否锁屏（默认关：不锁屏，显示器照常休眠），经客户机代理写进客户机，运行中也可修改并立即生效，写不进去时配置照样保存、命令报错，下次开机代理上线时再写；macOS 客户机要用包内保存的客户机密码，没装代理时只保存配置。`--disk-size` 只扩大系统盘镜像、不能缩小，客户机里的分区要另行扩展（云镜像建的 Linux 下次开机自动扩展）。共享目录只用于 vz 引擎的 macOS、Linux 客户机，名称缺省取目录名（Linux 只留 ASCII 字母数字与 `._-`，重名加 `-2`…），不超过 36 字节；先执行 `--remove-share` 再执行 `--add-share`，移除后加回即可改只读。有共享目录或开着 Rosetta 时不能切到 qemu（报 `unsupported`） |
 | `screenshot <名> <文件>` | 保存画面为 PNG（QEMU 引擎；VZ 引擎报 `unsupported`）。自带的 QEMU 读画面的 IOSurface，要有过 GL 画面输出（开机早期的固件画面截不到） |
 | `display <名> [<宽>x<高>]` | 调整运行中虚拟机的显示尺寸，只改本次运行；省略尺寸时恢复为默认尺寸（`set --display` 设的那个）（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `create <名> --os macos [--ipsw 文件] [--resolution 宽x高] [--cpus N] [--memory 8G] [--disk 96G] [--user 用户] [--password 密码] [--no-provision] [--no-tune]` | 从 IPSW 安装 macOS 虚拟机（不给 `--ipsw` 时下载本机支持的最新版本，缓存在下载目录的 `ipsw/`；分辨率默认 1920x1200），首次开机开通 SSH 与代理，主机名设为虚拟机名、时区与主机相同，再执行 `tune` 的全部项；`--no-provision` 装完不开机，`--no-tune` 不调优。`--user` 的规则与上一行相同，`--password` 省略时随机生成，存在包内 `guest-password`。结果为 `VMSummary`；设置主机名或调优出错只写到标准错误，安装本身仍算成功，之后可单独运行 `tune`。只能用 vz 引擎安装，不接受 `--image`、`--desktop`、`--iso`、`--share`、`--rosetta`、`--headless` 等 Linux、Windows 的选项；共享目录装好后用 `set` 加 |
@@ -24,6 +25,7 @@
 | `exec <名> [-t] [--cwd 目录] [--user 用户] -- 命令…` | 在客户机执行；`--user` 要经客户机代理，未装代理的虚拟机报 `unsupported` |
 | `cp <来源>… <目标目录>` | 经客户机代理在宿主与客户机之间复制文件或目录：来源与目标中恰好一方写成 `<虚拟机>:<客户机上的绝对路径>`（冒号前不含 `/` 的才算虚拟机名，含冒号的本地路径写成 `./a:b`），客户机来源要来自同一台虚拟机；目标必须是已有目录，不是时报 `invalid_config`。保留目录结构与修改时间，宿主与 macOS、Linux 客户机之间还保留权限位与符号链接（Windows 客户机里跳过符号链接，文件名里 Windows 不认的字符换成 `_`）。与目标里已有项重名的顶层项编号改名（`a.txt` → `a 2.txt`，Windows 客户机里是 `a (2).txt`），不覆盖。结果为 `{files}`，各顶层项实际复制到的位置。虚拟机未运行时自动在后台启动；没装代理或代理不支持时报 `unsupported` |
 | `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand。`proxy` 在虚拟机未运行时自动在后台开机，但上次是关机或断电停下的（App 里关机、`stop`、客户机里关机）不开，报 `not_running`，等 `start` 或在 App 里开机后再连；挂起或出错停下的照常自动开机 |
+| `forward <名> <转发>…` | 前台转发宿主 TCP 端口到运行中的虚拟机，按 Ctrl-C 结束（退出码 0），虚拟机停下时报 `not_running` 退出；不改配置。虚拟机未运行时报 `not_running`，不自动开机；任一端口监听失败时全部不转发，报 `io`。结果为 `{forwards}`，见下文「端口转发」 |
 | `ssh-config [--install]` | 生成 `~/.config/macvm/ssh_config`，主机名即虚拟机名 |
 | `clone <源> <名>` / `snapshot save\|restore\|ls\|rm` | 克隆 / 快照 |
 | `template save <虚拟机> [<模板>]` / `template ls` / `template rm <模板>` | 把已关机的虚拟机存为模板（模板名缺省与虚拟机同名；运行中报 `already_running`，挂起时报 `invalid_config`；不含快照）/ 列出模板，结果为 `TemplateSummary` 数组（`name`、`os`、`engine`、`cpuCount`、`memorySize`、`diskSize`、`path`）/ 删除模板。找不到模板报 `template_not_found` |
@@ -62,7 +64,7 @@
 | Windows 声音 | 无 | 有 |
 | 挂起 | macOS；Linux 只在无画面时 | 只有 Homebrew 的 QEMU：自带的 QEMU 显卡用 virgl，QEMU 不能迁移它的状态，挂起报 `unsupported` |
 | 共享目录（virtio-fs） | 支持 | 不支持 |
-| 客户机端口访问 | vsock、客户机 IP | 只有 22 与代理端口，经 Unix socket 转发 |
+| 客户机端口访问 | vsock、客户机 IP | 经 Unix socket 转发：22 与代理端口开机即有，其他端口第一次连时经 QMP 加上 |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 读这块 IOSurface）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Linux 分辨率 | 跟随窗口大小（按点数，最小 800x600，画面放大显示；`--retina on` 时按屏幕像素，有客户机代理时把 GNOME 的缩放倍数调到屏幕倍数，没有代理时 Retina 屏上界面会变小，要在客户机里调缩放） | 自带的 QEMU 下与 Windows 一样跟随窗口，有客户机代理时同样调 GNOME 的缩放倍数；Homebrew 的 QEMU 由客户机设定 |
 | Windows 分辨率 | 固定 1024x768，随窗口缩放 | 自带的 QEMU 装了 viogpu3d 时跟随窗口大小（按点数，最小 800x600；`--retina on` 时按屏幕像素，并把 Windows 缩放比例调到相同倍数，新装的 Windows 带代理与 viogpu3d 时默认开；总像素不超过约 780 万）；否则由客户机设定 |
@@ -76,6 +78,16 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 客户机在主机内置的 NAT 网络里，IP 从主机 DHCP 服务的租约里查。配置里存成桥接（`bridged`）的旧虚拟机按 NAT 运行，MAC 地址不变。
 
 客户机里有共享令牌时，代理经 TCP 的连接都要认证：NAT 网关就是宿主，宿主上任何进程连客户机都显示为来自网关，不能凭来源认出 MacVM。之前建的虚拟机运行一次 `macvm agent install <名>` 写入令牌。
+
+## 端口转发
+
+把宿主上的 TCP 端口接到客户机端口，写法 `[地址:]宿主端口:客户机端口`，如 `8080:80`、`0.0.0.0:2222:22`。地址只认 IPv4，默认 `127.0.0.1`（只有本机能连）；`0.0.0.0` 让局域网里的其他设备也能连，这时 macOS 防火墙可能询问是否允许 MacVM 或 `macvm` 接受传入连接。只转发 TCP。
+
+- 常驻转发存在配置的 `forwards` 里（`set --add-forward`、`create --forward`、App 详情页的「端口转发」），虚拟机运行期间由运行它的进程监听。运行中增删立即生效；移除转发不断开已建立的连接。克隆与从模板新建的虚拟机不带转发。
+- 临时转发用 `forward` 命令，命令运行期间由它自己监听。
+- 宿主端口相同、且地址相同或有一方是 `0.0.0.0` 的两条转发冲突，配置里加不进去（`invalid_config`）；端口已被别的程序占用时监听失败（`io`）。`set` 时配置照样保存、命令报错；`create` 时只在标准错误输出警告，命令照常成功；开机时只写进日志（App 里弹出提示），不影响开机。
+- 每个连进来的连接按配置选路：装了客户机代理时经代理连客户机的 `127.0.0.1:端口`，只监听本机回环的服务也连得上，也不受客户机防火墙限制；没装代理时 vz 引擎直连客户机 IP，qemu 引擎经用户态网络转发，这两种情况下服务要监听客户机的网卡地址或任意地址，客户机防火墙要放行。连不到客户机端口时，宿主上的连接被重置；qemu 引擎没装代理时则是连上后立即读到结束。
+- `--remove-forward` 认宿主端口、`地址:宿主端口` 或完整写法，先于 `--add-forward` 执行。
 
 ## UI 自动化
 

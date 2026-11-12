@@ -7,7 +7,7 @@ final class QMPClient: @unchecked Sendable {
 
     private let socket: UnixSocket
     private let lock = NSLock()
-    private var pending: [CheckedContinuation<Unchecked<JSON>, any Error>] = []
+    private var pending: [CheckedContinuation<Unchecked<Any>, any Error>] = []
     private var closed = false
     var onEvent: (@Sendable (String, JSON) -> Void)?
 
@@ -38,10 +38,21 @@ final class QMPClient: @unchecked Sendable {
 
     @discardableResult
     func execute(_ command: String, _ arguments: JSON? = nil) async throws -> JSON {
+        try await send(command, arguments) as? JSON ?? [:]
+    }
+
+    /// 经 `human-monitor-command` 执行一条 HMP 命令。HMP 命令出错时 QMP 照样成功，错误在返回的文字里，所以非空即报错。
+    func human(_ commandLine: String) async throws {
+        let output = (try await send("human-monitor-command", ["command-line": commandLine]) as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard output.isEmpty else { throw MacVMError.engine(String(l10n: "QEMU: \(output)")) }
+    }
+
+    private func send(_ command: String, _ arguments: JSON?) async throws -> Any {
         var message: JSON = ["execute": command]
         if let arguments { message["arguments"] = arguments }
         let data = try JSONSerialization.data(withJSONObject: message)
-        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Unchecked<JSON>, any Error>) in
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Unchecked<Any>, any Error>) in
             lock.lock()
             if closed {
                 lock.unlock()
@@ -73,7 +84,7 @@ final class QMPClient: @unchecked Sendable {
             if let error = object["error"] as? JSON {
                 c?.resume(throwing: MacVMError.engine(String(l10n: "QEMU: \(error["desc"] as? String ?? String(l10n: "Unknown error"))")))
             } else {
-                c?.resume(returning: Unchecked(value: object["return"] as? JSON ?? [:]))
+                c?.resume(returning: Unchecked(value: object["return"] ?? JSON()))
             }
         }
         lock.lock()

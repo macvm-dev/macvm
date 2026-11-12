@@ -253,10 +253,35 @@ public final class QEMURunner: MachineRunner {
         Task { _ = try? await qmp.execute("x-macvm-set-display-size", ["width": width, "height": height]) }
     }
 
+    /// `QEMUCommand.forwardedPorts` 以外的端口先经 HMP 的 `hostfwd_add` 给用户态网络加一条到 Unix socket 的转发，
+    /// 本次 QEMU 进程里一直留着。客户机上的服务要监听 `10.0.2.15` 或任意地址，只听回环的连不到。
     public func openGuestChannel(port: UInt32) async throws -> GuestChannel {
         let bundle = bundle, config = config
-        let fd = try await Task.detached { try Self.connectToGuest(bundle, config, port: port).duplicateDescriptor() }.value
+        if !QEMUCommand.forwardedPorts.contains(port) { try await addHostForward(port) }
+        let fd = try await Task.detached {
+            QEMUCommand.forwardedPorts.contains(port)
+                ? try Self.connectToGuest(bundle, config, port: port).duplicateDescriptor()
+                : try UnixSocket.connect(to: QEMUCommand.portSocket(bundle, port: port).path).duplicateDescriptor()
+        }.value
         return GuestChannel(fileDescriptor: fd, close: { Darwin.close(fd) })
+    }
+
+    /// 本次 QEMU 进程里经 `addHostForward` 加过（或正在加）的端口。
+    private var hostForwards: [UInt32: Task<Void, any Error>] = [:]
+
+    private func addHostForward(_ port: UInt32) async throws {
+        if let pending = hostForwards[port] { return try await pending.value }
+        guard let qmp else { throw MacVMError.notRunning(bundle.name) }
+        let path = QEMUCommand.portSocket(bundle, port: port).path
+        let task = Task {
+            unlink(path)
+            try await qmp.human("hostfwd_add net0 unix:\(path)-:\(port)")
+        }
+        hostForwards[port] = task
+        do { try await task.value } catch {
+            hostForwards[port] = nil
+            throw error
+        }
     }
 
     // MARK: - 进程
@@ -356,6 +381,8 @@ public final class QEMURunner: MachineRunner {
         gpuDriverSync?.cancel()
         pageCacheTrim?.cancel()
         screenLockSync?.cancel()
+        for port in hostForwards.keys { unlink(QEMUCommand.portSocket(bundle, port: port).path) }
+        hostForwards.removeAll()
         process = nil
         qmp = nil
         stateLabel = "stopped"

@@ -100,54 +100,76 @@ struct Create: AsyncParsableCommand {
     @Flag(help: ArgumentHelp(String(l10n: "macOS: don't run macvm tune after setup.")))
     var noTune = false
 
+    @Option(help: ArgumentHelp(String(l10n: "Forward a host TCP port to the guest as [address:]host-port:guest-port (repeatable); see macvm set.")))
+    var forward: [String] = []
+
     func run() async throws {
         try await Output.run(json: global.json, human: { (s: VMSummary) in String(l10n: "Created \(s.name): \(s.path)") }) {
-            if let template { return try await createFromTemplate(template) }
-            if let user { try GuestAccount.validate(user: user) }
-            if let password { try GuestAccount.validate(password: password) }
-            if os == .macOS { return try await createMacOS() }
-            let macOnly: [(String, Bool)] = [
-                ("--ipsw", ipsw != nil), ("--resolution", resolution != nil), ("--no-provision", noProvision), ("--no-tune", noTune),
-            ]
-            if let option = macOnly.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) is only for macOS guests")) }
-            if os == .windows {
-                if image != nil || desktop != nil { throw MacVMError.invalidConfig(String(l10n: "--image and --desktop are only for Linux guests")) }
-                let ignored: [(String, Bool)] = [
-                    ("--share", !share.isEmpty), ("--rosetta", rosetta), ("--headless", headless != nil),
-                    ("--console", console), ("--manual-install", manualInstall),
-                ]
-                if let option = ignored.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) doesn't apply to Windows guests")) }
-                try Self.validateDefaultUser(user)
-                return try await createWindows()
+            // 先校验，免得装完才报错。
+            let forwards = try PortForward.parseAll(forward)
+            let summary = try await create()
+            guard !forwards.isEmpty else { return summary }
+            let bundle = try VMLibrary.default.bundle(named: summary.name)
+            var config = try bundle.loadConfig()
+            config.forwards = forwards
+            try bundle.saveConfig(config)
+            // 虚拟机已经建好，转发监听失败只警告，不让 create 报失败。
+            if BundleLock.holder(of: bundle) != nil {
+                do { try ControlClient.applyForwards(bundle) } catch {
+                    let message = (error as? MacVMError)?.message ?? error.localizedDescription
+                    FileHandle.standardError.write(Data("macvm: \(message)\n".utf8))
+                }
             }
-            if productKey != nil { throw MacVMError.invalidConfig(String(l10n: "--product-key is only for Windows")) }
-            let desktop = try desktop.map(LinuxDesktop.named)
-            if manualInstall, desktop?.supportsUnattended != true {
-                throw MacVMError.invalidConfig(String(l10n: "--manual-install only works with desktops that install automatically (--desktop ubuntu-desktop)"))
-            }
-            if engine == .qemu { _ = try QEMUInstallation.require() }
-            let options = VMFactory.Options(
-                name: name, os: os, cpuCount: cpuCount,
-                memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
-                installMedia: installMedia,
-                shares: try Self.shareConfigs(share, name: name, os: os, engine: engine ?? .vz), rosetta: rosetta, serialConsole: console,
-                image: try image.map(LinuxImage.named), desktop: desktop, unattended: !manualInstall, user: user ?? NSUserName(), password: password,
-                showProgress: interactive, headless: headless
-            )
-            if password != nil, image == nil, !options.autoinstalls {
-                throw MacVMError.invalidConfig(String(l10n: "--password is only for Linux cloud images (--image), the automatically installed Ubuntu Desktop, and Windows"))
-            }
-            if image != nil || options.autoinstalls { try Self.validateDefaultUser(user) }
-            let bundle = try await VMFactory.createEFIGuest(options)
-            if let engine, engine != .vz {
-                var config = try bundle.loadConfig()
-                config.engine = engine
-                try bundle.saveConfig(config)
-            }
-            SSHConfigCommand.refresh()
-            if options.autoinstalls { try await installUbuntu(bundle) }
             return try VMStatus.summary(of: bundle)
         }
+    }
+
+    private func create() async throws -> VMSummary {
+        if let template { return try await createFromTemplate(template) }
+        if let user { try GuestAccount.validate(user: user) }
+        if let password { try GuestAccount.validate(password: password) }
+        if os == .macOS { return try await createMacOS() }
+        let macOnly: [(String, Bool)] = [
+            ("--ipsw", ipsw != nil), ("--resolution", resolution != nil), ("--no-provision", noProvision), ("--no-tune", noTune),
+        ]
+        if let option = macOnly.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) is only for macOS guests")) }
+        if os == .windows {
+            if image != nil || desktop != nil { throw MacVMError.invalidConfig(String(l10n: "--image and --desktop are only for Linux guests")) }
+            let ignored: [(String, Bool)] = [
+                ("--share", !share.isEmpty), ("--rosetta", rosetta), ("--headless", headless != nil),
+                ("--console", console), ("--manual-install", manualInstall),
+            ]
+            if let option = ignored.first(where: \.1)?.0 { throw MacVMError.invalidConfig(String(l10n: "\(option) doesn't apply to Windows guests")) }
+            try Self.validateDefaultUser(user)
+            return try await createWindows()
+        }
+        if productKey != nil { throw MacVMError.invalidConfig(String(l10n: "--product-key is only for Windows")) }
+        let desktop = try desktop.map(LinuxDesktop.named)
+        if manualInstall, desktop?.supportsUnattended != true {
+            throw MacVMError.invalidConfig(String(l10n: "--manual-install only works with desktops that install automatically (--desktop ubuntu-desktop)"))
+        }
+        if engine == .qemu { _ = try QEMUInstallation.require() }
+        let options = VMFactory.Options(
+            name: name, os: os, cpuCount: cpuCount,
+            memorySize: try memory.map(ByteSize.parse), diskSize: try disk.map(ByteSize.parse),
+            installMedia: installMedia,
+            shares: try Self.shareConfigs(share, name: name, os: os, engine: engine ?? .vz), rosetta: rosetta, serialConsole: console,
+            image: try image.map(LinuxImage.named), desktop: desktop, unattended: !manualInstall, user: user ?? NSUserName(), password: password,
+            showProgress: interactive, headless: headless
+        )
+        if password != nil, image == nil, !options.autoinstalls {
+            throw MacVMError.invalidConfig(String(l10n: "--password is only for Linux cloud images (--image), the automatically installed Ubuntu Desktop, and Windows"))
+        }
+        if image != nil || options.autoinstalls { try Self.validateDefaultUser(user) }
+        let bundle = try await VMFactory.createEFIGuest(options)
+        if let engine, engine != .vz {
+            var config = try bundle.loadConfig()
+            config.engine = engine
+            try bundle.saveConfig(config)
+        }
+        SSHConfigCommand.refresh()
+        if options.autoinstalls { try await installUbuntu(bundle) }
+        return try VMStatus.summary(of: bundle)
     }
 
     private func createFromTemplate(_ name: String) async throws -> VMSummary {

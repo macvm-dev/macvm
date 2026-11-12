@@ -3,6 +3,133 @@ import Foundation
 import MacVMModel
 import Testing
 
+struct PortForwarderTests {
+    /// 本机上一个回显服务，返回端口；`accepts` 个连接之后关闭。
+    func echoServer(accepts: Int = 1) throws -> UInt16 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        var addr = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: 0,
+                               sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) } }
+        listen(fd, 4)
+        _ = withUnsafeMutablePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) } }
+        Thread.detachNewThread {
+            for _ in 0..<accepts {
+                let client = accept(fd, nil, nil)
+                var buf = [UInt8](repeating: 0, count: 1024)
+                while true {
+                    let n = read(client, &buf, buf.count)
+                    if n <= 0 { break }
+                    _ = write(client, buf, n)
+                }
+                close(client)
+            }
+            close(fd)
+        }
+        return UInt16(bigEndian: addr.sin_port)
+    }
+
+    /// 宿主上一个空闲端口。
+    func freePort() -> UInt16 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var addr = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: 0,
+                               sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) } }
+        _ = withUnsafeMutablePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) } }
+        return UInt16(bigEndian: addr.sin_port)
+    }
+
+    @Test func forwardsBytesBothWays() throws {
+        let echo = try echoServer()
+        let forwarder = PortForwarder(dial: { _ in GuestConnection.tcpConnect("127.0.0.1", echo) }, onError: { _, _ in })
+        defer { forwarder.close() }
+        let forward = PortForward(hostPort: freePort(), guestPort: 80)
+        #expect(forwarder.apply([forward]).isEmpty)
+        let fd = GuestConnection.tcpConnect("127.0.0.1", forward.hostPort)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        #expect(write(fd, "ping", 4) == 4)
+        var buf = [UInt8](repeating: 0, count: 4)
+        #expect(read(fd, &buf, 4) == 4)
+        #expect(buf == Array("ping".utf8))
+    }
+
+    @Test func failedDialResetsAndReports() throws {
+        let reported = Locked<[UInt16]>([])
+        let forwarder = PortForwarder(dial: { _ in throw MacVMError.io("no guest") }, onError: { forward, _ in reported.mutate { $0.append(forward.guestPort) } })
+        defer { forwarder.close() }
+        let forward = PortForward(hostPort: freePort(), guestPort: 81)
+        #expect(forwarder.apply([forward]).isEmpty)
+        let fd = GuestConnection.tcpConnect("127.0.0.1", forward.hostPort)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        var byte: UInt8 = 0
+        #expect(read(fd, &byte, 1) <= 0)
+        Thread.sleep(forTimeInterval: 0.1)
+        #expect(reported.value == [81])
+    }
+
+    @Test func reconcilesAndReportsBusyPorts() throws {
+        let forwarder = PortForwarder(dial: { _ in -1 }, onError: { _, _ in })
+        defer { forwarder.close() }
+        let port = freePort()
+        #expect(forwarder.apply([PortForward(hostPort: port, guestPort: 80)]).isEmpty)
+        // 同一宿主端口换客户机端口：先停旧的再监听新的，不报占用。
+        #expect(forwarder.apply([PortForward(hostPort: port, guestPort: 81)]).isEmpty)
+        #expect(forwarder.active == [PortForward(hostPort: port, guestPort: 81)])
+
+        let other = PortForwarder(dial: { _ in -1 }, onError: { _, _ in })
+        defer { other.close() }
+        let failures = other.apply([PortForward(hostPort: port, guestPort: 80)])
+        #expect(failures.count == 1 && failures.first?.1.code == "io")
+
+        forwarder.apply([])
+        #expect(GuestConnection.tcpConnect("127.0.0.1", port) < 0)
+    }
+
+    @Test func refusesPortHeldOnAnyAddress() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var addr = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: 0,
+                               sin_addr: in_addr(s_addr: INADDR_ANY), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) } }
+        listen(fd, 4)
+        _ = withUnsafeMutablePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) } }
+        let forwarder = PortForwarder(dial: { _ in -1 }, onError: { _, _ in })
+        defer { forwarder.close() }
+        let failures = forwarder.apply([PortForward(hostPort: UInt16(bigEndian: addr.sin_port), guestPort: 80)])
+        #expect(failures.count == 1 && failures.first?.1.code == "io")
+    }
+
+    @Test func rebindsWhileConnectionsStayOpen() throws {
+        let echo = try echoServer()
+        let forwarder = PortForwarder(dial: { _ in GuestConnection.tcpConnect("127.0.0.1", echo) }, onError: { _, _ in })
+        defer { forwarder.close() }
+        let port = freePort()
+        #expect(forwarder.apply([PortForward(hostPort: port, guestPort: 80)]).isEmpty)
+        let fd = GuestConnection.tcpConnect("127.0.0.1", port)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        #expect(write(fd, "ping", 4) == 4)
+        var buf = [UInt8](repeating: 0, count: 4)
+        #expect(read(fd, &buf, 4) == 4)
+        // 已建立的连接仍占着这个端口。
+        #expect(forwarder.apply([PortForward(hostPort: port, guestPort: 81)]).isEmpty)
+    }
+}
+
+/// 测试里跨线程收集结果。
+final class Locked<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value { lock.withLock { stored } }
+    func mutate(_ body: (inout Value) -> Void) { lock.withLock { body(&stored) } }
+}
+
 struct DHCPLeasesTests {
     let sample = """
     {

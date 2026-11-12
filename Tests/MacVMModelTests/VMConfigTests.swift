@@ -169,6 +169,49 @@ struct GuestAccountTests {
     }
 }
 
+struct PortForwardTests {
+    @Test func parsesWithAndWithoutAddress() throws {
+        #expect(try PortForward.parse("8080:80") == PortForward(address: "127.0.0.1", hostPort: 8080, guestPort: 80))
+        #expect(try PortForward.parse("0.0.0.0:2222:22") == PortForward(address: "0.0.0.0", hostPort: 2222, guestPort: 22))
+        #expect(try PortForward.parse("0.0.0.0:2222:22").spec == "0.0.0.0:2222:22")
+    }
+
+    @Test(arguments: ["", "80", "a:b", "0:80", "8080:0", "8080:70000", "::1:80:80", "localhost:80:80", "1.2.3:80:80", "8080:+80", "1:2:3:4"])
+    func rejects(text: String) {
+        #expect(throws: MacVMError.self) { try PortForward.parse(text) }
+    }
+
+    @Test func conflictsOnSamePortWhenAddressesOverlap() {
+        let local = PortForward(hostPort: 8080, guestPort: 80)
+        #expect(local.conflicts(with: PortForward(hostPort: 8080, guestPort: 81)))
+        #expect(local.conflicts(with: PortForward(address: "0.0.0.0", hostPort: 8080, guestPort: 80)))
+        #expect(!local.conflicts(with: PortForward(address: "192.168.1.2", hostPort: 8080, guestPort: 80)))
+        #expect(!local.conflicts(with: PortForward(hostPort: 8081, guestPort: 80)))
+        #expect(throws: MacVMError.self) { try PortForward.parseAll(["8080:80", "0.0.0.0:8080:81"]) }
+    }
+
+    @Test func addAndRemove() throws {
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [])
+        try config.addForward(PortForward.parse("8080:80"))
+        try config.addForward(PortForward.parse("0.0.0.0:2222:22"))
+        try config.addForward(PortForward.parse("9000:9000"))
+        #expect(throws: MacVMError.self) { try config.addForward(PortForward.parse("8080:81")) }
+        try config.removeForward("8080")
+        try config.removeForward("0.0.0.0:2222")
+        try config.removeForward("9000:9000")
+        #expect(config.forwards.isEmpty)
+        #expect(throws: MacVMError.self) { try config.removeForward("8080") }
+    }
+
+    @Test func roundTripsAndDefaultsToNone() throws {
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [])
+        config.forwards = [PortForward(hostPort: 8080, guestPort: 80)]
+        #expect(try VMConfig.decode(config.encoded()) == config)
+        let json = #"{"version":1,"name":"a","os":"linux","cpuCount":2,"memorySize":1073741824,"disks":[]}"#
+        #expect(try VMConfig.decode(Data(json.utf8)).forwards.isEmpty)
+    }
+}
+
 struct NetworkConfigTests {
     @Test func bridgedConfigReadsAsNATKeepingMAC() throws {
         let json = #"{"mode":"bridged","interface":"en0","macAddress":"02:00:00:00:00:01"}"#
