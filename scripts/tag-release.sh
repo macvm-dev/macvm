@@ -40,6 +40,11 @@ if git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
   git merge-base --is-ancestor "origin/$branch" HEAD || { echo "${branch} 落后于 origin/${branch}，先同步" >&2; exit 1; }
 fi
 
+# 发布说明是 GitHub Release 的正文，也是 Sparkle 更新窗口里的说明，要先写好并提交。
+notes=docs/releases/$version.md
+[ -s "$notes" ] && git cat-file -e "HEAD:$notes" 2>/dev/null \
+  || { echo "缺少发布说明 ${notes}：先写好（中文在前、英文在后）并提交" >&2; exit 1; }
+
 current=$(plutil -extract CFBundleShortVersionString raw "$plist")
 newer "$version" "$current" || { echo "$version 不比当前的 $current 新" >&2; exit 1; }
 # 构建号是 Sparkle 比新旧的依据，要与版本号同序：取版本提交在本分支上的提交数，抬到大于现有构建号与比它旧的各版本标签上的；

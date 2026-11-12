@@ -36,6 +36,7 @@ jobs:
               echo "${GITHUB_REF_NAME} 所在提交的版本号是 ${plist_version}（Info.plist）、${cargo_version}（guest/Cargo.toml），与标签不符；用 make tag VERSION=${version} 发版" >&2
               exit 1
             }
+            [ -s "docs/releases/$version.md" ] || { echo "缺少发布说明 docs/releases/$version.md" >&2; exit 1; }
           else
             version=$plist_version-dev
             # 客户机程序的 Cargo 版本号要求完整的 x.y.z。
@@ -168,7 +169,7 @@ jobs:
         run: |
           [ -n "$SPARKLE_PRIVATE_KEY" ] || { echo "缺少 secret SPARKLE_PRIVATE_KEY" >&2; exit 1; }
           dmg=${{ steps.package.outputs.dmg }}
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body > dist/release-notes.md
+          cp "docs/releases/${{ steps.version.outputs.version }}.md" dist/release-notes.md
           feed=$RUNNER_TEMP/appcast
           mkdir -p "$feed"
           cp "$dmg" "$feed/"

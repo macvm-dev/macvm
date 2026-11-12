@@ -17,7 +17,7 @@
 | `qemu` | App 自带 QEMU 的源码清单、补丁与 SPICE 显示库（`make qemu` 编译，产物在 `.build/qemu`） |
 | `packaging` | Info.plist、entitlements、macOS 版代理 App 包的 Info.plist（`agent`）、图标（`icon`：Icon Composer 源文件与 `make` 不重编的产物）、界面文案的字符串目录（`l10n`） |
 | `scripts` | Makefile 调用的脚本 |
-| `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`） |
+| `docs` | 契约文档：CLI（`cli.md`）、宿主与代理之间的协议（`agent-protocol.md`）；各版本的发布说明（`releases`） |
 | `skills` | 给其他应用与 agent 用的技能：`macvm` 教它们用 CLI 操作虚拟机；打包进 App，App 菜单「安装 Agent 技能…」在终端里用 `npx skills add` 装给各 agent |
 
 `MacVMEngine` 按关注点分子目录：
@@ -51,7 +51,7 @@
 - 本仓库所在卷大小写不敏感，产品名不能只差大小写（CLI 叫 `macvm`，App 叫 `MacVMApp`）。
 - 测试时用 `MACVM_HOME=<临时目录>` 隔离虚拟机目录。
 - 构建、测试一律走 `make`：直接 `swift build` 不带 `SWIFT_FLAGS`，App 会以旧版外观显示。
-- 发布：`make tag VERSION=0.3.0` 把 `Info.plist` 与客户机程序的版本号改成它（构建号取提交数，并与已有各版本标签上的构建号保持与版本号同序，做不到时停下），提交「chore: 版本号改为 0.3.0」，在这个提交上打 `v0.3.0` 标签，与当前分支一起原子推送；推送失败时撤销本地的提交与标签。`.github/workflows/release.yml` 收到 `v*` 标签后先核对标签所在提交的版本号与标签一致（不一致即失败，不要手动打标签），再构建、签名、公证 App 与 DMG 并发布到 GitHub Releases，同时上传 Sparkle 的 `appcast.xml`（App 的 `SUFeedURL` 经 `releases/latest/download` 取它，资源名不能改）（本地 `make release` 产出同样的 `dist/MacVM.dmg`）；手动运行以仓库里的版本号加 `-dev` 构建并上传 artifact。需要 secrets：`MACOS_CERTIFICATE`（Developer ID Application 证书导出的 .p12，base64）、`MACOS_CERTIFICATE_PASSWORD`、`SIGN_IDENTITY`（签名身份全名）、`NOTARY_KEY_P8`、`NOTARY_KEY_ID`、`NOTARY_ISSUER`（App Store Connect API 密钥）、`SPARKLE_PRIVATE_KEY`（Sparkle 更新签名私钥，`generate_keys -x` 导出，公钥是 `Info.plist` 的 `SUPublicEDKey`）。
+- 发布：先写好发布说明 `docs/releases/0.3.0.md` 并提交：面向用户，中文在前、英文在后，用分隔线隔开，写清新功能、改进、修复与移除及升级时要做的事；它是 GitHub Release 的正文，也是 Sparkle 更新窗口里的说明，`make tag` 与 Release 工作流缺了它都会停下。`make tag VERSION=0.3.0` 把 `Info.plist` 与客户机程序的版本号改成它（构建号取提交数，并与已有各版本标签上的构建号保持与版本号同序，做不到时停下），提交「chore: 版本号改为 0.3.0」，在这个提交上打 `v0.3.0` 标签，与当前分支一起原子推送；推送失败时撤销本地的提交与标签。`.github/workflows/release.yml` 收到 `v*` 标签后先核对标签所在提交的版本号与标签一致（不一致即失败，不要手动打标签），再构建、签名、公证 App 与 DMG 并发布到 GitHub Releases，同时上传 Sparkle 的 `appcast.xml`（App 的 `SUFeedURL` 经 `releases/latest/download` 取它，资源名不能改）（本地 `make release` 产出同样的 `dist/MacVM.dmg`）；手动运行以仓库里的版本号加 `-dev` 构建并上传 artifact。需要 secrets：`MACOS_CERTIFICATE`（Developer ID Application 证书导出的 .p12，base64）、`MACOS_CERTIFICATE_PASSWORD`、`SIGN_IDENTITY`（签名身份全名）、`NOTARY_KEY_P8`、`NOTARY_KEY_ID`、`NOTARY_ISSUER`（App Store Connect API 密钥）、`SPARKLE_PRIVATE_KEY`（Sparkle 更新签名私钥，`generate_keys -x` 导出，公钥是 `Info.plist` 的 `SUPublicEDKey`）。
 - CI（`.github/workflows/ci.yml`）跑 `make lint`、`make build`、`make test-swift`、`make app` 与 `make lint-guest`、`make test-guest`；客户机代码要过 `make lint-guest`（clippy 有警告即失败）。
 
 ## CLI 契约
