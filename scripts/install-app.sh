@@ -8,7 +8,7 @@ DEST=/Applications/MacVM.app
 EXE="$DEST/Contents/MacOS/MacVM"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-[ -d "$SRC" ] || { echo "找不到 $SRC，先 make app 或 make release" >&2; exit 1; }
+[ -d "$SRC" ] || { echo "找不到 ${SRC}，先 make app 或 make release" >&2; exit 1; }
 
 # 按可执行文件路径认进程，后面可以带启动参数；不能只比整行，漏认会把运行中的 App 包删掉。
 running() { pgrep -f "^$EXE( |$)" >/dev/null; }
@@ -16,7 +16,7 @@ running() { pgrep -f "^$EXE( |$)" >/dev/null; }
 was_running=0
 if running; then
   was_running=1
-  echo "退出正在运行的 $DEST…"
+  echo "退出正在运行的 ${DEST}…"
   # 退出时 App 可能要等虚拟机挂起或关机，给足时间；用户取消退出时 osascript 报错，这里就停下。
   osascript -e "with timeout of 3600 seconds" -e "tell application \"$DEST\" to quit" -e "end timeout" >/dev/null \
     || { echo "MacVM 没有退出，未替换" >&2; exit 1; }
