@@ -456,6 +456,46 @@
         }
       }
     },
+    "%@ uses bridged networking, which macvm run can't provide in the foreground. Use macvm start, or start it in the MacVM app." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 使用了桥接网络，前台的 macvm run 无法提供。请改用 macvm start，或在 MacVM App 里开机。"
+          }
+        }
+      }
+    },
+    "%@ uses bridged networking, which only runs in the MacVM app signed for it. Use the macvm inside that app, or start it in the app." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 使用了桥接网络，只能在为此签名的 MacVM App 里运行。请使用该 App 里的 macvm，或在 App 里开机。"
+          }
+        }
+      }
+    },
+    "%@ uses bridged networking, which the QEMU engine doesn't support; switch its network to NAT first" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 使用了桥接网络，QEMU 引擎不支持桥接，请先把网络改回 NAT"
+          }
+        }
+      }
+    },
+    "%@ uses the qemu engine, which doesn't support bridged networking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 使用 qemu 引擎，不支持桥接网络"
+          }
+        }
+      }
+    },
     "%@ was removed from the guest, but QEMU is still holding the file; shut down the virtual machine before attaching or changing it again" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1169,6 +1209,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动安装"
+          }
+        }
+      }
+    },
+    "Bridged networking needs a host network interface" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桥接网络需要指定一块宿主网卡"
+          }
+        }
+      }
+    },
+    "Bridged networking needs the %@ entitlement, which only the MacVM app signed for it has" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桥接网络需要 %@ 权限，只有为此签名的 MacVM App 才带有"
+          }
+        }
+      }
+    },
+    "Bridged networking puts the guest directly on your Mac's local network, where it gets its own address from the router." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桥接网络让客户机直接接入 Mac 所在的局域网，从路由器获取自己的地址。"
+          }
+        }
+      }
+    },
+    "Bridged: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桥接：%@"
+          }
+        }
+      }
+    },
+    "Bridged: %@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bridged: %1$@ (%2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桥接：%1$@（%2$@）"
           }
         }
       }
@@ -4327,6 +4423,9 @@
         }
       }
     },
+    "NAT" : {
+      "shouldTranslate" : false
+    },
     "Name" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4353,6 +4452,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新虚拟机的名称。"
+          }
+        }
+      }
+    },
+    "Network" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络"
           }
         }
       }
@@ -4463,6 +4572,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未选择 Windows 安装 ISO"
+          }
+        }
+      }
+    },
+    "No bridgeable network interface named %@ (available: %@)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有名为 %1$@ 的可桥接网卡（可用：%2$@）"
           }
         }
       }
@@ -4683,6 +4802,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 APFS 上不会真正复制数据，克隆只需几秒。克隆出的虚拟机会获得新的机器标识和 MAC 地址；如果原虚拟机由云镜像创建，克隆还会以新主机名重新初始化。"
+          }
+        }
+      }
+    },
+    "On Wi-Fi, this Mac and the guest may not be able to reach each other directly. Features that go through the guest agent still work. Use a wired connection if you can." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Wi-Fi 上，这台 Mac 与客户机之间可能无法直接互访；经客户机代理的功能不受影响。能用有线网络就用有线网络。"
           }
         }
       }
@@ -6024,12 +6153,12 @@
         }
       }
     },
-    "Shut down to change processors, memory, sound, microphone, and disk size." : {
+    "Shut down to change processors, memory, network, sound, microphone, and disk size." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关机后可修改处理器、内存、声音、麦克风与磁盘容量。"
+            "value" : "关机后可修改处理器、内存、网络、声音、麦克风与磁盘容量。"
           }
         }
       }
@@ -6622,6 +6751,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "QEMU 引擎不能接入 ASIF 映像"
+          }
+        }
+      }
+    },
+    "The QEMU engine doesn't support bridged networking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QEMU 引擎不支持桥接网络"
+          }
+        }
+      }
+    },
+    "The QEMU engine doesn't support bridged networking; switch to NAT" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QEMU 引擎不支持桥接网络，请改用 NAT"
           }
         }
       }
@@ -7420,12 +7569,32 @@
         }
       }
     },
+    "This Mac has no bridgeable network interface" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机没有可桥接的网卡"
+          }
+        }
+      }
+    },
     "This Mac only" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "只有本机"
+          }
+        }
+      }
+    },
+    "This build of MacVM isn't signed for bridged networking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个 MacVM 构建没有桥接网络所需的签名"
           }
         }
       }
@@ -8208,6 +8377,16 @@
         }
       }
     },
+    "Windows guests don't support bridged networking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Windows 客户机不支持桥接网络"
+          }
+        }
+      }
+    },
     "Windows installation timed out" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8286,6 +8465,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用 vz 引擎时，Windows 以固定的 %lldx%lld 分辨率运行，画面随窗口缩放；需要其他分辨率请换用 qemu 引擎"
+          }
+        }
+      }
+    },
+    "Without the guest agent, MacVM can't find the guest's IP address on a bridged network, so SSH and port forwarding won't work." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有客户机代理时，MacVM 查不到客户机在桥接网络上的 IP 地址，SSH 与端口转发无法使用。"
           }
         }
       }

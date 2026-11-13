@@ -56,6 +56,9 @@ public struct VMBundle: Sendable, Equatable {
     /// 控制 socket 放在短路径的运行时目录：`sun_path` 只有 104 字节，放进包内会被长路径撑爆。
     public var controlSocketURL: URL { RuntimeDirectory.url.appending(path: "\(runtimeName).sock") }
 
+    /// 桥接网络下客户机当前的 IPv4 地址（纯文本），由运行虚拟机的进程写入，停机时删除。
+    public var bridgedAddressURL: URL { RuntimeDirectory.url.appending(path: "\(runtimeName).ip") }
+
     public var hasSavedState: Bool { FileManager.default.fileExists(atPath: savedStateURL.path) }
 
     public var savedStateHasShareDevice: Bool { FileManager.default.fileExists(atPath: savedStateShareDeviceURL.path) }

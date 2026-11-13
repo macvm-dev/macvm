@@ -11,7 +11,9 @@ LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchSe
 [ -d "$SRC" ] || { echo "找不到 ${SRC}，先 make app 或 make release" >&2; exit 1; }
 
 # 按可执行文件路径认进程，后面可以带启动参数；不能只比整行，漏认会把运行中的 App 包删掉。
-running() { pgrep -f "^$EXE( |$)" >/dev/null; }
+# 带 --run-detached 的是在后台运行桥接虚拟机的进程，不算 App：替换 App 包时它们照常运行。
+# 不用 grep -q：提前退出会让 ps 收到 SIGPIPE，在 pipefail 下整条管道算失败。
+running() { ps -axww -o command= | grep -E "^$EXE( |$)" | grep -v -e "--run-detached" >/dev/null; }
 
 was_running=0
 if running; then

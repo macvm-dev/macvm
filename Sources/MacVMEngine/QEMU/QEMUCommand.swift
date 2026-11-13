@@ -139,6 +139,8 @@ struct QEMUCommand {
             case .nat:
                 let forwards = Self.forwardedPorts.map { "hostfwd=unix:\(Self.optionValue(Self.portSocket(bundle, port: $0).path))-:\($0)" }.joined(separator: ",")
                 a += ["-netdev", "user,id=net0,\(forwards)"]
+            case .bridged:
+                throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support bridged networking; switch to NAT"))
             case .vmnetShared, .vmnetHost:
                 throw MacVMError.unsupported(String(l10n: "The QEMU engine doesn't support vmnet networking"))
             }

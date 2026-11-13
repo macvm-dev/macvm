@@ -2,7 +2,37 @@ import MacVMEngine
 import MacVMModel
 import SwiftUI
 
+/// 程序入口。带 `DetachedRun.appRunTarget` 认得的参数时是桥接虚拟机的后台进程：不起界面、不占单实例，运行到虚拟机停止就退出；
+/// 出错或虚拟机异常停止时把消息写标准错误（即 `VMBundle.logURL`），以 `MacVMError.exitCode` 退出。
 @main
+@MainActor
+enum AppMain {
+    static func main() {
+        guard let name = DetachedRun.appRunTarget(CommandLine.arguments) else {
+            MacVMApp.main()
+            return
+        }
+        Task { @MainActor in
+            do {
+                let reason = try await DetachedRun.serve(VMLibrary.default.bundle(named: name))
+                if case .error(let message) = reason { fail(.engine(String(l10n: "The VM stopped unexpectedly: \(message)"))) }
+                exit(0)
+            } catch let error as MacVMError {
+                fail(error)
+            } catch {
+                fail(.engine(error.localizedDescription))
+            }
+        }
+        // VZ 与 `SignalHandler` 都靠主队列，主线程要一直跑 RunLoop。
+        CFRunLoopRun()
+    }
+
+    private static func fail(_ error: MacVMError) -> Never {
+        FileHandle.standardError.write(Data("MacVM: \(error.message)\n".utf8))
+        exit(error.exitCode)
+    }
+}
+
 struct MacVMApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     private var model: AppModel { delegate.model }

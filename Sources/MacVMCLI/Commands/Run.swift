@@ -31,77 +31,46 @@ struct Run: AsyncParsableCommand {
     func run() async throws {
         try await Output.run(json: global.json, human: { (r: Result) in detached ? String(l10n: "VM stopped: \(r.reason)") : nil }) {
             let bundle = try VMLibrary.default.bundle(named: name)
-            try bundle.requireNotCreating()
-            let config = try bundle.loadConfig()
-            let consoleMode: ConfigBuilder.Console
-            if console {
-                consoleMode = .fileHandles(read: .standardInput, write: .standardOutput)
-            } else if detached, config.serialConsole {
-                consoleMode = .fileHandles(read: nil, write: .standardOutput)
-            } else {
-                consoleMode = .none
-            }
-
-            let runner = try await RunnerFactory.make(bundle, console: consoleMode, display: display)
-            let server = try ControlServer(runner: runner)
-            defer { server.close() }
-            let terminal = console ? RawTerminal() : nil
-            defer { terminal?.restore() }
-            let signals = SignalHandler(runner: runner)
-            defer { signals.cancel() }
-
-            if detached { log("Starting \(name) (pid \(getpid()))") }
-            switch try await runner.start(recovery: recovery) {
-            case .coldBoot: log("Started")
-            case .restored: log("Resumed from the suspended state")
-            case .restoreFailed(let reason): log("Couldn't resume from the suspended state (\(reason)); did a cold boot instead")
-            }
-            // 端口被占这类失败不影响开机，只记进日志。
-            if let error = await Task.detached(operation: { server.applyForwards() }).value { log("Port forwarding: \(error.message)") }
-
-            let reason = await runner.waitUntilStopped()
-            if detached { log("Stopped: \(reason.label)") }
+            let reason = detached ? try await DetachedRun.serve(bundle) : try await runInForeground(bundle)
             if case .error(let message) = reason { throw MacVMError.engine(String(l10n: "The VM stopped unexpectedly: \(message)")) }
             return Result(reason: reason.label)
         }
     }
 
-    /// 前台运行时只在控制台模式下保持安静，避免把日志混进客户机输出。
+    @MainActor
+    private func runInForeground(_ bundle: VMBundle) async throws -> MachineStopReason {
+        try bundle.requireNotCreating()
+        let config = try bundle.loadConfig()
+        // 桥接只有 App 主程序跑得了，开机前就指明可行的途径。
+        if config.networks.first?.mode == .bridged, !NetworkAttachments.canBridge {
+            throw MacVMError.entitlementMissing(String(l10n: "\(bundle.name) uses bridged networking, which macvm run can't provide in the foreground. Use macvm start, or start it in the MacVM app."))
+        }
+        let consoleMode: ConfigBuilder.Console = console ? .fileHandles(read: .standardInput, write: .standardOutput) : .none
+
+        let runner = try await RunnerFactory.make(bundle, console: consoleMode, display: display)
+        let server = try ControlServer(runner: runner)
+        defer { server.close() }
+        let terminal = console ? RawTerminal() : nil
+        defer { terminal?.restore() }
+        let signals = SignalHandler(runner: runner)
+        defer { signals.cancel() }
+
+        switch try await runner.start(recovery: recovery) {
+        case .coldBoot: log("Started")
+        case .restored: log("Resumed from the suspended state")
+        case .restoreFailed(let reason): log("Couldn't resume from the suspended state (\(reason)); did a cold boot instead")
+        }
+        // 端口被占这类失败不影响开机，只记进日志。
+        if let error = await Task.detached(operation: { server.applyForwards() }).value { log("Port forwarding: \(error.message)") }
+
+        return await runner.waitUntilStopped()
+    }
+
+    /// 控制台模式下保持安静，避免把日志混进客户机输出。
     private func log(_ message: String) {
-        guard detached || !console else { return }
+        guard !console else { return }
         let stamp = ISO8601DateFormatter().string(from: Date())
         FileHandle.standardError.write(Data("[\(stamp)] \(message)\n".utf8))
-    }
-}
-
-/// 第一次 SIGINT/SIGTERM 请求客户机关机，第二次立即断电。
-@MainActor
-final class SignalHandler {
-    private var sources: [any DispatchSourceSignal] = []
-    private var requested = false
-
-    init(runner: any MachineRunner) {
-        for sig in [SIGINT, SIGTERM] {
-            signal(sig, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { [weak self, weak runner] in
-                MainActor.assumeIsolated {
-                    guard let self, let runner else { return }
-                    if !self.requested, (try? runner.requestStop()) != nil {
-                        self.requested = true
-                        FileHandle.standardError.write(Data(("\n" + String(l10n: "Asked the guest to shut down. Press Ctrl-C again to power off immediately.") + "\n").utf8))
-                    } else {
-                        Task { try? await runner.forceStop() }
-                    }
-                }
-            }
-            source.resume()
-            sources.append(source)
-        }
-    }
-
-    func cancel() {
-        sources.forEach { $0.cancel() }
     }
 }
 

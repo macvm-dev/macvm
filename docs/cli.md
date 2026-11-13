@@ -19,7 +19,7 @@
 | `display <名> [<宽>x<高>]` | 调整运行中虚拟机的显示尺寸，只改本次运行；省略尺寸时恢复为默认尺寸（`set --display` 设的那个）（VZ 引擎与自带的 QEMU；VZ 下 Windows 分辨率固定为 1024x768，不支持） |
 | `create <名> --os macos [--ipsw 文件] [--resolution 宽x高] [--cpus N] [--memory 8G] [--disk 96G] [--user 用户] [--password 密码] [--no-provision] [--no-tune]` | 从 IPSW 安装 macOS 虚拟机（不给 `--ipsw` 时下载本机支持的最新版本，缓存在下载目录的 `ipsw/`；分辨率默认 1920x1200），首次开机开通 SSH 与代理，主机名设为虚拟机名、时区与主机相同，再执行 `tune` 的全部项；`--no-provision` 装完不开机，`--no-tune` 不调优。`--user` 的规则与上一行相同，`--password` 省略时随机生成，存在包内 `guest-password`。结果为 `VMSummary`；设置主机名或调优出错只写到标准错误，安装本身仍算成功，之后可单独运行 `tune`。只能用 vz 引擎安装，不接受 `--image`、`--desktop`、`--iso`、`--share`、`--rosetta`、`--headless` 等 Linux、Windows 的选项；共享目录装好后用 `set` 加 |
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
-| `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机。App 还在创建这台虚拟机或创建中断时报 `unsupported`，经 `ssh` 的 ProxyCommand 自动开机同样如此 |
+| `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机。App 还在创建这台虚拟机或创建中断时报 `unsupported`，经 `ssh` 的 ProxyCommand 自动开机同样如此。桥接网络的虚拟机 `run` 不能运行，`start` 要用 App 包里的 `macvm`，见下文「网络」 |
 | `wait <名>` | 等到代理（或 SSH）可用，未运行时自动启动 |
 | `stop <名> [--force]` / `suspend <名>` | 关机 / 挂起 |
 | `exec <名> [-t] [--cwd 目录] [--user 用户] -- 命令…` | 在客户机执行；`--user` 要经客户机代理，未装代理的虚拟机报 `unsupported` |
@@ -64,6 +64,7 @@
 | Windows 声音 | 无 | 有 |
 | 挂起 | macOS；Linux 只在无画面时 | 只有 Homebrew 的 QEMU：自带的 QEMU 显卡用 virgl，QEMU 不能迁移它的状态，挂起报 `unsupported` |
 | 共享目录（virtio-fs） | 支持 | 不支持 |
+| 桥接网络 | Linux、macOS 客户机支持，见下文「网络」 | 不支持 |
 | 客户机端口访问 | vsock、客户机 IP | 经 Unix socket 转发：22 与代理端口开机即有，其他端口第一次连时经 QMP 加上 |
 | 画面 | 只能在运行它的进程里显示 | 经 Unix socket 提供，应用可接上 `macvm start` 启动的虚拟机。自带的 QEMU 用 SPICE + GL（画面经 IOSurface 共享，`screenshot` 读这块 IOSurface）；Homebrew 的用 VNC，`run --display` 另开 QEMU 窗口 |
 | Linux 分辨率 | 跟随窗口大小（按点数，最小 800x600，画面放大显示；`--retina on` 时按屏幕像素，有客户机代理时把 GNOME 的缩放倍数调到屏幕倍数，没有代理时 Retina 屏上界面会变小，要在客户机里调缩放） | 自带的 QEMU 下与 Windows 一样跟随窗口，有客户机代理时同样调 GNOME 的缩放倍数；Homebrew 的 QEMU 由客户机设定 |
@@ -75,7 +76,16 @@ Windows 总是先用 qemu 部署，装好后可 `macvm set win --engine vz` 改�
 
 ## 网络
 
-客户机在主机内置的 NAT 网络里，IP 从主机 DHCP 服务的租约里查。配置里存成桥接（`bridged`）的旧虚拟机按 NAT 运行，MAC 地址不变。
+客户机默认在主机内置的 NAT 网络里，IP 从主机 DHCP 服务的租约里查。
+
+桥接网络把客户机直接接到宿主某块网卡所在的局域网，地址由局域网的路由器分配。在 App 的虚拟机详情页里设置（关机后），命令行不能设；只有 vz 引擎的 Linux、macOS 客户机能用，桥接的虚拟机不能切到 qemu（报 `unsupported`）。
+
+- 桥接需要 App 主程序的签名带 `com.apple.vm.networking`：正式发布的 App 带，自己构建时要有 Developer ID 描述文件。没带的构建里详情页不能选桥接，已设成桥接的虚拟机开机报 `entitlement_missing`。
+- 桥接的虚拟机由 App 主程序运行：`start`、`wait` 以及 `ssh`、`proxy`、`cp` 的自动开机照常可用，但要用 App 包里的 `macvm`（或指向它的符号链接），别处的 `macvm` 报 `entitlement_missing`。前台 `run` 不能运行桥接的虚拟机，同样报 `entitlement_missing`。
+- 桥接下的 IP 由客户机代理报告，开机后代理上线才查得到；没装代理的虚拟机查不到 IP，`ip` 超时，`ssh` 与端口转发不可用。
+- 在 Wi-Fi 上桥接时，宿主与客户机之间可能无法直接互访；经客户机代理的功能（`exec`、`ssh`、`cp`、端口转发）不受影响。
+
+配置里存成 `bridged` 的旧虚拟机（0.3.0 之前经网络辅助程序桥接的）按 NAT 运行，MAC 地址不变；要桥接就在详情页重新选。
 
 客户机里有共享令牌时，代理经 TCP 的连接都要认证：NAT 网关就是宿主，宿主上任何进程连客户机都显示为来自网关，不能凭来源认出 MacVM。之前建的虚拟机运行一次 `macvm agent install <名>` 写入令牌。
 

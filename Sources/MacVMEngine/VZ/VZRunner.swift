@@ -44,7 +44,7 @@ public final class VZRunner: NSObject, MachineRunner {
             let size = WindowsSupport.displaySize
             for _ in 0..<Self.guestDisplayAttempts {
                 guard !Task.isCancelled else { return }
-                if let ip = GuestAddress.current(config),
+                if let ip = GuestAddress.current(bundle, config),
                    Self.callAgent(bundle, ip, .display(width: size.width, height: size.height), timeout: Self.displaySwitchTimeout) {
                     return
                 }
@@ -55,6 +55,7 @@ public final class VZRunner: NSObject, MachineRunner {
 
     private var guestDisplayFit: Task<Void, Never>?
     private var screenLockSync: Task<Void, Never>?
+    private var bridgedAddressWatch: Task<Void, Never>?
     nonisolated private static let guestDisplayRetryInterval = Duration.seconds(1)
     /// 开机后等代理上线的最长次数（按 `guestDisplayRetryInterval` 计）。
     nonisolated private static let guestDisplayAttempts = 180
@@ -62,7 +63,7 @@ public final class VZRunner: NSObject, MachineRunner {
     nonisolated private static let displaySwitchTimeout = 20
 
     /// 读文件，不要在主线程反复调用。
-    private var guestIP: String? { GuestAddress.current(config) }
+    private var guestIP: String? { GuestAddress.current(bundle, config) }
 
     public var stateLabel: String { virtualMachine.state.label }
 
@@ -140,6 +141,7 @@ public final class VZRunner: NSObject, MachineRunner {
             let outcome = try await boot(recovery: recovery)
             stopLatch.started()
             screenLockSync = GuestScreenLock.applyAfterBoot(bundle, config: config)
+            bridgedAddressWatch = BridgedAddress.watch(bundle, config: config)
             return outcome
         } catch {
             finish(.error(describeEngineError(error)))
@@ -189,7 +191,7 @@ public final class VZRunner: NSObject, MachineRunner {
             let bundle = bundle, config = config
             let agent = config.guestAgent, user = config.guestUser
             Task.detached { [weak self] in
-                if let ip = GuestAddress.current(config) {
+                if let ip = GuestAddress.current(bundle, config) {
                     if agent, Self.callAgent(bundle, ip, .shutdown(reboot: false)) { return }
                     if let user, Self.sshShutdown(user: user, ip: ip) { return }
                 }
@@ -391,6 +393,8 @@ public final class VZRunner: NSObject, MachineRunner {
     private func finish(_ reason: MachineStopReason) {
         guestDisplayFit?.cancel()
         screenLockSync?.cancel()
+        bridgedAddressWatch?.cancel()
+        BridgedAddress.clear(bundle)
         stopLatch.fire(reason)
     }
 }

@@ -1,6 +1,11 @@
 # 唯一构建入口。签名身份见 DEV_IDENTITY；要指定时传 SIGN_IDENTITY="Developer ID Application: …"，SIGN_IDENTITY=- 强制 ad-hoc。
 SIGN_IDENTITY ?= -
 ENTITLEMENTS  ?= packaging/entitlements/base.entitlements
+# Developer ID 描述文件，授权 App 主程序的受限 entitlement（桥接网络）；不进仓库，放在这个位置或用变量指定。
+# 没有它，或 ad-hoc 签名时，App 照常构建，只是不能桥接。
+PROVISIONING_PROFILE ?= $(wildcard packaging/local/MacVM.provisionprofile)
+# 组装 App 时主程序的权限：没指定 ENTITLEMENTS 时留空，由 bundle-app.sh 按有没有描述文件来定。
+APP_ENTITLEMENTS = $(if $(filter file,$(origin ENTITLEMENTS)),,$(ENTITLEMENTS))
 CONFIG        ?= debug
 BIN           := .build/$(CONFIG)
 # 钥匙串里唯一的 Developer ID Application 证书，零张或多张时为空；用到时才查。
@@ -20,6 +25,7 @@ build:
 	swift build -c $(CONFIG) $(SWIFT_FLAGS)
 
 # VZ 拒绝没有 virtualization entitlement 的进程，开发时每次构建后都要重签。
+# 这两个可执行文件不在 App 包里，没有描述文件可对，ENTITLEMENTS 里不能有受限 entitlement。
 sign: build
 	@id='$(DEV_IDENTITY)'; set -e; \
 	codesign -f -s "$$id" --entitlements $(ENTITLEMENTS) $(BIN)/macvm; \
@@ -29,7 +35,7 @@ sign: build
 # 自带的 QEMU 编译太久，不在其中，要用时先 make qemu。
 # 组装进 .build 而不是 dist，不覆盖发布产物；直接运行可执行文件而不用 open，免得 LaunchServices 转去激活已在运行的同 bundle ID 的 App。
 run: agent boot
-	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+	APP=.build/MacVM.app CONFIG=$(CONFIG) SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(APP_ENTITLEMENTS)" PROVISIONING_PROFILE="$(PROVISIONING_PROFILE)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 	.build/MacVM.app/Contents/MacOS/MacVM
 
 test: test-swift test-guest
@@ -63,7 +69,7 @@ icon:
 	scripts/build-icon.sh
 
 app:
-	CONFIG=release SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(ENTITLEMENTS)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
+	CONFIG=release SIGN_IDENTITY="$(DEV_IDENTITY)" ENTITLEMENTS="$(APP_ENTITLEMENTS)" PROVISIONING_PROFILE="$(PROVISIONING_PROFILE)" SWIFT_FLAGS="$(SWIFT_FLAGS)" scripts/bundle-app.sh
 
 # 用 dist/MacVM.app 替换 /Applications/MacVM.app；不重新构建，先 make app 或 make release。
 install:

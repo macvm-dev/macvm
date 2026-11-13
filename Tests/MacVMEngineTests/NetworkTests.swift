@@ -179,11 +179,36 @@ struct DHCPLeasesTests {
 }
 
 struct GuestAddressTests {
-    @Test func readsLeaseByMAC() {
-        let config = VMConfig(name: "x", os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [],
-                              networks: [NetworkConfig(macAddress: "02:00:00:0a:0b:0c")])
+    @Test func bridgedReadsAddressFileAndNATReadsLeases() throws {
+        try RuntimeDirectory.ensure()
+        let bundle = VMBundle(url: URL(filePath: "/vms/guest-address-test-\(UUID().uuidString).macvm"))
+        var config = VMConfig(name: bundle.name, os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [],
+                              networks: [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:0a:0b:0c")])
+        defer { BridgedAddress.clear(bundle) }
+        let noLeases: () -> String? = { Issue.record("桥接不该读租约"); return nil }
+        #expect(GuestAddress.current(bundle, config, leases: noLeases) == nil)
+        try Data("192.168.1.23\n".utf8).write(to: bundle.bridgedAddressURL)
+        #expect(GuestAddress.current(bundle, config, leases: noLeases) == "192.168.1.23")
+        try Data("-oProxyCommand=x\n".utf8).write(to: bundle.bridgedAddressURL)
+        #expect(GuestAddress.current(bundle, config, leases: noLeases) == nil)
+
+        try config.setNetwork(.nat)
         let leases = "{\n\tname=x\n\tip_address=192.168.64.5\n\thw_address=1,2:0:0:a:b:c\n\tlease=0x70000000\n}"
-        #expect(GuestAddress.current(config) { leases } == "192.168.64.5")
-        #expect(GuestAddress.current(config) { nil } == nil)
+        #expect(GuestAddress.current(bundle, config) { leases } == "192.168.64.5")
+        #expect(GuestAddress.current(bundle, config) { nil } == nil)
+    }
+}
+
+struct BridgedAddressTests {
+    let lan: [BridgedAddress.Subnet] = [(BridgedAddress.ipv4("192.168.1.10")!, BridgedAddress.ipv4("255.255.255.0")!)]
+
+    @Test func prefersAddressInHostSubnet() {
+        #expect(BridgedAddress.pick(["169.254.3.4", "172.17.0.1", "192.168.1.23"], hostSubnets: lan) == "192.168.1.23")
+    }
+
+    @Test func fallsBackToFirstNonLinkLocal() {
+        #expect(BridgedAddress.pick(["169.254.3.4", "10.0.0.7", "172.17.0.1"], hostSubnets: []) == "10.0.0.7")
+        #expect(BridgedAddress.pick(["169.254.3.4", "not-an-ip"], hostSubnets: lan) == nil)
+        #expect(BridgedAddress.pick([], hostSubnets: lan) == nil)
     }
 }

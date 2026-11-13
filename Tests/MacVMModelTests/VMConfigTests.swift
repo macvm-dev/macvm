@@ -217,6 +217,45 @@ struct NetworkConfigTests {
         let json = #"{"mode":"bridged","interface":"en0","macAddress":"02:00:00:00:00:01"}"#
         let net = try JSONDecoder().decode(NetworkConfig.self, from: Data(json.utf8))
         #expect(net == NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01"))
+        #expect(net.interface == nil)
+    }
+
+    @Test func vzBridgedRoundTripsWithInterface() throws {
+        let net = NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01")
+        let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(net)) as? [String: String])
+        #expect(json == ["mode": "vzBridged", "interface": "en0", "macAddress": "02:00:00:00:00:01"])
+        #expect(try JSONDecoder().decode(NetworkConfig.self, from: JSONEncoder().encode(net)) == net)
+    }
+
+    @Test func natEncodingOmitsInterface() throws {
+        let net = NetworkConfig(macAddress: "02:00:00:00:00:01")
+        let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(net)) as? [String: String])
+        #expect(json == ["mode": "nat", "macAddress": "02:00:00:00:00:01"])
+    }
+
+    @Test func setNetworkKeepsMACAndDropsInterfaceForNAT() throws {
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [],
+                              networks: [NetworkConfig(macAddress: "02:00:00:00:00:01")])
+        try config.setNetwork(.bridged, interface: "en0")
+        #expect(config.networks == [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01")])
+        try config.setNetwork(.nat, interface: "en0")
+        #expect(config.networks == [NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01")])
+        #expect(throws: MacVMError.self) { try config.setNetwork(.bridged) }
+        #expect(config.networks == [NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01")])
+    }
+
+    @Test func setNetworkRejectsBridgingOnQEMUAndWindows() throws {
+        var qemu = VMConfig(name: "q", os: .linux, engine: .qemu, cpuCount: 2, memorySize: 2 << 30, disks: [])
+        let qemuError = #expect(throws: MacVMError.self) { try qemu.setNetwork(.bridged, interface: "en0") }
+        #expect(qemuError?.code == "unsupported")
+        try qemu.setNetwork(.nat)
+        #expect(qemu.networks == [NetworkConfig()])
+
+        var windows = VMConfig(name: "w", os: .windows, cpuCount: 2, memorySize: 4 << 30, disks: [])
+        let windowsError = #expect(throws: MacVMError.self) { try windows.setNetwork(.bridged, interface: "en0") }
+        #expect(windowsError?.code == "unsupported")
+        try windows.setNetwork(.nat)
+        #expect(windows.networks == [NetworkConfig()])
     }
 
     @Test func unknownModeIsRejected() {

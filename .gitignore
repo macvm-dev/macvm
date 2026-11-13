@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 /dist/
+/packaging/local/
 guest/target/
 *.xcodeproj/
 .DS_Store

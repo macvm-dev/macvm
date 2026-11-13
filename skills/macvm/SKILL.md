@@ -31,7 +31,7 @@ Branch on `error.code` or the exit code; do not parse the human-readable output 
 | `not_running` | 13 | Run `start` first |
 | `invalid_config` | 14 | Invalid argument or configuration; also returned when changing configuration while suspended |
 | `unsupported` | 15 | Not supported on this host, engine or guest; also used when the agent is missing or too old — follow the message (usually `macvm agent install <name>`) |
-| `entitlement_missing` | 16 | An unsigned macvm was used; use the copy bundled with the App |
+| `entitlement_missing` | 16 | An unsigned macvm was used; use the copy bundled with the App. Also: a VM set to bridged networking in the app was run with `macvm run` (use `macvm start`) or with a macvm outside the App bundle |
 | `timeout` | 17 | Timed out waiting; retry with a larger `--timeout` |
 | `io` | 18 | File or socket read/write failed |
 | `engine` | 19 | The virtualization engine reported an error; in UI automation it also means an element ID is stale |

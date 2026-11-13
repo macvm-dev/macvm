@@ -93,7 +93,16 @@ jobs:
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE }}
         run: |
+          # 描述文件授权 App 的桥接网络权限。正式版缺了它就停下；手动运行时可以没有，构建出的 App 不能桥接。
+          if [ -n "$PROVISIONING_PROFILE_BASE64" ]; then
+            echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/MacVM.provisionprofile"
+            echo "PROVISIONING_PROFILE=$RUNNER_TEMP/MacVM.provisionprofile" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "缺少 secret PROVISIONING_PROFILE" >&2
+            exit 1
+          fi
           KEYCHAIN=$RUNNER_TEMP/release.keychain-db
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           password=$(uuidgen)
@@ -149,7 +158,7 @@ jobs:
       - name: 构建、签名并公证
         env:
           SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
-        run: make release SIGN_IDENTITY="$SIGN_IDENTITY"
+        run: make release SIGN_IDENTITY="$SIGN_IDENTITY" PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
 
       - name: 打包
         id: package

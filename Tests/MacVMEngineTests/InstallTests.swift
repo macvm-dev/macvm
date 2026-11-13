@@ -417,6 +417,14 @@ struct WindowsUnattendTests {
         #expect(config.engine == .vz)
     }
 
+    @Test func bridgedLinuxCannotSwitchToQEMU() throws {
+        var config = VMConfig(name: "l", os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: [],
+                              networks: [NetworkConfig(mode: .bridged, interface: "en0")])
+        let error = #expect(throws: MacVMError.self) { try config.switchEngine(to: .qemu) }
+        #expect(error?.code == "unsupported")
+        #expect(config.engine == .vz)
+    }
+
     @Test func encodedPowerShellIsUTF16LEBase64() throws {
         let script = "Write-Output '你好'\nexit 3"
         let command = AgentInstaller.encodedPowerShell(script)

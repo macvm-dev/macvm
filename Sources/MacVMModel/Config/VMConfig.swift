@@ -215,18 +215,26 @@ public struct DisplayConfig: Codable, Sendable, Equatable {
 }
 
 public struct NetworkConfig: Codable, Sendable, Equatable {
-    public enum Mode: String, Codable, Sendable { case nat, vmnetShared, vmnetHost }
+    public enum Mode: String, Codable, Sendable {
+        case nat, vmnetShared, vmnetHost
+        /// 经 `VZBridgedNetworkDeviceAttachment` 桥接到宿主网卡。
+        case bridged = "vzBridged"
+    }
 
     public var mode: Mode
+    /// `bridged` 时是宿主网卡的 BSD 名（如 `en0`），此时必须有值；其他模式为 nil。
+    public var interface: String?
     /// 形如 `xx:xx:xx:xx:xx:xx` 的本地管理地址；为空时由引擎生成并回写。
     public var macAddress: String?
 
-    public init(mode: Mode = .nat, macAddress: String? = nil) {
+    public init(mode: Mode = .nat, interface: String? = nil, macAddress: String? = nil) {
         self.mode = mode
+        self.interface = interface
         self.macAddress = macAddress
     }
 
-    /// `bridged` 按 `nat` 读，MAC 地址照旧，客户机里的网卡配置仍对得上。
+    /// 原始值 `bridged` 按 `nat` 读并丢掉它的 `interface`，MAC 地址照旧，客户机里的网卡配置仍对得上；
+    /// `interface` 只在 `vzBridged` 时读取，`vzBridged` 必须带上它。
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let raw = try c.decode(String.self, forKey: .mode)
@@ -237,6 +245,7 @@ public struct NetworkConfig: Codable, Sendable, Equatable {
         } else {
             throw DecodingError.dataCorruptedError(forKey: .mode, in: c, debugDescription: "Unknown network mode \(raw)")
         }
+        interface = mode == .bridged ? try c.decodeIfPresent(String.self, forKey: .interface) : nil
         macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
     }
 }
@@ -319,5 +328,20 @@ extension VMConfig {
         let before = shares.count
         shares.removeAll { $0.hostPath == pathOrTag || $0.tag == pathOrTag }
         guard shares.count < before else { throw MacVMError.invalidConfig(String(l10n: "No shared folder matches \(pathOrTag)")) }
+    }
+}
+
+extension VMConfig {
+    /// 改第一块网卡的网络模式，保留它的 MAC 地址：客户机按 MAC 认网卡，换了地址网络配置就对不上。
+    /// `interface` 只用于 `bridged`，是宿主网卡的 BSD 名，桥接时必填。QEMU 引擎不能桥接；Windows 客户机也不能，
+    /// 它在 VZ 上的代理只走 TCP，宿主要先知道客户机 IP。切回 NAT 不受引擎和系统限制。
+    public mutating func setNetwork(_ mode: NetworkConfig.Mode, interface: String? = nil) throws {
+        if mode == .bridged {
+            if engine == .qemu { throw MacVMError.unsupported(String(l10n: "\(name) uses the qemu engine, which doesn't support bridged networking")) }
+            if os == .windows { throw MacVMError.unsupported(String(l10n: "Windows guests don't support bridged networking")) }
+            guard let interface, !interface.isEmpty else { throw MacVMError.invalidConfig(String(l10n: "Bridged networking needs a host network interface")) }
+        }
+        let net = NetworkConfig(mode: mode, interface: mode == .bridged ? interface : nil, macAddress: networks.first?.macAddress)
+        if networks.isEmpty { networks = [net] } else { networks[0] = net }
     }
 }
