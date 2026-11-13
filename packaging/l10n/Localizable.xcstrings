@@ -130,6 +130,16 @@
         }
       }
     },
+    "%@ can't be used as a guest address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不能用作客户机地址"
+          }
+        }
+      }
+    },
     "%@ can't be used with --template: the OS, accounts, and devices all come from the template" : {
       "localizations" : {
         "zh-Hans" : {
@@ -366,6 +376,16 @@
         }
       }
     },
+    "%@ is the network or broadcast address of its subnet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 是所在子网的网段号或广播地址"
+          }
+        }
+      }
+    },
     "%@ is up to date" : {
       "localizations" : {
         "zh-Hans" : {
@@ -412,6 +432,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 在复制过程中变小了"
+          }
+        }
+      }
+    },
+    "%@ still has a static IP address set in the guest; start it once with the vz engine so MacVM can switch the guest back to DHCP" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的客户机里还设着静态 IP 地址；先用 vz 引擎开一次机，让 MacVM 把客户机改回 DHCP"
           }
         }
       }
@@ -583,6 +613,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不知道 %@ 的登录用户，无法经 SSH 设置主机名与时区"
+          }
+        }
+      }
+    },
+    "%@'s network adapter has no MAC address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的网卡没有 MAC 地址"
           }
         }
       }
@@ -831,12 +871,22 @@
         }
       }
     },
-    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.\n--add-forward forwards a TCP port on the host to a port in the guest while the VM runs, written as [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect. You can change forwards while the VM is running; they take effect right away. --remove-forward takes the host port, address:host-port, or the full forward, and runs before --add-forward." : {
+    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--ip gives the guest a fixed IPv4 address on a bridged network, written as address/prefix-length (e.g. 192.168.1.10/24) together with --gateway; --ip dhcp switches back to an address from the router. --dns sets up to 3 DNS servers and defaults to the gateway. It works only for VMs set to bridged networking in the app and needs the guest agent, which applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle; Linux guests need NetworkManager or systemd-networkd.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.\n--add-forward forwards a TCP port on the host to a port in the guest while the VM runs, written as [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect. You can change forwards while the VM is running; they take effect right away. --remove-forward takes the host port, address:host-port, or the full forward, and runs before --add-forward." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。\n--add-forward 在虚拟机运行期间把宿主的 TCP 端口转发到客户机端口，写法为 [地址:]宿主端口:客户机端口。地址默认 127.0.0.1（只有本机能连），用 0.0.0.0 让局域网里的其他设备也能连。虚拟机运行中也能修改，立即生效。--remove-forward 认宿主端口、地址:宿主端口或完整写法，先于 --add-forward 执行。"
+            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--ip 给桥接网络上的客户机设固定的 IPv4 地址，写法为 地址/前缀长度（如 192.168.1.10/24），要同时给出 --gateway；--ip dhcp 改回从路由器获取地址。--dns 设置 DNS 服务器，最多 3 个，缺省用网关。只用于已在 App 里设成桥接网络的虚拟机，需要客户机代理，由它在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码；Linux 客户机需要 NetworkManager 或 systemd-networkd。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。\n--add-forward 在虚拟机运行期间把宿主的 TCP 端口转发到客户机端口，写法为 [地址:]宿主端口:客户机端口。地址默认 127.0.0.1（只有本机能连），用 0.0.0.0 让局域网里的其他设备也能连。虚拟机运行中也能修改，立即生效。--remove-forward 认宿主端口、地址:宿主端口或完整写法，先于 --add-forward 执行。"
+          }
+        }
+      }
+    },
+    "--gateway and --dns can only be used with --ip address/prefix-length" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "--gateway 和 --dns 只能与 --ip 地址/前缀长度 一起用"
           }
         }
       }
@@ -847,6 +897,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "--image 与 --desktop 只用于 Linux 客户机"
+          }
+        }
+      }
+    },
+    "--ip address/prefix-length needs --gateway" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "--ip 地址/前缀长度 需要同时给出 --gateway"
           }
         }
       }
@@ -1041,6 +1101,16 @@
         }
       }
     },
+    "Address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址"
+          }
+        }
+      }
+    },
     "After the guest starts, expand its root partition and file system, for example with the Disks app or with growpart and resize2fs." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1193,6 +1263,16 @@
         }
       }
     },
+    "At most %lld DNS servers are allowed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS 服务器最多 %lld 个"
+          }
+        }
+      }
+    },
     "Attach Disk Image…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1233,12 +1313,12 @@
         }
       }
     },
-    "Bridged networking puts the guest directly on your Mac's local network, where it gets its own address from the router." : {
+    "Bridged networking puts the guest directly on your Mac's local network, where it gets its own address from the router. You can also give it a fixed address." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "桥接网络让客户机直接接入 Mac 所在的局域网，从路由器获取自己的地址。"
+            "value" : "桥接网络让客户机直接接入 Mac 所在的局域网，从路由器获取自己的地址。也可以给它设固定地址。"
           }
         }
       }
@@ -1608,6 +1688,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要执行的命令。"
+          }
+        }
+      }
+    },
+    "Configure IPv4" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置 IPv4"
           }
         }
       }
@@ -2246,6 +2336,16 @@
         }
       }
     },
+    "Couldn't lock %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法锁定 %@"
+          }
+        }
+      }
+    },
     "Couldn't log in to %@ to install the SSH public key: %@" : {
       "localizations" : {
         "en" : {
@@ -2426,6 +2526,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存或恢复虚拟机状态失败：%@"
+          }
+        }
+      }
+    },
+    "Couldn't set the IP address in %@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't set the IP address in %1$@ (%2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在 %@ 里设置 IP 地址（%@）"
           }
         }
       }
@@ -2766,6 +2882,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "当前容量"
+          }
+        }
+      }
+    },
+    "DHCP" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DHCP"
+          }
+        }
+      }
+    },
+    "DNS Servers" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS 服务器"
+          }
+        }
+      }
+    },
+    "DNS server for the static --ip address (repeatable, default: the gateway)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "静态 --ip 地址用的 DNS 服务器（可重复，默认：网关）。"
           }
         }
       }
@@ -3180,6 +3326,16 @@
         }
       }
     },
+    "Edit…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑…"
+          }
+        }
+      }
+    },
     "Either the sources or the destination must be a guest path (<vm>:<path>)" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3226,6 +3382,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "引擎"
+          }
+        }
+      }
+    },
+    "Enter the address with its prefix length. Separate up to %lld DNS servers with commas. Pick an address outside the router's DHCP range so it doesn't clash with other devices." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址要带前缀长度。DNS 服务器最多 %lld 个，用逗号隔开。请选路由器 DHCP 分配范围以外的地址，免得与其他设备冲突。"
           }
         }
       }
@@ -3355,6 +3521,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "GB（按需占用空间）"
+          }
+        }
+      }
+    },
+    "Gateway" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网关"
+          }
+        }
+      }
+    },
+    "Gateway %@ is the network or broadcast address of its subnet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网关 %@ 是所在子网的网段号或广播地址"
+          }
+        }
+      }
+    },
+    "Gateway %@ isn't in the subnet %@/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Gateway %1$@ isn't in the subnet %2$@/%3$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网关 %@ 不在子网 %@/%lld 里"
+          }
+        }
+      }
+    },
+    "Gateway for the static --ip address." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "静态 --ip 地址的网关。"
           }
         }
       }
@@ -3611,6 +3823,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "代理在线时，它会把自己换成 App 自带的版本，不需要 SSH。否则经 SSH 安装；需要写入认证令牌、要把 Windows 3D 显卡驱动拷进客户机，或指定了 --ssh 时，也会用 SSH。"
+          }
+        }
+      }
+    },
+    "If you switch to NAT, the guest goes back to DHCP the next time it starts." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切回 NAT 后，客户机在下次开机时改回 DHCP。"
           }
         }
       }
@@ -4646,6 +4868,22 @@
         }
       }
     },
+    "No guest password is saved for %@; setting a static IP address on macOS needs the login password. Save it in %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No guest password is saved for %1$@; setting a static IP address on macOS needs the login password. Save it in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 没有保存客户机密码；在 macOS 上设置静态 IP 地址需要登录密码，请把它存进 %@"
+          }
+        }
+      }
+    },
     "No port forward matches %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4702,6 +4940,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未运行"
+          }
+        }
+      }
+    },
+    "Not an IPv4 address with a prefix length, such as 192.168.1.10/24: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不是带前缀长度的 IPv4 地址（如 192.168.1.10/24）：%@"
           }
         }
       }
@@ -4872,6 +5120,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统"
+          }
+        }
+      }
+    },
+    "Optional, uses the gateway if empty" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选，留空时用网关"
           }
         }
       }
@@ -5062,6 +5320,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在断电…"
+          }
+        }
+      }
+    },
+    "Prefix length must be %lld to %lld: %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Prefix length must be %1$lld to %2$lld: %3$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前缀长度须在 %lld 到 %lld 之间：%lld"
           }
         }
       }
@@ -5655,6 +5929,16 @@
     "SSH" : {
       "shouldTranslate" : false
     },
+    "Save" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        }
+      }
+    },
     "Save a running VM's screen as a PNG (QEMU engine only)." : {
       "localizations" : {
         "zh-Hans" : {
@@ -6153,12 +6437,12 @@
         }
       }
     },
-    "Shut down to change processors, memory, network, sound, microphone, and disk size." : {
+    "Shut down to change processors, memory, network mode, sound, microphone, and disk size." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关机后可修改处理器、内存、网络、声音、麦克风与磁盘容量。"
+            "value" : "关机后可修改处理器、内存、网络模式、声音、麦克风与磁盘容量。"
           }
         }
       }
@@ -6459,6 +6743,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟机未运行时自动在后台启动。示例：\n  macvm exec dev -- uname -a\n  macvm exec dev -t --cwd \"$PWD\" -- claude"
+          }
+        }
+      }
+    },
+    "Static IP addresses aren't supported for Windows guests" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Windows 客户机不支持静态 IP 地址"
+          }
+        }
+      }
+    },
+    "Static IP addresses need bridged networking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "静态 IP 地址需要桥接网络"
+          }
+        }
+      }
+    },
+    "Static IP addresses need the guest agent" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "静态 IP 地址需要客户机代理"
+          }
+        }
+      }
+    },
+    "Static IPv4 address on a bridged network as address/prefix-length, e.g. 192.168.1.10/24, or dhcp." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桥接网络上的静态 IPv4 地址，写法为 地址/前缀长度（如 192.168.1.10/24），或 dhcp。"
           }
         }
       }
@@ -6985,6 +7309,36 @@
         }
       }
     },
+    "The gateway can't be the same as the address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网关不能与地址相同"
+          }
+        }
+      }
+    },
+    "The guest agent applies this in the guest right away if the virtual machine is running, otherwise the next time it starts. Changing it on a macOS guest needs the guest password saved in the virtual machine." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机时生效。在 macOS 客户机上修改需要虚拟机里保存了客户机密码。"
+          }
+        }
+      }
+    },
+    "The guest agent applies this in the guest right away if the virtual machine is running, otherwise the next time it starts. The guest needs NetworkManager or systemd-networkd." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机时生效。客户机里需要有 NetworkManager 或 systemd-networkd。"
+          }
+        }
+      }
+    },
     "The guest agent closed the connection" : {
       "localizations" : {
         "zh-Hans" : {
@@ -7105,6 +7459,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 未安装客户机代理，装上代理后才能应用锁屏设置"
+          }
+        }
+      }
+    },
+    "The guest agent isn't installed in %@; install it to set a static IP address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 里没有安装客户机代理，装上后才能设置静态 IP 地址"
           }
         }
       }
@@ -8053,6 +8417,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在更新客户机代理…"
+          }
+        }
+      }
+    },
+    "Use an address from the router (DHCP) or a fixed address. Takes effect right away, even while running" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从路由器获取地址（DHCP）或使用固定地址。立即生效，运行中也可修改"
           }
         }
       }

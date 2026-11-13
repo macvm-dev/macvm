@@ -19,26 +19,12 @@ public enum GuestScreenLock {
         }
     }
 
-    /// 开机后等代理上线再 `apply`，届时重读配置；没装代理时返回 nil。代理在客户机登录后才启动，开机慢时要等好几分钟。
-    /// 失败只写到标准错误。
+    /// 开机后经 `AgentClient.afterOnline` 执行 `apply`，每次都重读配置；没装代理时返回 nil。
     static func applyAfterBoot(_ bundle: VMBundle, config: VMConfig) -> Task<Void, Never>? {
         guard config.guestAgent else { return nil }
-        return Task.detached {
-            for _ in 0..<agentWaitAttempts {
-                if Task.isCancelled { return }
-                if AgentClient.isReachable(bundle) {
-                    do { try apply(bundle, config: bundle.loadConfig()) } catch {
-                        FileHandle.standardError.write(Data("macvm: \((error as? MacVMError)?.message ?? "\(error)")\n".utf8))
-                    }
-                    return
-                }
-                try? await Task.sleep(for: agentWaitInterval)
-            }
-        }
+        return AgentClient.afterOnline(bundle) { try apply(bundle, config: bundle.loadConfig()) }
     }
 
-    private static let agentWaitAttempts = 120
-    private static let agentWaitInterval: Duration = .seconds(5)
     private static let commandTimeout = 60
 
     static func command(locks: Bool, os: GuestOS, bundle: VMBundle) throws -> (AgentProtocol.ExecRequest, Data) {

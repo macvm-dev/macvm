@@ -537,15 +537,39 @@ final class AppModel {
     func setScreenLock(_ name: String, _ on: Bool) -> Bool {
         guard updateConfig(name, { $0.screenLock = on }) else { return false }
         guard isRunning(name), let bundle = try? library.bundle(named: name), config(of: name)?.guestAgent == true else { return true }
-        let previous = screenLockWrites[name]
-        screenLockWrites[name] = Task {
-            await previous?.value
-            do { try await Task.detached { try GuestScreenLock.apply(bundle, config: bundle.loadConfig()) }.value } catch { report(error) }
-        }
+        queueGuestWrite("screenLock", bundle) { try GuestScreenLock.apply($0, config: $1) }
         return true
     }
 
-    @ObservationIgnored private var screenLockWrites: [String: Task<Void, Never>] = [:]
+    /// 同一台、同一 `kind` 的写入依次进行，每次写时重读配置交给 `apply`，失败时报错。
+    private func queueGuestWrite(_ kind: String, _ bundle: VMBundle, _ apply: @escaping @Sendable (VMBundle, VMConfig) throws -> Void) {
+        let key = "\(kind)/\(bundle.name)"
+        let previous = guestWrites[key]
+        guestWrites[key] = Task {
+            await previous?.value
+            do { try await Task.detached { try apply(bundle, bundle.loadConfig()) }.value } catch { report(error) }
+        }
+    }
+
+    @ObservationIgnored private var guestWrites: [String: Task<Void, Never>] = [:]
+
+    /// 第一块网卡的静态 IPv4，`nil` 改回 DHCP。macOS 客户机设静态地址而没有保存的客户机密码时不保存。
+    /// 运行中改了随即在后台写进客户机，写不进去时报错，配置照样保存、下次开机再写。返回是否已保存。
+    @discardableResult
+    func setStaticIPv4(_ name: String, _ value: StaticIPv4?) -> Bool {
+        let bundle: VMBundle
+        do { bundle = try library.bundle(named: name) } catch {
+            report(error)
+            return false
+        }
+        guard updateConfig(name, { config in
+            try GuestStaticIPv4.requirePassword(bundle, os: config.os, for: value)
+            try config.setStaticIPv4(value)
+        }) else { return false }
+        guard isRunning(name), let current = config(of: name), current.guestAgent, current.os != .windows else { return true }
+        queueGuestWrite("staticIPv4", bundle) { try GuestStaticIPv4.apply($0, config: $1) }
+        return true
+    }
 
     private func isRunning(_ name: String) -> Bool { runners[name] != nil || summary(name)?.state == .running }
 
@@ -675,9 +699,7 @@ final class AppModel {
         do {
             let bundle = try library.bundle(named: name)
             if requiresStopped { try requireStopped(bundle) }
-            var config = try bundle.loadConfig()
-            try change(&config)
-            try bundle.saveConfig(config)
+            try bundle.updateConfig(change)
             return true
         } catch {
             report(error)

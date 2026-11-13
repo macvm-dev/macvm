@@ -22,6 +22,8 @@ public struct VMBundle: Sendable, Equatable {
     public var savedStateShareDeviceURL: URL { url.appending(path: "state.shares") }
     public var snapshotsURL: URL { url.appending(path: "snapshots", directoryHint: .isDirectory) }
     public var lockURL: URL { url.appending(path: "run.lock") }
+    /// `updateConfig` 的 flock 所在；不属于虚拟机状态，不随克隆、快照复制。
+    public var configLockURL: URL { url.appending(path: ".config.lock") }
     public var logURL: URL { url.appending(path: "run.log") }
     /// 宿主直连客户机时记下的客户机 SSH 主机密钥；磁盘换了主机密钥后要删掉它才能再连。
     public var knownHostsURL: URL { url.appending(path: "known_hosts") }
@@ -56,7 +58,7 @@ public struct VMBundle: Sendable, Equatable {
     /// 控制 socket 放在短路径的运行时目录：`sun_path` 只有 104 字节，放进包内会被长路径撑爆。
     public var controlSocketURL: URL { RuntimeDirectory.url.appending(path: "\(runtimeName).sock") }
 
-    /// 桥接网络下客户机当前的 IPv4 地址（纯文本），由运行虚拟机的进程写入，停机时删除。
+    /// 桥接网络下客户机当前的 IPv4 地址（纯文本），运行中由引擎写入，停机时删除。
     public var bridgedAddressURL: URL { RuntimeDirectory.url.appending(path: "\(runtimeName).ip") }
 
     public var hasSavedState: Bool { FileManager.default.fileExists(atPath: savedStateURL.path) }
@@ -77,6 +79,25 @@ public struct VMBundle: Sendable, Equatable {
         do { try config.encoded().write(to: configURL, options: .atomic) } catch {
             throw MacVMError.io(String(l10n: "Couldn't write \(configURL.path): \(error.localizedDescription)"))
         }
+    }
+
+    /// 改已有的配置：在 `configLockURL` 的独占 flock 下读出配置交给 `change`，有改动才保存，返回改后的配置；
+    /// `change` 抛错时不保存。各进程改配置都经这里，读改写之间不会被别的写入覆盖。
+    /// 同一进程里再开一次也要等锁：`change` 里不要调用本方法，也不要做耗时的事。
+    @discardableResult
+    public func updateConfig(_ change: (inout VMConfig) throws -> Void) throws -> VMConfig {
+        let path = configLockURL.path
+        let fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
+        guard fd >= 0 else { throw MacVMError.posix(String(l10n: "Couldn't open \(path)")) }
+        defer { close(fd) }
+        while flock(fd, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw MacVMError.posix(String(l10n: "Couldn't lock \(path)")) }
+        }
+        let original = try loadConfig()
+        var config = original
+        try change(&config)
+        if config != original { try saveConfig(config) }
+        return config
     }
 
     /// 解析磁盘、介质等配置里的路径：相对路径以包目录为基准。

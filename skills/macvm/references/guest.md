@@ -30,6 +30,7 @@ macvm cp 'win:C:\Users\me\Desktop\a.txt' .    # guest → host; write guest path
 - `macvm ssh-config --install`: generates `~/.config/macvm/ssh_config` (kept up to date by later `create` / `rm`) and adds an Include at the top of `~/.ssh/config`. After that `ssh <vm-name>`, `scp` and `rsync` work directly with the VM name as the host name; connections go through `macvm proxy`, which starts the VM if it is not running — unless it was last stopped by a shutdown, in which case it reports `not_running` and you run `macvm start <name>` first.
 - `macvm proxy <name> --port N`: connects standard input and output to a TCP port in the guest (default 22), for use as an ssh ProxyCommand; add `--tcp` to connect straight to the guest IP when the agent is not installed yet.
 - `macvm ip <name> --json [--wait SECONDS]`: the guest IP on the host's NAT network (looked up from DHCP leases). A VM set to bridged networking in the app reports the address the guest agent sees on the local network instead; without the agent its IP is unknown and the command times out.
+- Static IPv4 on a bridged VM (Linux and macOS guests, guest agent required): `macvm set <name> --ip 192.168.1.10/24 --gateway 192.168.1.1 [--dns 1.1.1.1]…` (up to 3 DNS servers, default: the gateway); `--ip dhcp` switches back. The CLI can't switch a VM to bridged; it reports `invalid_config` unless the VM is already bridged in the app. Applied right away while running (a failure still saves the config and returns an error), otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the bundle's `guest-password`, or setting an address reports `unsupported`; Linux guests need NetworkManager or systemd-networkd. Switching back to NAT in the app returns the guest to DHCP at its next boot; while the guest still has a static address, `--engine qemu` reports `unsupported`.
 - Port forwarding (TCP only), written `[address:]host-port:guest-port`; the address defaults to `127.0.0.1`, and `0.0.0.0` lets other devices on the network connect:
   - `macvm set <name> --add-forward 8080:80` / `--remove-forward 8080`: saved in the config and active whenever the VM runs; changes take effect immediately, even while running. `create --forward` does the same at creation.
   - `macvm forward <name> 8080:80 [...] --json`: temporary forwards, not saved. The VM must be running (`not_running` otherwise). It prints one line once every port is listening, then keeps running until killed (SIGINT/SIGTERM exits 0) or the VM stops (exit 13). Run it in the background and stop it when done.
@@ -44,7 +45,7 @@ macvm cp 'win:C:\Users\me\Desktop\a.txt' .    # guest → host; write guest path
 - `macvm status <name> --json`: the `VMSummary` of one VM.
 - `macvm suspend <name>`: suspends; the next `start` resumes. Not supported for Windows under vz, Linux that is not headless, VMs with install media attached, or the qemu engine with the bundled QEMU — these report `unsupported`.
 - `macvm snapshot save|restore|ls|rm`: snapshots; `restore` overwrites the current disk, so confirm with the user first.
-- `macvm clone <source> <name>`: clones a stopped VM, zero-copy on APFS.
+- `macvm clone <source> <name>`: clones a stopped VM, zero-copy on APFS. The clone has no port forwards or static IP address.
 
 ## Display
 

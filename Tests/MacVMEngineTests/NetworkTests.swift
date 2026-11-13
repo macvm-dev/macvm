@@ -197,10 +197,24 @@ struct GuestAddressTests {
         #expect(GuestAddress.current(bundle, config) { leases } == "192.168.64.5")
         #expect(GuestAddress.current(bundle, config) { nil } == nil)
     }
+
+    @Test func bridgedWithStaticAddressStillReadsAddressFile() throws {
+        try RuntimeDirectory.ensure()
+        let bundle = VMBundle(url: URL(filePath: "/vms/guest-address-static-\(UUID().uuidString).macvm"))
+        defer { BridgedAddress.clear(bundle) }
+        let fixed = try StaticIPv4(cidr: "192.168.1.50/24", gateway: "192.168.1.1")
+        var config = VMConfig(name: bundle.name, os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [],
+                              networks: [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:0a:0b:0c", staticIPv4: fixed)])
+        config.guestStaticIPv4 = fixed
+        let noLeases: () -> String? = { Issue.record("桥接不该读租约"); return nil }
+        #expect(GuestAddress.current(bundle, config, leases: noLeases) == nil)
+        BridgedAddress.store("192.168.1.50", for: bundle)
+        #expect(GuestAddress.current(bundle, config, leases: noLeases) == "192.168.1.50")
+    }
 }
 
 struct BridgedAddressTests {
-    let lan: [BridgedAddress.Subnet] = [(BridgedAddress.ipv4("192.168.1.10")!, BridgedAddress.ipv4("255.255.255.0")!)]
+    let lan: [BridgedAddress.Subnet] = [(IPv4.parse("192.168.1.10")!, IPv4.parse("255.255.255.0")!)]
 
     @Test func prefersAddressInHostSubnet() {
         #expect(BridgedAddress.pick(["169.254.3.4", "172.17.0.1", "192.168.1.23"], hostSubnets: lan) == "192.168.1.23")
@@ -210,5 +224,37 @@ struct BridgedAddressTests {
         #expect(BridgedAddress.pick(["169.254.3.4", "10.0.0.7", "172.17.0.1"], hostSubnets: []) == "10.0.0.7")
         #expect(BridgedAddress.pick(["169.254.3.4", "not-an-ip"], hostSubnets: lan) == nil)
         #expect(BridgedAddress.pick([], hostSubnets: lan) == nil)
+    }
+
+    @Test func preferredAddressWinsOnlyWhenGuestReportsIt() {
+        let guest = ["172.17.0.1", "192.168.1.23", "192.168.1.50"]
+        #expect(BridgedAddress.pick(guest, hostSubnets: lan, preferred: "192.168.1.50") == "192.168.1.50")
+        #expect(BridgedAddress.pick(guest, hostSubnets: [], preferred: "172.17.0.1") == "172.17.0.1")
+        #expect(BridgedAddress.pick(guest, hostSubnets: lan, preferred: "192.168.1.99") == "192.168.1.23")
+        #expect(BridgedAddress.pick(guest, hostSubnets: lan, preferred: nil) == "192.168.1.23")
+    }
+
+    @Test func appliedStaticAddressNeedsMatchingRecord() throws {
+        let fixed = try StaticIPv4(cidr: "192.168.1.50/24", gateway: "192.168.1.1")
+        var config = VMConfig(name: "vm", os: .linux, cpuCount: 1, memorySize: 1 << 30, disks: [],
+                              networks: [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:0a:0b:0c", staticIPv4: fixed)])
+        #expect(BridgedAddress.appliedStaticAddress(in: config) == nil)
+        config.guestStaticIPv4 = try StaticIPv4(cidr: "192.168.1.60/24", gateway: "192.168.1.1")
+        #expect(BridgedAddress.appliedStaticAddress(in: config) == nil)
+        config.guestStaticIPv4 = fixed
+        #expect(BridgedAddress.appliedStaticAddress(in: config) == "192.168.1.50")
+    }
+
+    @Test func storedIgnoresNonIPv4Content() throws {
+        try RuntimeDirectory.ensure()
+        let bundle = VMBundle(url: URL(filePath: "/vms/bridged-stored-\(UUID().uuidString).macvm"))
+        defer { BridgedAddress.clear(bundle) }
+        #expect(BridgedAddress.stored(for: bundle) == nil)
+        #expect(BridgedAddress.store("192.168.1.23", for: bundle))
+        #expect(BridgedAddress.stored(for: bundle) == "192.168.1.23")
+        try Data("-oProxyCommand=x\n".utf8).write(to: bundle.bridgedAddressURL)
+        #expect(BridgedAddress.stored(for: bundle) == nil)
+        #expect(BridgedAddress.store(nil, for: bundle))
+        #expect(!FileManager.default.fileExists(atPath: bundle.bridgedAddressURL.path))
     }
 }

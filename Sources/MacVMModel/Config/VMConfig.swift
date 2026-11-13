@@ -44,6 +44,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public var screenLock: Bool
     /// 客户机里已做到的 `GuestRevision`。新建的虚拟机由安装流程做到最新；没有这个字段的旧配置按 0。
     public var guestRevision: Int
+    /// 客户机里可能留有的 MacVM 设的静态地址：开始往客户机里写之前记下，撤销成功后才清掉；为 nil 时客户机里没有 MacVM 设的静态地址。
+    public var guestStaticIPv4: StaticIPv4?
     /// 运行期间由运行它的进程在宿主上监听；运行中改了经控制请求 `applyForwards` 立即生效。
     public var forwards: [PortForward]
 
@@ -93,6 +95,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.clipboard = clipboard
         self.screenLock = screenLock
         self.guestRevision = guestRevision ?? GuestRevision.latest(for: os)
+        self.guestStaticIPv4 = nil
         self.forwards = forwards
     }
 
@@ -120,6 +123,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         clipboard = try c.decodeIfPresent(Bool.self, forKey: .clipboard) ?? true
         screenLock = try c.decodeIfPresent(Bool.self, forKey: .screenLock) ?? false
         guestRevision = try c.decodeIfPresent(Int.self, forKey: .guestRevision) ?? 0
+        guestStaticIPv4 = try c.decodeIfPresent(StaticIPv4.self, forKey: .guestStaticIPv4)
         forwards = try c.decodeIfPresent([PortForward].self, forKey: .forwards) ?? []
     }
 
@@ -226,15 +230,18 @@ public struct NetworkConfig: Codable, Sendable, Equatable {
     public var interface: String?
     /// 形如 `xx:xx:xx:xx:xx:xx` 的本地管理地址；为空时由引擎生成并回写。
     public var macAddress: String?
+    /// 只在 `bridged` 时有值，为 nil 时客户机用 DHCP。
+    public var staticIPv4: StaticIPv4?
 
-    public init(mode: Mode = .nat, interface: String? = nil, macAddress: String? = nil) {
+    public init(mode: Mode = .nat, interface: String? = nil, macAddress: String? = nil, staticIPv4: StaticIPv4? = nil) {
         self.mode = mode
         self.interface = interface
         self.macAddress = macAddress
+        self.staticIPv4 = staticIPv4
     }
 
     /// 原始值 `bridged` 按 `nat` 读并丢掉它的 `interface`，MAC 地址照旧，客户机里的网卡配置仍对得上；
-    /// `interface` 只在 `vzBridged` 时读取，`vzBridged` 必须带上它。
+    /// `interface` 与 `staticIPv4` 只在 `vzBridged` 时读取，`vzBridged` 必须带上 `interface`。
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let raw = try c.decode(String.self, forKey: .mode)
@@ -247,6 +254,7 @@ public struct NetworkConfig: Codable, Sendable, Equatable {
         }
         interface = mode == .bridged ? try c.decodeIfPresent(String.self, forKey: .interface) : nil
         macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
+        staticIPv4 = mode == .bridged ? try c.decodeIfPresent(StaticIPv4.self, forKey: .staticIPv4) : nil
     }
 }
 
@@ -335,13 +343,29 @@ extension VMConfig {
     /// 改第一块网卡的网络模式，保留它的 MAC 地址：客户机按 MAC 认网卡，换了地址网络配置就对不上。
     /// `interface` 只用于 `bridged`，是宿主网卡的 BSD 名，桥接时必填。QEMU 引擎不能桥接；Windows 客户机也不能，
     /// 它在 VZ 上的代理只走 TCP，宿主要先知道客户机 IP。切回 NAT 不受引擎和系统限制。
+    /// 桥接时保留原有的 `NetworkConfig.staticIPv4`，切回 NAT 时丢掉。
     public mutating func setNetwork(_ mode: NetworkConfig.Mode, interface: String? = nil) throws {
         if mode == .bridged {
             if engine == .qemu { throw MacVMError.unsupported(String(l10n: "\(name) uses the qemu engine, which doesn't support bridged networking")) }
             if os == .windows { throw MacVMError.unsupported(String(l10n: "Windows guests don't support bridged networking")) }
             guard let interface, !interface.isEmpty else { throw MacVMError.invalidConfig(String(l10n: "Bridged networking needs a host network interface")) }
         }
-        let net = NetworkConfig(mode: mode, interface: mode == .bridged ? interface : nil, macAddress: networks.first?.macAddress)
+        let bridged = mode == .bridged
+        let net = NetworkConfig(mode: mode, interface: bridged ? interface : nil, macAddress: networks.first?.macAddress,
+                                staticIPv4: bridged ? networks.first?.staticIPv4 : nil)
         if networks.isEmpty { networks = [net] } else { networks[0] = net }
+    }
+
+    /// 设第一块网卡的静态 IPv4，nil 改回 DHCP、任何时候都允许。设地址要求第一块网卡是 `bridged` 且装有客户机代理。
+    public mutating func setStaticIPv4(_ value: StaticIPv4?) throws {
+        if let value {
+            guard networks.first?.mode == .bridged else {
+                throw MacVMError.invalidConfig(String(l10n: "Static IP addresses need bridged networking"))
+            }
+            guard guestAgent else { throw MacVMError.unsupported(String(l10n: "Static IP addresses need the guest agent")) }
+            try value.validate()
+        }
+        guard !networks.isEmpty else { return }
+        networks[0].staticIPv4 = value
     }
 }

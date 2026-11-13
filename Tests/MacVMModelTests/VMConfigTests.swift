@@ -1,5 +1,6 @@
 import Foundation
 import MacVMModel
+import Synchronization
 import Testing
 
 struct VMConfigTests {
@@ -83,6 +84,44 @@ struct VMLibraryTests {
         let b = VMBundle(url: URL(filePath: "/x/b/dev.macvm"))
         #expect(a.controlSocketURL != b.controlSocketURL)
         #expect(a.controlSocketURL == VMBundle(url: URL(filePath: "/x/a/dev.macvm/")).controlSocketURL)
+    }
+
+    @Test func concurrentUpdatesKeepEachOthersChanges() throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-update-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        try bundle.saveConfig(VMConfig(name: bundle.name, os: .linux, cpuCount: 0, memorySize: 0, disks: []))
+        let rounds = 50
+        let failures = Mutex(0)
+        DispatchQueue.concurrentPerform(iterations: 2) { worker in
+            for _ in 0..<rounds {
+                do {
+                    try bundle.updateConfig { config in
+                        if worker == 0 { config.cpuCount += 1 } else { config.memorySize += 1 }
+                    }
+                } catch {
+                    failures.withLock { $0 += 1 }
+                }
+            }
+        }
+        #expect(failures.withLock { $0 } == 0)
+        let config = try bundle.loadConfig()
+        #expect(config.cpuCount == rounds)
+        #expect(config.memorySize == UInt64(rounds))
+    }
+
+    @Test func updateConfigDoesNotSaveWhenChangeThrows() throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-update-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        try bundle.saveConfig(VMConfig(name: bundle.name, os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: []))
+        #expect(throws: MacVMError.self) {
+            try bundle.updateConfig { config in
+                config.cpuCount = 8
+                throw MacVMError.invalidConfig("no")
+            }
+        }
+        #expect(try bundle.loadConfig().cpuCount == 2)
     }
 }
 
@@ -256,6 +295,75 @@ struct NetworkConfigTests {
         #expect(windowsError?.code == "unsupported")
         try windows.setNetwork(.nat)
         #expect(windows.networks == [NetworkConfig()])
+    }
+
+    static let lanAddress = try! StaticIPv4(cidr: "192.168.1.50/24", gateway: "192.168.1.1", dns: ["1.1.1.1"])
+
+    @Test func bridgedStaticIPv4RoundTrips() throws {
+        let net = NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01", staticIPv4: Self.lanAddress)
+        #expect(try JSONDecoder().decode(NetworkConfig.self, from: JSONEncoder().encode(net)) == net)
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [], networks: [net])
+        config.guestStaticIPv4 = Self.lanAddress
+        #expect(try VMConfig.decode(config.encoded()) == config)
+    }
+
+    @Test func missingStaticIPv4ReadsAsNil() throws {
+        let json = #"{"mode":"vzBridged","interface":"en0","macAddress":"02:00:00:00:00:01"}"#
+        #expect(try JSONDecoder().decode(NetworkConfig.self, from: Data(json.utf8)).staticIPv4 == nil)
+        let config = #"{"version":1,"name":"a","os":"linux","cpuCount":2,"memorySize":1073741824,"disks":[]}"#
+        #expect(try VMConfig.decode(Data(config.utf8)).guestStaticIPv4 == nil)
+    }
+
+    @Test func natDropsStaticIPv4() throws {
+        let json = #"{"mode":"nat","macAddress":"02:00:00:00:00:01","staticIPv4":{"address":"192.168.1.50","prefixLength":24,"gateway":"192.168.1.1","dns":[]}}"#
+        let net = try JSONDecoder().decode(NetworkConfig.self, from: Data(json.utf8))
+        #expect(net == NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01"))
+    }
+
+    @Test func setNetworkKeepsStaticIPv4OnlyWhileBridged() throws {
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [],
+                              networks: [NetworkConfig(macAddress: "02:00:00:00:00:01")], guestAgent: true)
+        try config.setNetwork(.bridged, interface: "en0")
+        try config.setStaticIPv4(Self.lanAddress)
+        try config.setNetwork(.bridged, interface: "en1")
+        #expect(config.networks == [NetworkConfig(mode: .bridged, interface: "en1", macAddress: "02:00:00:00:00:01", staticIPv4: Self.lanAddress)])
+        try config.setNetwork(.nat)
+        #expect(config.networks == [NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01")])
+        try config.setNetwork(.bridged, interface: "en0")
+        #expect(config.networks.first?.staticIPv4 == nil)
+    }
+
+    @Test func setStaticIPv4NeedsBridgingAndAgent() throws {
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [])
+        let natError = #expect(throws: MacVMError.self) { try config.setStaticIPv4(Self.lanAddress) }
+        #expect(natError?.code == "invalid_config")
+        try config.setNetwork(.bridged, interface: "en0")
+        let agentError = #expect(throws: MacVMError.self) { try config.setStaticIPv4(Self.lanAddress) }
+        #expect(agentError?.code == "unsupported")
+        #expect(config.networks.first?.staticIPv4 == nil)
+
+        config.guestAgent = true
+        var bad = Self.lanAddress
+        bad.gateway = "10.0.0.1"
+        let invalidError = #expect(throws: MacVMError.self) { try config.setStaticIPv4(bad) }
+        #expect(invalidError?.code == "invalid_config")
+        try config.setStaticIPv4(Self.lanAddress)
+        #expect(config.networks.first?.staticIPv4 == Self.lanAddress)
+    }
+
+    @Test func clearingStaticIPv4AlwaysSucceeds() throws {
+        var config = VMConfig(name: "a", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [])
+        try config.setStaticIPv4(nil)
+        config.networks = []
+        try config.setStaticIPv4(nil)
+        #expect(config.networks.isEmpty)
+
+        var bridged = VMConfig(name: "b", os: .linux, cpuCount: 2, memorySize: 2 << 30, disks: [], guestAgent: true)
+        try bridged.setNetwork(.bridged, interface: "en0")
+        try bridged.setStaticIPv4(Self.lanAddress)
+        bridged.guestAgent = false
+        try bridged.setStaticIPv4(nil)
+        #expect(bridged.networks.first?.staticIPv4 == nil)
     }
 
     @Test func unknownModeIsRejected() {

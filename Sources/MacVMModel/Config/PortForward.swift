@@ -43,8 +43,7 @@ public struct PortForward: Codable, Sendable, Hashable {
     }
 
     public static func isIPv4(_ text: String) -> Bool {
-        var addr = in_addr()
-        return inet_pton(AF_INET, text, &addr) == 1
+        IPv4.parse(text) != nil
     }
 }
 

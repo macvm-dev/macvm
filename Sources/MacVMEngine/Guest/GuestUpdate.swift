@@ -58,9 +58,7 @@ public enum GuestUpdate {
                 throw MacVMError.engine(String(l10n: "Couldn't update guest setting “\(migration.title)” (\(status))") + (detail.isEmpty ? "" : String(l10n: ": \(detail)")))
             }
             if output.contains(GuestMigration.rebootMarker) { rebootRequired = true }
-            var latest = try bundle.loadConfig()
-            latest.guestRevision = migration.revision
-            try bundle.saveConfig(latest)
+            try bundle.updateConfig { $0.guestRevision = migration.revision }
             applied.append(migration.title)
         }
         let rebooting = agentUpdated ? try AgentUpdate.syncGPUDriver(bundle, config: config) : false

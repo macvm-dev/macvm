@@ -178,10 +178,10 @@ public enum WindowsInstaller {
 
     /// 安装完成后卸下安装介质与数据盘并删除它们（安装盘含明文密码）。
     static func finishSetup(_ bundle: VMBundle) throws {
-        var config = try bundle.loadConfig()
-        config.installMedia = []
-        config.disks.removeAll { $0.path == dataImageName }
-        try bundle.saveConfig(config)
+        try bundle.updateConfig { config in
+            config.installMedia = []
+            config.disks.removeAll { $0.path == dataImageName }
+        }
         for name in [setupImageName, dataImageName] {
             try? FileManager.default.removeItem(at: bundle.url.appending(path: name))
         }

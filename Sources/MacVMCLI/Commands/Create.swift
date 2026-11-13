@@ -110,9 +110,7 @@ struct Create: AsyncParsableCommand {
             let summary = try await create()
             guard !forwards.isEmpty else { return summary }
             let bundle = try VMLibrary.default.bundle(named: summary.name)
-            var config = try bundle.loadConfig()
-            config.forwards = forwards
-            try bundle.saveConfig(config)
+            try bundle.updateConfig { $0.forwards = forwards }
             // 虚拟机已经建好，转发监听失败只警告，不让 create 报失败。
             if BundleLock.holder(of: bundle) != nil {
                 do { try ControlClient.applyForwards(bundle) } catch {
@@ -163,9 +161,7 @@ struct Create: AsyncParsableCommand {
         if image != nil || options.autoinstalls { try Self.validateDefaultUser(user) }
         let bundle = try await VMFactory.createEFIGuest(options)
         if let engine, engine != .vz {
-            var config = try bundle.loadConfig()
-            config.engine = engine
-            try bundle.saveConfig(config)
+            try bundle.updateConfig { $0.engine = engine }
         }
         SSHConfigCommand.refresh()
         if options.autoinstalls { try await installUbuntu(bundle) }

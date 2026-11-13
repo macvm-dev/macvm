@@ -51,6 +51,22 @@ struct VMTemplateTests {
         #expect(try library.bundle(named: "dev") == vm)
     }
 
+    @Test func cloneDropsStaticAddressButKeepsGuestRecord() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try await makeSource()
+        let fixed = try StaticIPv4(cidr: "192.168.1.50/24", gateway: "192.168.1.1")
+        var config = try source.loadConfig()
+        config.networks = [NetworkConfig(mode: .bridged, interface: "en0", macAddress: "02:00:00:00:00:01", staticIPv4: fixed)]
+        config.guestStaticIPv4 = fixed
+        try source.saveConfig(config)
+
+        let copy = try await VMClone.clone(source, as: "copy", in: library).loadConfig()
+        #expect(copy.networks.first?.mode == .bridged)
+        #expect(copy.networks.first?.staticIPv4 == nil)
+        #expect(copy.guestStaticIPv4 == fixed)
+        #expect(try source.loadConfig().networks.first?.staticIPv4 == fixed)
+    }
+
     @Test func instantiateRejectsSmallerDiskWithoutLeavingBundle() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let template = try await VMTemplate.save(makeSource(), as: "base", in: templates)

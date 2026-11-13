@@ -55,6 +55,7 @@ public final class VZRunner: NSObject, MachineRunner {
 
     private var guestDisplayFit: Task<Void, Never>?
     private var screenLockSync: Task<Void, Never>?
+    private var staticAddressSync: Task<Void, Never>?
     private var bridgedAddressWatch: Task<Void, Never>?
     nonisolated private static let guestDisplayRetryInterval = Duration.seconds(1)
     /// 开机后等代理上线的最长次数（按 `guestDisplayRetryInterval` 计）。
@@ -141,6 +142,7 @@ public final class VZRunner: NSObject, MachineRunner {
             let outcome = try await boot(recovery: recovery)
             stopLatch.started()
             screenLockSync = GuestScreenLock.applyAfterBoot(bundle, config: config)
+            staticAddressSync = GuestStaticIPv4.applyAfterBoot(bundle, config: config)
             bridgedAddressWatch = BridgedAddress.watch(bundle, config: config)
             return outcome
         } catch {
@@ -393,6 +395,7 @@ public final class VZRunner: NSObject, MachineRunner {
     private func finish(_ reason: MachineStopReason) {
         guestDisplayFit?.cancel()
         screenLockSync?.cancel()
+        staticAddressSync?.cancel()
         bridgedAddressWatch?.cancel()
         BridgedAddress.clear(bundle)
         stopLatch.fire(reason)

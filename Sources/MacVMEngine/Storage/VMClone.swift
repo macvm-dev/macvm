@@ -18,7 +18,11 @@ public enum VMClone {
             if let token = AgentToken.read(source) { try AgentToken.store(token, in: target) }
             try MachineIdentity.regenerate(in: target, os: config.os)
             config.name = name
-            for i in config.networks.indices { config.networks[i].macAddress = NetworkAttachments.randomMACAddress() }
+            // 同一网段里两台不能用同一个静态地址。`guestStaticIPv4` 照旧：客户机磁盘里的静态配置是复制来的，新机开机后改回 DHCP。
+            for i in config.networks.indices {
+                config.networks[i].macAddress = NetworkAttachments.randomMACAddress()
+                config.networks[i].staticIPv4 = nil
+            }
             // 宿主端口同一时刻只能一台监听，不随克隆带走。
             config.forwards = []
 

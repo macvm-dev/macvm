@@ -94,6 +94,80 @@ struct GuestScreenLockTests {
     }
 }
 
+struct GuestStaticIPv4Tests {
+    private func parses(_ script: String) throws -> Bool {
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = ["-n", "-c", script]
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
+    @Test func scriptsParseUnderShell() throws {
+        #expect(try parses(GuestStaticIPv4.linuxScript()))
+        #expect(try parses(GuestStaticIPv4.macOSScript()))
+    }
+
+    @Test func linuxPassesSettingsAsArgumentsAndRunsAsRoot() throws {
+        let bundle = VMBundle(url: URL(filePath: "/vms/static-ip-test.macvm"))
+        let value = try StaticIPv4(cidr: "192.168.1.10/24", gateway: "192.168.1.1", dns: ["1.1.1.1", "9.9.9.9"])
+        let (request, input) = try GuestStaticIPv4.command(value, mac: "02:AB:00:00:00:01", os: .linux, bundle: bundle)
+        #expect(request.user == "root")
+        #expect(input.isEmpty)
+        #expect(Array(request.argv.prefix(3)) == ["/bin/sh", "-c", GuestStaticIPv4.linuxScript()])
+        #expect(Array(request.argv.dropFirst(3)) == ["sh", "02:ab:00:00:00:01", "192.168.1.10/24", "192.168.1.1", "1.1.1.1", "9.9.9.9"])
+        #expect(!request.argv[2].contains("192.168.1.10"))
+
+        let dhcp = try GuestStaticIPv4.command(nil, mac: "02:ab:00:00:00:01", os: .linux, bundle: bundle).0
+        #expect(Array(dhcp.argv.dropFirst(3)) == ["sh", "02:ab:00:00:00:01"])
+    }
+
+    @Test func macOSPasswordGoesThroughStandardInputOnly() throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-static-ip-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        let value = try StaticIPv4(cidr: "10.0.0.5/16", gateway: "10.0.0.1")
+
+        // 没有保存的密码也能生成命令，由脚本在真要改动时才报错。
+        let (unsaved, empty) = try GuestStaticIPv4.command(nil, mac: "02:00:00:00:00:01", os: .macOS, bundle: bundle)
+        #expect(String(decoding: empty, as: UTF8.self) == "\n")
+        let script = ["/bin/sh", "-c", GuestStaticIPv4.macOSLocked, GuestStaticIPv4.macOSScript()]
+        #expect(Array(unsaved.argv.prefix(script.count)) == script)
+        #expect(Array(unsaved.argv.dropFirst(script.count)) == ["02:00:00:00:00:01"])
+
+        try GuestCredentials.storePassword("p'w d", in: bundle)
+        let (request, input) = try GuestStaticIPv4.command(value, mac: "02:00:00:00:00:01", os: .macOS, bundle: bundle)
+        #expect(String(decoding: input, as: UTF8.self) == "p'w d\n")
+        #expect(!request.argv.joined().contains("p'w d"))
+        #expect(request.user == nil)
+        #expect(Array(request.argv.dropFirst(script.count)) == ["02:00:00:00:00:01", "10.0.0.5", "255.255.0.0", "10.0.0.1", "10.0.0.1"])
+    }
+
+    @Test func macOSStaticAddressNeedsSavedPassword() throws {
+        let bundle = VMBundle(url: FileManager.default.temporaryDirectory.appending(path: "macvm-static-ip-\(UUID().uuidString).macvm"))
+        try FileManager.default.createDirectory(at: bundle.url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle.url) }
+        let value = try StaticIPv4(cidr: "10.0.0.5/16", gateway: "10.0.0.1")
+
+        let error = #expect(throws: MacVMError.self) { try GuestStaticIPv4.requirePassword(bundle, os: .macOS, for: value) }
+        #expect(error?.code == "unsupported")
+        try GuestStaticIPv4.requirePassword(bundle, os: .macOS, for: nil)
+        try GuestStaticIPv4.requirePassword(bundle, os: .linux, for: value)
+
+        try GuestCredentials.storePassword("", in: bundle)
+        #expect(throws: MacVMError.self) { try GuestStaticIPv4.requirePassword(bundle, os: .macOS, for: value) }
+        try GuestCredentials.storePassword("pw", in: bundle)
+        try GuestStaticIPv4.requirePassword(bundle, os: .macOS, for: value)
+    }
+
+    @Test func windowsIsUnsupported() {
+        let bundle = VMBundle(url: URL(filePath: "/vms/static-ip-test.macvm"))
+        let error = #expect(throws: MacVMError.self) { try GuestStaticIPv4.command(nil, mac: "02:00:00:00:00:01", os: .windows, bundle: bundle) }
+        #expect(error?.code == "unsupported")
+    }
+}
+
 struct LinuxDesktopTests {
     @Test func ubuntuPicksLatestPointReleaseOfDesktopArm64() throws {
         let sums = """
@@ -420,6 +494,15 @@ struct WindowsUnattendTests {
     @Test func bridgedLinuxCannotSwitchToQEMU() throws {
         var config = VMConfig(name: "l", os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: [],
                               networks: [NetworkConfig(mode: .bridged, interface: "en0")])
+        let error = #expect(throws: MacVMError.self) { try config.switchEngine(to: .qemu) }
+        #expect(error?.code == "unsupported")
+        #expect(config.engine == .vz)
+    }
+
+    @Test func leftoverGuestStaticIPv4BlocksSwitchToQEMU() throws {
+        var config = VMConfig(name: "l", os: .linux, cpuCount: 2, memorySize: 1 << 30, disks: [],
+                              networks: [NetworkConfig(mode: .nat, macAddress: "02:00:00:00:00:01")])
+        config.guestStaticIPv4 = try StaticIPv4(cidr: "192.168.1.10/24", gateway: "192.168.1.1")
         let error = #expect(throws: MacVMError.self) { try config.switchEngine(to: .qemu) }
         #expect(error?.code == "unsupported")
         #expect(config.engine == .vz)

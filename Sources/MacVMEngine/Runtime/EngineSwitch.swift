@@ -11,6 +11,10 @@ extension VMConfig {
         if engine == .qemu, networks.first?.mode == .bridged {
             throw MacVMError.unsupported(String(l10n: "\(name) uses bridged networking, which the QEMU engine doesn't support; switch its network to NAT first"))
         }
+        // 只有 VZ 引擎开机时经代理撤销客户机里的静态地址。
+        if engine == .qemu, guestStaticIPv4 != nil {
+            throw MacVMError.unsupported(String(l10n: "\(name) still has a static IP address set in the guest; start it once with the vz engine so MacVM can switch the guest back to DHCP"))
+        }
         if engine == .qemu { _ = try QEMUInstallation.require() }
         if engine == .vz, graphicsAcceleration {
             throw MacVMError.unsupported(String(l10n: "\(name) has the 3D graphics driver installed, so it can only use the qemu engine; VZ has no 3D support, and Windows would crash at startup"))

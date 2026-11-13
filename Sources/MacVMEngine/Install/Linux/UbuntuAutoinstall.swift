@@ -230,10 +230,10 @@ public enum UbuntuAutoinstall {
 
     /// 从配置里卸下引导 ISO 与种子盘并删掉种子盘，用户另用 `--iso` 挂的介质留着。引导 ISO 在下载缓存里，留给别的虚拟机用。
     static func finishSetup(_ bundle: VMBundle) throws {
-        var config = try bundle.loadConfig()
-        config.installMedia.removeAll { $0.hasSuffix(".\(bootISOExtension)") }
-        config.disks.removeAll { $0.path == seedFileName }
-        try bundle.saveConfig(config)
+        try bundle.updateConfig { config in
+            config.installMedia.removeAll { $0.hasSuffix(".\(bootISOExtension)") }
+            config.disks.removeAll { $0.path == seedFileName }
+        }
         try? FileManager.default.removeItem(at: bundle.url.appending(path: seedFileName))
     }
 

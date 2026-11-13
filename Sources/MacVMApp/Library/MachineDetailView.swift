@@ -15,6 +15,7 @@ struct MachineDetailView: View {
     /// 磁盘镜像的容量与实际占用；读文件系统，不放在 body 里每次重绘都算。
     @State private var diskSize: (logical: UInt64, physical: UInt64)?
     @State private var growingDisk = false
+    @State private var editingIPv4 = false
     /// 查系统网络配置，不放在 `@State` 的初始值里：视图结构体每次重建都会再算一遍初始值。
     @State private var bridgeInterfaces: [NetworkAttachments.BridgeInterface] = []
 
@@ -165,6 +166,9 @@ struct MachineDetailView: View {
         .sheet(isPresented: $growingDisk, onDismiss: { loadDiskSize(model.config(of: vm.name)) }) {
             if let config, let diskSize { DiskGrowSheet(vmName: vm.name, config: config, currentSize: diskSize.logical) }
         }
+        .sheet(isPresented: $editingIPv4) {
+            if let config, let net = config.networks.first { StaticIPv4Sheet(vmName: vm.name, os: config.os, current: net.staticIPv4) }
+        }
         .confirmationDialog("Delete “\(vm.name)”?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { model.delete(vm.name) }
         } message: {
@@ -192,7 +196,7 @@ struct MachineDetailView: View {
 
     private var lockedReason: String? {
         switch vm.state {
-        case .running: String(l10n: "Shut down to change processors, memory, network, sound, microphone, and disk size.")
+        case .running: String(l10n: "Shut down to change processors, memory, network mode, sound, microphone, and disk size.")
         case .suspended: String(l10n: "Suspended. To make changes, resume it and then shut it down.")
         case .stopped: nil
         }
@@ -213,6 +217,9 @@ struct MachineDetailView: View {
             if bridgeInterfaces.first(where: { $0.identifier == id })?.isWiFi == true {
                 notes.append(String(l10n: "On Wi-Fi, this Mac and the guest may not be able to reach each other directly. Features that go through the guest agent still work. Use a wired connection if you can."))
             }
+            if net.staticIPv4 != nil {
+                notes.append(String(l10n: "If you switch to NAT, the guest goes back to DHCP the next time it starts."))
+            }
         }
         return Group {
             Picker("Network", selection: Binding(get: { current }, set: { choice in
@@ -225,7 +232,19 @@ struct MachineDetailView: View {
                 ForEach(interfaces, id: \.self) { Text(bridgeLabel($0)).tag(NetworkChoice.bridged($0)) }
             }
             .disabled(!editable || (reason != nil && current == .nat))
-            .help(reason ?? String(l10n: "Bridged networking puts the guest directly on your Mac's local network, where it gets its own address from the router."))
+            .help(reason ?? String(l10n: "Bridged networking puts the guest directly on your Mac's local network, where it gets its own address from the router. You can also give it a fixed address."))
+            if case .bridged = current {
+                // 运行中也可改，不受 `editable` 限制。
+                LabeledContent("Configure IPv4") {
+                    HStack(spacing: 10) {
+                        if let fixed = net.staticIPv4 { Text(verbatim: fixed.cidr) } else { Text("DHCP") }
+                        Button("Edit…") { editingIPv4 = true }
+                            .controlSize(.small)
+                            .disabled(!config.guestAgent || busy)
+                    }
+                }
+                .help(config.guestAgent ? "Use an address from the router (DHCP) or a fixed address. Takes effect right away, even while running" : "Requires the guest agent")
+            }
             if !notes.isEmpty {
                 Text(notes.joined(separator: " ")).font(.caption).foregroundStyle(.secondary)
             }

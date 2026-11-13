@@ -195,10 +195,10 @@ public enum AgentInstaller {
     public static func installAndEnable(bundle: VMBundle, config: VMConfig, macvmPath: String) async throws -> (online: Bool, gpuDriver: Bool) {
         let gpuDriver = try await installOverSSH(bundle: bundle, config: config, macvmPath: macvmPath)
         guard try await VMStatus.poll(timeout: 30, interval: 0.3, { AgentClient.isReachable(bundle) }) else { return (false, gpuDriver) }
-        var config = try bundle.loadConfig()
-        config.guestAgent = true
-        if gpuDriver { config.graphicsAcceleration = true }
-        try bundle.saveConfig(config)
+        let config = try bundle.updateConfig { config in
+            config.guestAgent = true
+            if gpuDriver { config.graphicsAcceleration = true }
+        }
         try? GuestScreenLock.apply(bundle, config: config)
         return (true, gpuDriver)
     }

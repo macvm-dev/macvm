@@ -87,6 +87,39 @@ public enum AgentClient {
         return (nil, String(decoding: output, as: UTF8.self))
     }
 
+    /// 开机后在后台等代理上线，再执行 `body`；`body` 抛错时隔一会儿重试，用完次数后把最后的错误写到标准错误。
+    /// 代理在客户机登录后才启动，开机慢时要等好几分钟，等不到就什么也不做。任务取消后不再等待或重试。
+    static func afterOnline(_ bundle: VMBundle, _ body: @escaping @Sendable () throws -> Void) -> Task<Void, Never> {
+        Task.detached {
+            var online = false
+            for _ in 0..<onlineWaitAttempts {
+                if Task.isCancelled { return }
+                online = isReachable(bundle)
+                if online { break }
+                try? await Task.sleep(for: onlineWaitInterval)
+            }
+            guard online else { return }
+            for attempt in 1...afterOnlineAttempts {
+                if Task.isCancelled { return }
+                do {
+                    try body()
+                    return
+                } catch {
+                    if attempt == afterOnlineAttempts {
+                        FileHandle.standardError.write(Data("macvm: \((error as? MacVMError)?.message ?? "\(error)")\n".utf8))
+                        return
+                    }
+                }
+                try? await Task.sleep(for: afterOnlineRetryInterval)
+            }
+        }
+    }
+
+    private static let onlineWaitAttempts = 120
+    private static let onlineWaitInterval: Duration = .seconds(5)
+    private static let afterOnlineAttempts = 3
+    private static let afterOnlineRetryInterval: Duration = .seconds(20)
+
     /// 执行命令，标准输入输出接到本进程，返回客户机命令的退出码。
     public static func exec(_ bundle: VMBundle, request: AgentProtocol.ExecRequest) throws -> Int32 {
         let (response, socket) = try open(.exec(request), bundle: bundle)

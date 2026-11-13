@@ -30,5 +30,5 @@ The user name defaults to the host user's name (change with `--user`). Set the p
 
 ## After creation
 
-- `macvm set <name> --cpus N --memory 8G --disk-size 256G …` changes configuration and requires shutdown; `--disk-size` can only grow, and the guest partition must be extended separately (Linux created from a cloud image extends it automatically on next boot).
+- `macvm set <name> --cpus N --memory 8G --disk-size 256G …` changes configuration and requires shutdown; `--disk-size` can only grow, and the guest partition must be extended separately (Linux created from a cloud image extends it automatically on next boot). `--ip`, `--gateway` and `--dns` set a static IPv4 address on a VM already set to bridged networking in the app and can be changed while it runs; see `references/guest.md`.
 - When unsure what this host supports, run `macvm doctor --json` first.
