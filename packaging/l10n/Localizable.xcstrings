@@ -4413,6 +4413,16 @@
         }
       }
     },
+    "Manually" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动"
+          }
+        }
+      }
+    },
     "Maximum number of elements." : {
       "localizations" : {
         "zh-Hans" : {
@@ -8487,6 +8497,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "窗口分辨率按屏幕像素而不是点计算，画面更清晰。Windows 会相应调整缩放。运行时切换也立即生效。"
+          }
+        }
+      }
+    },
+    "Using DHCP" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 DHCP"
           }
         }
       }

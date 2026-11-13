@@ -27,8 +27,8 @@ struct StaticIPv4Sheet: View {
         VStack(spacing: 0) {
             Form {
                 Picker("Configure IPv4", selection: $manual) {
-                    Text("DHCP").tag(false)
-                    Text("Manual").tag(true)
+                    Text("Using DHCP").tag(false)
+                    Text("Manually").tag(true)
                 }
                 if manual {
                     TextField("Address", text: $cidr, prompt: Text(verbatim: "192.168.1.10/24"))
