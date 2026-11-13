@@ -145,7 +145,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "macvm-agent"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "getrandom",
  "macvm-agent-platform",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "macvm-agent-platform"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "libc",
  "macvm-agent-protocol",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "macvm-agent-protocol"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "hmac",
  "serde",
@@ -180,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "macvm-boot"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "uefi",
  "uefi-raw",
