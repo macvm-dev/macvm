@@ -101,6 +101,11 @@ pub fn shutdown(reboot: bool) -> io::Result<()> {
     run("shutdown", &[if reboot { "/r" } else { "/s" }, "/t", "0"])
 }
 
+/// Windows 上不跟踪关机请求，恒为 `none`。
+pub fn shutdown_status() -> macvm_agent_protocol::ShutdownStatus {
+    macvm_agent_protocol::ShutdownStatus::default()
+}
+
 /// 让 Windows 把主板时钟当 UTC 读：QEMU 与 VZ 的 RTC 都是 UTC，Windows 默认当本地时间读，
 /// 时钟会差一个时区。开机时读取，改动在下次开机生效。
 pub fn configure_rtc_utc() {

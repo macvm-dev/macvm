@@ -16,6 +16,8 @@ final class AppModel {
     /// 正在进行的长操作（创建、下载、安装），键为虚拟机名；创建时虚拟机包还不存在，`machines` 里没有它。
     /// 字典只在操作开始、结束时变，进度改在 `Activity` 对象上：进度更新只重绘显示它的视图，不牵动整个窗口。
     private(set) var activity: [String: Activity] = [:]
+    /// 正在关机、客户机里还有 App 没退出的虚拟机，键为虚拟机名。
+    private(set) var shutdownBlockers: [String: [GuestApp]] = [:]
 
     @MainActor
     @Observable
@@ -387,18 +389,59 @@ final class AppModel {
     }
 
     /// 正常关机要等客户机自己关，期间状态显示「正在关机」；停下或等满 `stoppingTimeout` 后撤掉。
+    /// `untilStopped` 时一直显示到停下（退出流程自己有等待与提示），不按时撤掉也不报错。
     /// 已有进行中的任务（如安装）时不覆盖它的进度。
-    private func showStopping(_ name: String) {
-        guard activity[name] == nil else { return }
-        setActivity(name, Self.stoppingTitle)
+    /// 装了代理的 macOS 客户机在等待期间还会查挡住关机的 App，等满时仍有就报错。
+    private func showStopping(_ name: String, untilStopped: Bool = false) {
+        // 退出时接管已在等的这一轮，免得它到点报错或撤掉状态。
+        guard activity[name] == nil || (untilStopped && isStopping(name)) else { return }
+        if activity[name] == nil { setActivity(name, Self.stoppingTitle) }
+        let config = config(of: name)
+        let bundle = config?.os == .macOS && config?.guestAgent == true ? try? library.bundle(named: name) : nil
         stoppingTimers[name]?.cancel()
         stoppingTimers[name] = Task { [weak self] in
-            do { try await Task.sleep(for: Self.stoppingTimeout) } catch { return }
-            self?.clearStopping(name)
+            let started = ContinuousClock.now
+            let deadline = untilStopped ? nil : started + Self.stoppingTimeout
+            if let bundle {
+                do { try await Task.sleep(for: Self.blockerCheckDelay) } catch { return }
+                while deadline.map({ ContinuousClock.now < $0 }) ?? true {
+                    let waited = Double((ContinuousClock.now - started).components.seconds)
+                    let apps = await Task.detached { GuestShutdown.blockingApps(bundle, waited: waited) }.value
+                    guard !Task.isCancelled, let self else { return }
+                    // 挂起等操作会接替「正在关机」的状态而不经 `clearStopping`。
+                    guard isStopping(name) else {
+                        shutdownBlockers[name] = nil
+                        return
+                    }
+                    setShutdownBlockers(name, apps)
+                    let next = ContinuousClock.now + Self.blockerCheckInterval
+                    do { try await Task.sleep(until: deadline.map { min($0, next) } ?? next, clock: .continuous) } catch { return }
+                }
+            } else if let deadline {
+                do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
+            } else {
+                return
+            }
+            guard let self else { return }
+            if isStopping(name), let apps = shutdownBlockers[name], !apps.isEmpty {
+                let names = apps.map(\.name).formatted(.list(type: .and))
+                report(MacVMError.timeout(String(l10n: "\(name) didn't shut down: \(names) haven't quit in the guest. Quit them and shut down again, or power it off")))
+            }
+            clearStopping(name)
         }
     }
 
+    /// 记下挡住 `name` 关机的 App，并显示在「正在关机」之后。
+    private func setShutdownBlockers(_ name: String, _ apps: [GuestApp]) {
+        let blockers = apps.isEmpty ? nil : apps
+        guard shutdownBlockers[name] != blockers else { return }
+        shutdownBlockers[name] = blockers
+        let names = apps.map(\.name).formatted(.list(type: .and))
+        activity[name]?.detail = apps.isEmpty ? nil : String(l10n: "waiting for \(names) to quit")
+    }
+
     private func clearStopping(_ name: String) {
+        if shutdownBlockers[name] != nil { shutdownBlockers[name] = nil }
         guard isStopping(name) else { return }
         stoppingTimers.removeValue(forKey: name)?.cancel()
         setActivity(name, nil)
@@ -445,8 +488,13 @@ final class AppModel {
     /// 让本进程运行的每台虚拟机正常关机；请求不了的（还在开机等）留给 `forceStopAll`。
     func requestStopAll() {
         for (name, runner) in runners where (try? runner.requestStop()) != nil {
-            showStopping(name)
+            showStopping(name, untilStopped: true)
         }
+    }
+
+    /// 用户取消退出时撤掉 `requestStopAll` 显示的「正在关机」：它不会按时撤掉，客户机若不关机就一直挂着。
+    func cancelStopAll() {
+        for name in runners.keys { clearStopping(name) }
     }
 
     /// 等本进程运行的虚拟机全部停下，返回是否在 `timeout` 内等到。
@@ -465,6 +513,9 @@ final class AppModel {
 
     private static let stoppingTitle = String(l10n: "Shutting down…")
     private static let stoppingTimeout: Duration = .seconds(90)
+    /// 关机后先等这么久再查挡住关机的 App：客户机正常关机时，各 App 在这段时间里就退完了。
+    private static let blockerCheckDelay: Duration = .seconds(15)
+    private static let blockerCheckInterval: Duration = .seconds(10)
 
     func suspend(_ name: String) async {
         do {

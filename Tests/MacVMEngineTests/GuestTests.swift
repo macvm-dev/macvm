@@ -114,6 +114,11 @@ struct AgentRequestTests {
         #expect(responses.contains { $0.files == [.init(path: "/Users/ethan/a.txt", dir: false), .init(path: "/Users/ethan/src", dir: true)] })
         #expect(responses.contains { $0.total == 1_048_576 })
         #expect(responses.contains { $0.serial == 42 })
+        let pending = try #require(responses.first { $0.shutdown?.state == AgentProtocol.ShutdownStatus.statePending })
+        #expect(pending.shutdown?.sinceMs == 95000)
+        #expect(pending.shutdown?.apps?.first?.name == "Hermes")
+        #expect(pending.shutdown?.apps?.last?.frontmost == true)
+        #expect(responses.contains { $0.shutdown == .init(state: AgentProtocol.ShutdownStatus.stateNone, sinceMs: nil, apps: nil, error: nil) })
         let denied = try #require(responses.first { $0.code == "permission" })
         #expect(throws: MacVMError.permissionDenied(denied.error ?? "")) { try denied.checked() }
         let restarting = try #require(responses.first { $0.code == "restarting" })

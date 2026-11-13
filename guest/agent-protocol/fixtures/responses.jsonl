@@ -9,3 +9,5 @@
 {"ok":true,"text":"a.txt\nsrc","files":[{"path":"/Users/ethan/a.txt"},{"path":"/Users/ethan/src","dir":true}]}
 {"ok":true,"total":1048576}
 {"ok":true,"files":[{"path":"/Users/ethan/Desktop/报告.docx"}],"serial":42}
+{"ok":true,"shutdown":{"state":"pending","since_ms":95000,"apps":[{"pid":512,"name":"Hermes","bundle":"com.nousresearch.hermes"},{"pid":618,"name":"Google Chrome","bundle":"com.google.Chrome","frontmost":true}]}}
+{"ok":true,"shutdown":{"state":"none"}}

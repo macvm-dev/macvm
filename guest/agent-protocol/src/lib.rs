@@ -50,6 +50,8 @@ pub enum Request {
         #[serde(default)]
         reboot: bool,
     },
+    /// 代理以登录用户身份发出的关机或重启请求进行到哪了。成功响应带 `shutdown`。
+    ShutdownStatus,
     SetTime { unix_ms: i64 },
     ClipboardGet,
     ClipboardSet { text: String },
@@ -209,6 +211,36 @@ pub struct Response {
     /// `drag-files`：拖放剪贴板的变更计数。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub serial: Option<i64>,
+    /// `shutdown-status` 的结果。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shutdown: Option<ShutdownStatus>,
+}
+
+/// 代理以登录用户身份发出的关机或重启请求（macOS 上经 System Events，其他 App 可以拦下）。
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ShutdownStatus {
+    pub state: ShutdownState,
+    /// 距那次请求的毫秒数；`state` 为 `none` 时省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since_ms: Option<u64>,
+    /// 此刻仍在运行的普通前台 App，即可能拦着关机的那些；不含访达与代理自身。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub apps: Vec<UiApp>,
+    /// `state` 为 `failed` 时请求失败的原因。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ShutdownState {
+    /// 没有这样的请求。
+    #[default]
+    None,
+    /// 请求已发出，客户机还没关机；App 拦下或取消后仍是这个状态，直到下一次请求。
+    Pending,
+    /// 请求以错误结束。
+    Failed,
 }
 
 impl Response {

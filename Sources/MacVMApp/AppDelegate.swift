@@ -153,7 +153,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         while !(await model.waitUntilAllStopped(timeout: Self.shutdownWait)) {
             let alert = NSAlert()
             alert.messageText = String(l10n: "Still waiting for \(model.runners.keys.sorted().formatted(.list(type: .and))) to shut down")
-            alert.informativeText = String(l10n: "The guest may be waiting for you to save a document or confirm the shutdown. You can handle it in the virtual machine's window and keep waiting. Powering off loses any unsaved work in the guest.")
+            let blockers = model.runners.keys.sorted().compactMap { name in
+                model.shutdownBlockers[name].map { String(l10n: "\(name): \($0.map(\.name).formatted(.list(type: .and))) haven't quit") }
+            }
+            alert.informativeText = (blockers.isEmpty ? "" : blockers.joined(separator: "\n") + "\n\n")
+                + String(l10n: "The guest may be waiting for you to save a document or confirm the shutdown. You can handle it in the virtual machine's window and keep waiting. Powering off loses any unsaved work in the guest.")
             alert.addButton(withTitle: String(l10n: "Keep Waiting"))
             alert.addButton(withTitle: String(l10n: "Power Off and Quit"))
             alert.addButton(withTitle: String(l10n: "Don't Quit"))
@@ -164,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .alertSecondButtonReturn:
                 await model.forceStopAll()
             default:
+                model.cancelStopAll()
                 AppLanguage.restartRequested = false
                 NSApp.reply(toApplicationShouldTerminate: false)
                 return

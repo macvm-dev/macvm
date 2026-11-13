@@ -208,6 +208,7 @@ fn serve(mut conn: Conn, origin: Origin, config: &Config) -> io::Result<()> {
             drop(conn);
             platform::shutdown(reboot)
         }
+        Request::ShutdownStatus => reply(&mut conn, Ok(Response { shutdown: Some(platform::shutdown_status()), ..Response::ok() })),
         Request::SetTime { unix_ms } => reply(&mut conn, platform::set_time(unix_ms).map(|_| Response::ok())),
         Request::ClipboardGet => reply(&mut conn, clipboard_get()),
         Request::ClipboardSet { text } => reply(&mut conn, platform::clipboard_set(&text).map(|_| Response::ok())),

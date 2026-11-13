@@ -2,6 +2,12 @@ use std::io;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
+#[cfg(target_os = "macos")]
+use macvm_agent_protocol::ShutdownState;
+use macvm_agent_protocol::ShutdownStatus;
+#[cfg(any(target_os = "macos", test))]
+use macvm_agent_protocol::UiApp;
+
 use crate::run;
 
 pub fn os_name() -> &'static str {
@@ -177,8 +183,170 @@ pub fn shutdown(reboot: bool) -> io::Result<()> {
             return run("/sbin/shutdown", &[if reboot { "-r" } else { "-h" }, "now"]);
         }
         let verb = if reboot { "restart" } else { "shut down" };
-        run("/usr/bin/osascript", &["-e", &format!("tell application \"System Events\" to {verb}")])
+        request_user_shutdown(&format!("tell application \"System Events\" to {verb}"))
     }
+}
+
+/// 代理以登录用户身份发出的最近一次关机或重启请求。
+#[cfg(target_os = "macos")]
+struct UserShutdown {
+    /// 还没结束的 osascript。App 拦着不退出时它一直等，新请求先结束它，免得每次重试都在客户机里多留一个。
+    child: Option<std::process::Child>,
+    started: Option<std::time::Instant>,
+    /// 请求以错误结束时的原因；新请求发出时清掉。
+    failure: Option<String>,
+}
+
+#[cfg(target_os = "macos")]
+static PENDING_SHUTDOWN: std::sync::Mutex<UserShutdown> = std::sync::Mutex::new(UserShutdown { child: None, started: None, failure: None });
+
+#[cfg(target_os = "macos")]
+fn user_shutdown() -> std::sync::MutexGuard<'static, UserShutdown> {
+    PENDING_SHUTDOWN.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// 以登录用户身份请求关机或重启，等 osascript 结束；被更新的请求顶替时返回 `Ok`。
+/// 失败的原因（osascript 的标准错误）同时记下，供 `shutdown_status` 查询。
+#[cfg(target_os = "macos")]
+fn request_user_shutdown(script: &str) -> io::Result<()> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let started = std::time::Instant::now();
+    let pid = {
+        let mut pending = user_shutdown();
+        if let Some(mut previous) = pending.child.take() {
+            let _ = previous.kill();
+            let _ = previous.wait();
+        }
+        let spawned = Command::new("/usr/bin/osascript").args(["-e", script]).stdout(Stdio::null()).stderr(Stdio::piped()).spawn();
+        let child = match spawned {
+            Ok(child) => child,
+            Err(e) => {
+                *pending = UserShutdown { child: None, started: Some(started), failure: Some(e.to_string()) };
+                return Err(e);
+            }
+        };
+        let pid = child.id();
+        *pending = UserShutdown { child: Some(child), started: Some(started), failure: None };
+        pid
+    };
+    let (mut child, status) = loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut pending = user_shutdown();
+        let Some(child) = pending.child.as_mut().filter(|c| c.id() == pid) else { return Ok(()) };
+        if let Some(status) = child.try_wait()? {
+            break (pending.child.take().expect("checked above"), status);
+        }
+    };
+    if status.success() {
+        return Ok(());
+    }
+    // 进程已退出，读管道很快读到 EOF；放锁读，免得挡住 `shutdown_status`。
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    let message = match stderr.trim() {
+        "" => format!("osascript exited with an error ({status})"),
+        text => text.to_string(),
+    };
+    let mut pending = user_shutdown();
+    if pending.child.is_none() && pending.started == Some(started) {
+        pending.failure = Some(message.clone());
+    }
+    Err(io::Error::other(message))
+}
+
+/// 代理以登录用户身份发出的关机或重启请求进行到哪了；请求还在等或已失败时附上此刻的前台 App。
+/// Linux 上代理以 root 运行、直接关机，恒为 `none`。
+pub fn shutdown_status() -> ShutdownStatus {
+    #[cfg(target_os = "linux")]
+    {
+        ShutdownStatus::default()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut status = {
+            let pending = user_shutdown();
+            // osascript 把请求交给 loginwindow 后通常立即正常退出，之后 App 仍可拦下关机，
+            // 所以请求发出后、代理随客户机关机退出前都算在等。
+            let state = if pending.failure.is_some() {
+                ShutdownState::Failed
+            } else if pending.started.is_some() {
+                ShutdownState::Pending
+            } else {
+                ShutdownState::None
+            };
+            if state == ShutdownState::None {
+                return ShutdownStatus::default();
+            }
+            ShutdownStatus {
+                state,
+                since_ms: pending.started.map(|t| t.elapsed().as_millis() as u64),
+                apps: Vec::new(),
+                error: pending.failure.clone(),
+            }
+        };
+        status.apps = foreground_apps();
+        status
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn foreground_apps() -> Vec<UiApp> {
+    match Command::new("/usr/bin/lsappinfo").arg("list").output() {
+        Ok(output) => parse_foreground_apps(&String::from_utf8_lossy(&output.stdout), std::process::id()),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// `lsappinfo list` 里类型为 `Foreground`（有程序坞图标、会被要求退出）的 App，去掉访达与 `own_pid`。
+/// 每个 App 以 `12) "名字" ASN:…:` 开头，当前前台的那个头行末尾带 `(in front)`；随后缩进的行里有
+/// `bundleID="…"`（没有时为 `[ NULL ]`）与 `pid = N … type="…"`。
+#[cfg(any(target_os = "macos", test))]
+fn parse_foreground_apps(text: &str, own_pid: u32) -> Vec<UiApp> {
+    let mut apps = Vec::new();
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        let Some((name, frontmost)) = lsappinfo_header(line) else { continue };
+        let (mut bundle, mut pid, mut foreground) = (None, None, false);
+        while let Some(field) = lines.next_if(|l| lsappinfo_header(l).is_none()) {
+            let field = field.trim_start();
+            if let Some(value) = field.strip_prefix("bundleID=") {
+                bundle = lsappinfo_quoted(value).map(str::to_string);
+            }
+            if let Some(value) = field.strip_prefix("pid = ") {
+                pid = value.split_whitespace().next().and_then(|n| n.parse::<u32>().ok());
+            }
+            if let Some((_, value)) = field.split_once(" type=") {
+                foreground = lsappinfo_quoted(value) == Some("Foreground");
+            }
+        }
+        let Some(pid) = pid else { continue };
+        if foreground && pid != own_pid && bundle.as_deref() != Some("com.apple.finder") {
+            apps.push(UiApp { pid, name: name.to_string(), bundle, frontmost });
+        }
+    }
+    apps
+}
+
+/// 头行 `12) "名字" ASN:0x0-0x1001: (in front)` 里的名字与是否在最前。
+#[cfg(any(target_os = "macos", test))]
+fn lsappinfo_header(line: &str) -> Option<(&str, bool)> {
+    let line = line.trim_start();
+    let rest = line.trim_start_matches(|c: char| c.is_ascii_digit());
+    if rest.len() == line.len() {
+        return None;
+    }
+    let rest = rest.strip_prefix(") \"")?;
+    let end = rest.rfind("\" ASN:")?;
+    Some((&rest[..end], rest[end..].contains("(in front)")))
+}
+
+/// `"…"` 开头的值里引号中的部分；`[ NULL ]` 这类不带引号的值为 `None`。
+#[cfg(any(target_os = "macos", test))]
+fn lsappinfo_quoted(value: &str) -> Option<&str> {
+    value.strip_prefix('"')?.split('"').next()
 }
 
 /// 有别的显卡时给固件帧缓冲接出的 simpledrm 显卡写一条 udev 规则，规则已在且相同时不动；规则做两件事：
@@ -470,6 +638,45 @@ mod tests {
         assert_eq!(meminfo_bytes(text, "MemTotal:"), 4014320 * 1024);
         assert_eq!(meminfo_bytes(text, "Active(file):"), 102400 * 1024);
         assert_eq!(meminfo_bytes(text, "Inactive(file):"), 0);
+    }
+
+    #[test]
+    fn foreground_apps_from_lsappinfo() {
+        let text = r#" 1) "loginwindow" ASN:0x0-0x1001:
+    bundleID="com.apple.loginwindow"
+    bundle path="/System/Library/CoreServices/loginwindow.app"
+    pid = 497 token=[sess=100015 pid=497 uid:0,0,4294967295 g:0,0 pV:1137] type="UIElement" flavor=3 Version="3109.2.5" fileType="APPL" creator="lgnw" Arch=ARM64
+    checkin time = 2026/11/11 09:37:08 ( 2 days, 12 hours, 19 minutes, 50.5325 seconds ago )
+ 3) "universalaccessd" ASN:0x0-0x8008:
+    bundleID=[ NULL ]
+    pid = 854 token=[sess=100015 pid=854 uid:501,501,501 g:20,20 pV:2069] !signalled type="BackgroundOnly" flavor=3 Version=[ NULL ]  fileType="????" creator="????" Arch=ARM64
+41) "微信" ASN:0x0-0x33033:
+    bundleID="com.tencent.xinWeChat"
+    pid = 1179 token=[sess=100015 pid=1179 uid:501,501,501 g:20,20 pV:3015] type="Foreground" flavor=3 Version="270348" fileType="APPL" creator="????" Arch=ARM64 sandboxed
+45) "访达" ASN:0x0-0x37037:
+    bundleID="com.apple.finder"
+    pid = 1183 token=[sess=100015 pid=1183 uid:501,501,501 g:20,20 pV:3024] type="Foreground" flavor=3 Version="1865.1.20" fileType="FNDR" creator="MACS" Arch=ARM64
+50) "macvm-agent" ASN:0x0-0x40040:
+    bundleID="cn.barey.macvm.agent"
+    pid = 777 token=[sess=100015 pid=777 uid:501,501,501 g:20,20 pV:4000] type="Foreground" flavor=3 Version="1" fileType="APPL" Arch=ARM64
+93) "tool" ASN:0x0-0x5e05e0:
+    bundleID=[ NULL ]
+    pid = 2048 token=[sess=100015 pid=2048 uid:501,501,501 g:20,20 pV:5000] type="Foreground" flavor=3 Version=[ NULL ]  fileType="????" Arch=ARM64
+94) "Google Chrome" ASN:0x0-0x63f63f: (in front)
+    bundleID="com.google.Chrome"
+    pid = 618 token=[sess=100015 pid=618 uid:501,501,501 g:20,20 pV:1102372] type="Foreground" flavor=2 Version="8103.51" fileType="APPL" creator="rimZ" Arch=ARM64
+    checkin time = 2026/11/13 09:37:08 ( 1 hour ago )
+"#;
+        let app = |pid, name: &str, bundle: Option<&str>, frontmost| UiApp { pid, name: name.into(), bundle: bundle.map(Into::into), frontmost };
+        assert_eq!(
+            parse_foreground_apps(text, 777),
+            [
+                app(1179, "微信", Some("com.tencent.xinWeChat"), false),
+                app(2048, "tool", None, false),
+                app(618, "Google Chrome", Some("com.google.Chrome"), true),
+            ]
+        );
+        assert!(parse_foreground_apps("", 1).is_empty());
     }
 
     #[test]

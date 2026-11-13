@@ -48,7 +48,7 @@ struct MachineWindow: View {
     /// 首次登录建用户目录期间客户机画面是黑的，靠这条提示说明不是卡住了。
     private var progress: String? {
         if suspending { return String(l10n: "Suspending…") }
-        if stopping { return String(l10n: "Shutting down…") }
+        if stopping { return model.activity[name]?.text ?? String(l10n: "Shutting down…") }
         if model.isSettingUpGuest(name) { return String(l10n: "Setting up for the first time: signing in and installing the guest agent. The screen may stay black for a while…") }
         return nil
     }

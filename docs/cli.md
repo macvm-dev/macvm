@@ -4,7 +4,7 @@
 
 ## 输出
 
-- 加 `--json` 时标准输出恰好一行：成功 `{"schemaVersion":1,"result":…}`，失败 `{"schemaVersion":1,"error":{"code":"…","message":"…"}}`。
+- 加 `--json` 时标准输出恰好一行：成功 `{"schemaVersion":1,"result":…}`，失败 `{"schemaVersion":1,"error":{"code":"…","message":"…"}}`。部分错误在 `error` 里另带附加字段（见各命令），`code` 与退出码不受影响。
 - 不加 `--json` 时输出面向人阅读，格式不保证稳定。
 - `forward` 在全部端口监听成功后输出这一行，随后继续运行，退出时不再输出。
 - `exec`、`ssh`、`proxy` 不支持 `--json`：它们的标准输入输出属于客户机命令，`exec` 的退出码就是客户机命令的退出码。
@@ -21,7 +21,7 @@
 | `ls` / `status <名>` | 列出 / 查看状态，结果为 `VMSummary` |
 | `start <名>` / `run <名>` | 后台启动并在就绪后返回 / 前台运行到关机。App 还在创建这台虚拟机或创建中断时报 `unsupported`，经 `ssh` 的 ProxyCommand 自动开机同样如此。桥接网络的虚拟机 `run` 不能运行，`start` 要用 App 包里的 `macvm`，见下文「网络」 |
 | `wait <名>` | 等到代理（或 SSH）可用，未运行时自动启动 |
-| `stop <名> [--force]` / `suspend <名>` | 关机 / 挂起 |
+| `stop <名> [--force] [--timeout 秒]` / `suspend <名>` | 关机 / 挂起。`stop` 在 `--timeout`（默认 90）秒内没关掉时报 `timeout`；macOS 客户机的关机经客户机代理请求、被还没退出的 App 拦住时，消息里列出这些 App，`--json` 的 `error.blockingApps` 是它们的数组（`name`、`bundleId`、`pid`，`bundleId` 可能没有），`code` 仍是 `timeout`。查不到时（没装代理、代理不支持、不是 macOS 客户机）没有这个字段 |
 | `exec <名> [-t] [--cwd 目录] [--user 用户] -- 命令…` | 在客户机执行；`--user` 要经客户机代理，未装代理的虚拟机报 `unsupported` |
 | `cp <来源>… <目标目录>` | 经客户机代理在宿主与客户机之间复制文件或目录：来源与目标中恰好一方写成 `<虚拟机>:<客户机上的绝对路径>`（冒号前不含 `/` 的才算虚拟机名，含冒号的本地路径写成 `./a:b`），客户机来源要来自同一台虚拟机；目标必须是已有目录，不是时报 `invalid_config`。保留目录结构与修改时间，宿主与 macOS、Linux 客户机之间还保留权限位与符号链接（Windows 客户机里跳过符号链接，文件名里 Windows 不认的字符换成 `_`）。与目标里已有项重名的顶层项编号改名（`a.txt` → `a 2.txt`，Windows 客户机里是 `a (2).txt`），不覆盖。结果为 `{files}`，各顶层项实际复制到的位置。虚拟机未运行时自动在后台启动；没装代理或代理不支持时报 `unsupported` |
 | `ssh <名>` / `proxy <名> [--port N]` | 登录 shell / ssh ProxyCommand。`proxy` 在虚拟机未运行时自动在后台开机，但上次是关机或断电停下的（App 里关机、`stop`、客户机里关机）不开，报 `not_running`，等 `start` 或在 App 里开机后再连；挂起或出错停下的照常自动开机 |

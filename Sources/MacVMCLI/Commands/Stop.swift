@@ -22,7 +22,15 @@ struct Stop: AsyncParsableCommand {
         try await Output.run(json: global.json, human: { (_: Empty) in String(l10n: "\(name) stopped") }) {
             let bundle = try VMLibrary.default.bundle(named: name)
             try ControlClient.perform(.stop(force: force), on: bundle)
-            guard try await VMStatus.waitUntilStopped(bundle, timeout: TimeInterval(timeout)) else { throw MacVMError.timeout(String(l10n: "The guest didn't shut down within \(timeout) seconds; use --force to power it off")) }
+            guard try await VMStatus.waitUntilStopped(bundle, timeout: TimeInterval(timeout)) else {
+                let apps = await Task.detached { GuestShutdown.blockingApps(bundle, waited: TimeInterval(timeout)) }.value
+                guard !apps.isEmpty else { throw MacVMError.timeout(String(l10n: "The guest didn't shut down within \(timeout) seconds; use --force to power it off")) }
+                let names = apps.map(\.name).formatted(.list(type: .and))
+                throw DetailedError(
+                    error: .timeout(String(l10n: "The guest didn't shut down within \(timeout) seconds. These apps in the guest haven't quit and may be blocking it: \(names). Quit them in the guest and try again, or use --force to power it off")),
+                    blockingApps: apps
+                )
+            }
             return Empty()
         }
     }

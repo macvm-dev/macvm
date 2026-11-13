@@ -12,20 +12,46 @@ public struct JSONEnvelope<Result: Encodable & Sendable>: Encodable, Sendable {
     public struct ErrorBody: Encodable, Sendable {
         public let code: String
         public let message: String
+        /// `stop` 超时时客户机里还没退出、可能挡住关机的 App；没有时不输出。
+        public let blockingApps: [GuestApp]?
     }
 
     public static func success(_ result: Result) -> Self {
         .init(schemaVersion: schemaVersion, result: result, error: nil)
     }
 
-    public static func failure(_ error: MacVMError) -> JSONEnvelope<Result> {
-        .init(schemaVersion: schemaVersion, result: nil, error: .init(code: error.code, message: error.message))
+    public static func failure(_ error: MacVMError, blockingApps: [GuestApp]? = nil) -> JSONEnvelope<Result> {
+        .init(schemaVersion: schemaVersion, result: nil, error: .init(code: error.code, message: error.message, blockingApps: blockingApps))
     }
 
     public func encoded() throws -> Data {
         let e = JSONEncoder()
         e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return try e.encode(self)
+    }
+}
+
+/// 带附加字段的错误：`code` 与退出码取自 `error`，附加字段只出现在 `--json` 的 `error` 里，人读输出只有消息。
+public struct DetailedError: Error, Sendable {
+    public let error: MacVMError
+    public let blockingApps: [GuestApp]?
+
+    public init(error: MacVMError, blockingApps: [GuestApp]? = nil) {
+        self.error = error
+        self.blockingApps = blockingApps
+    }
+}
+
+/// 客户机里运行着的一个 App。
+public struct GuestApp: Codable, Sendable, Equatable {
+    public let name: String
+    public let bundleId: String?
+    public let pid: Int
+
+    public init(name: String, bundleId: String?, pid: Int) {
+        self.name = name
+        self.bundleId = bundleId
+        self.pid = pid
     }
 }
 

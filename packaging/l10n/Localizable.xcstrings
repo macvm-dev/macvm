@@ -150,6 +150,22 @@
         }
       }
     },
+    "%@ didn't shut down: %@ haven't quit in the guest. Quit them and shut down again, or power it off" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ didn't shut down: %2$@ haven't quit in the guest. Quit them and shut down again, or power it off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 没有关机：客户机里的 %2$@ 还没退出。退出它们后再关机，或强制断电"
+          }
+        }
+      }
+    },
     "%@ disk" : {
       "localizations" : {
         "zh-Hans" : {
@@ -649,6 +665,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@：%@"
+          }
+        }
+      }
+    },
+    "%@: %@ haven't quit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@ haven't quit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@：%2$@ 还没退出"
           }
         }
       }
@@ -7615,6 +7647,22 @@
         }
       }
     },
+    "The guest didn't shut down within %lld seconds. These apps in the guest haven't quit and may be blocking it: %@. Quit them in the guest and try again, or use --force to power it off" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The guest didn't shut down within %1$lld seconds. These apps in the guest haven't quit and may be blocking it: %2$@. Quit them in the guest and try again, or use --force to power it off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "客户机在 %1$lld 秒内未关机。客户机里这些 App 还没退出，可能挡住了关机：%2$@。在客户机里退出它们后重试，或用 --force 强制断电"
+          }
+        }
+      }
+    },
     "The guest didn't shut down within %lld seconds; use --force to power it off" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9336,6 +9384,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "vmnet 网络尚未实现"
+          }
+        }
+      }
+    },
+    "waiting for %@ to quit" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待 %@ 退出"
           }
         }
       }

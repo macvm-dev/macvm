@@ -140,6 +140,16 @@ struct OutputContractTests {
         #expect(String(decoding: data, as: UTF8.self) == #"{"error":{"code":"vm_not_found","message":"Virtual machine not found: x"},"schemaVersion":1}"#)
     }
 
+    @Test func failureEnvelopeWithBlockingApps() throws {
+        struct R: Encodable, Sendable {}
+        let apps = [GuestApp(name: "Google Chrome", bundleId: "com.google.Chrome", pid: 618)]
+        let data = try JSONEnvelope<R>.failure(.timeout("t"), blockingApps: apps).encoded()
+        #expect(String(decoding: data, as: UTF8.self)
+            == #"{"error":{"blockingApps":[{"bundleId":"com.google.Chrome","name":"Google Chrome","pid":618}],"code":"timeout","message":"t"},"schemaVersion":1}"#)
+        let plain = try JSONEnvelope<R>.failure(.timeout("t"), blockingApps: nil).encoded()
+        #expect(!String(decoding: plain, as: UTF8.self).contains("blockingApps"))
+    }
+
     @Test func shareTagForLinuxIsASCIIAndUnique() {
         #expect(ShareConfig.tag(for: "/Users/a/My 项目", os: .linux, taken: []) == "My")
         #expect(ShareConfig.tag(for: "/Users/a/项目", os: .linux, taken: []) == "share")

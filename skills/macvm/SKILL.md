@@ -18,7 +18,7 @@ Try in order: `macvm` (the App puts a link in `~/.local/bin`), `/usr/local/bin/m
 With `--json`, standard output is exactly one line:
 
 - Success: `{"schemaVersion":1,"result":…}`
-- Failure: `{"schemaVersion":1,"error":{"code":"…","message":"…"}}`
+- Failure: `{"schemaVersion":1,"error":{"code":"…","message":"…"}}`; some errors carry extra fields in `error` (see `stop` below)
 
 Branch on `error.code` or the exit code; do not parse the human-readable output (its format is not stable). Exceptions: `exec`, `ssh` and `proxy` do not support `--json`, because their input and output belong to the guest command; the exit code of `exec` is the guest command's exit code.
 
@@ -49,13 +49,14 @@ macvm exec dev -- uname -a            # run in the guest; starts the VM if it is
 macvm stop dev --json                 # graceful shutdown
 ```
 
+- `stop` waits `--timeout` seconds (default 90) and then fails with `timeout`. In a macOS guest, apps that haven't quit can block the shutdown; the error then lists them in `error.blockingApps` (each with `name`, `pid` and usually `bundleId`). Tell the user which apps are blocking. Quitting an app in the guest can lose its unsaved work, so ask the user before doing it — they can quit it themselves, or with their consent run `macvm exec <vm> -- osascript -e 'quit app id "<bundleId>"'` — then run `stop` again. `stop --force` is the last resort and also needs confirmation.
 - Run `ls` first and reuse an existing VM when one fits: creating a new one means downloading an image and installing an OS, which takes minutes to tens of minutes.
 - Creating a VM (especially installing macOS, Windows or Ubuntu Desktop) takes a long time; run it in the background and tell the user what you are waiting for.
 - The default VM directory holds the user's own VMs. When you create a VM just for testing, ask the user whether to delete it when you are done.
 
 ## Confirm before acting
 
-These operations lose data or interrupt something the user is using; confirm with the user before running them: `rm`, `stop --force` (cuts power), `snapshot restore` (overwrites the current disk), `template rm`, `set` on a VM the user already had (changes its configuration), and shutting down a VM you did not start yourself.
+These operations lose data or interrupt something the user is using; confirm with the user before running them: `rm`, `stop --force` (cuts power), `snapshot restore` (overwrites the current disk), `template rm`, `set` on a VM the user already had (changes its configuration), quitting apps in the guest (unsaved work is lost), and shutting down a VM you did not start yourself.
 
 ## Read details as needed
 

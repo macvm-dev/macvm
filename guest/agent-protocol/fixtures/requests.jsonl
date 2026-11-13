@@ -4,6 +4,7 @@
 {"op":"exec","argv":["id"],"user":"root"}
 {"op":"forward","port":22}
 {"op":"shutdown","reboot":false}
+{"op":"shutdown-status"}
 {"op":"set-time","unix_ms":1793660000000}
 {"op":"clipboard-get"}
 {"op":"clipboard-set","text":"你好 \"quoted\"\n"}

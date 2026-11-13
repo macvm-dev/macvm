@@ -19,6 +19,9 @@ enum Output {
             } else if let text = human(result), !text.isEmpty {
                 print(text)
             }
+        } catch let error as DetailedError {
+            report(error.error, blockingApps: error.blockingApps, json: json)
+            throw ExitCode(error.error.exitCode)
         } catch let error as MacVMError {
             report(error, json: json)
             throw ExitCode(error.exitCode)
@@ -31,8 +34,8 @@ enum Output {
         }
     }
 
-    static func report(_ error: MacVMError, json: Bool) {
-        if json, let data = try? JSONEnvelope<Empty>.failure(error).encoded() {
+    static func report(_ error: MacVMError, blockingApps: [GuestApp]? = nil, json: Bool) {
+        if json, let data = try? JSONEnvelope<Empty>.failure(error, blockingApps: blockingApps).encoded() {
             printLine(data)
         } else {
             FileHandle.standardError.write(Data("macvm: \(error.message)\n".utf8))

@@ -99,6 +99,8 @@ public enum AgentProtocol {
         /// 成功响应带 `total`，随后代理发这些路径的文件流。
         case filesGet(paths: [String])
         case dragFiles
+        /// 只读：成功响应带 `shutdown`。
+        case shutdownStatus
 
         private enum Keys: String, CodingKey {
             case op, port, reboot, text, tag, path, unix_ms, read_only, width, height, percent, sha256, size, keep
@@ -150,6 +152,7 @@ public enum AgentProtocol {
                 }
             case .filesGet(let paths): try c.encode("files-get", forKey: .op); try c.encode(paths, forKey: .paths)
             case .dragFiles: try c.encode("drag-files", forKey: .op)
+            case .shutdownStatus: try c.encode("shutdown-status", forKey: .op)
             }
         }
 
@@ -193,6 +196,7 @@ public enum AgentProtocol {
                 }
             case "files-get": self = .filesGet(paths: try c.decode([String].self, forKey: .paths))
             case "drag-files": self = .dragFiles
+            case "shutdown-status": self = .shutdownStatus
             case let op: throw DecodingError.dataCorruptedError(forKey: .op, in: c, debugDescription: "Unknown operation \(op)")
             }
         }
@@ -217,6 +221,27 @@ public enum AgentProtocol {
         }
     }
 
+    /// `shutdown-status` 的结果：代理最近一次以登录用户身份发出的关机请求。
+    /// `state` 用字符串而不是枚举，代理加了新取值也照样解码。
+    public struct ShutdownStatus: Codable, Sendable, Equatable {
+        public static let stateNone = "none"
+        public static let statePending = "pending"
+        public static let stateFailed = "failed"
+
+        public let state: String
+        /// 距发出那次关机请求的毫秒数；`stateNone` 时没有。
+        public let sinceMs: UInt64?
+        /// 此刻仍在运行的普通前台 App。
+        public let apps: [UIApp]?
+        /// `stateFailed` 时发出请求的命令的错误输出。
+        public let error: String?
+
+        enum CodingKeys: String, CodingKey {
+            case state, apps, error
+            case sinceMs = "since_ms"
+        }
+    }
+
     public struct Response: Codable, Sendable, Equatable {
         public let ok: Bool
         public let error: String?
@@ -232,6 +257,7 @@ public enum AgentProtocol {
         public let total: Int64?
         /// `drag-files`：拖放剪贴板的变更计数，按下鼠标时与拖出窗口时不同才说明这次按下开始了拖动；没有时代理只在拖动进行中返回文件。
         public let serial: Int64?
+        public let shutdown: ShutdownStatus?
 
         /// 失败的响应转成错误：缺权限时为 `permissionDenied`，代理随即重启时为 `Restarting`，其余为 `engine`；代理没给原因时用 `fallback`。
         func checked(_ fallback: String = String(l10n: "Unknown error")) throws -> Response {

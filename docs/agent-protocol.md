@@ -32,7 +32,8 @@
 | `info` | — | `{"ok":true,"info":{…}}`，见下 |
 | `exec` | `argv`（字符串数组，必填），`user`，`cwd`，`env`（对象），`tty`（布尔），`cols`，`rows` | `{"ok":true}`，随后进入帧模式 |
 | `forward` | `port`（客户机本地 TCP 端口） | `{"ok":true}`，随后为原始字节双向转发 |
-| `shutdown` | `reboot`（布尔，默认 false） | `{"ok":true}` |
+| `shutdown` | `reboot`（布尔，默认 false） | `{"ok":true}`；macOS 上只表示请求已发出，见 `shutdown-status` |
+| `shutdown-status` | — | `{"ok":true,"shutdown":{"state":"pending","since_ms":95000,"apps":[…]}}`，见下 |
 | `set-time` | `unix_ms`（整数） | `{"ok":true}` |
 | `clipboard-get` | — | `{"ok":true,"text":"…"}`；剪贴板里有文件时带 `files`（macOS、Windows） |
 | `clipboard-set` | `text` | `{"ok":true}` |
@@ -59,6 +60,12 @@
 `os` 取值 `linux`、`macos`、`windows`。内存单位为字节。`exe_sha256` 是代理可执行文件的指纹（SHA-256 的小写十六进制，macOS 版是代理 App 包里的可执行文件），读不到自身时省略：带代码签名的 64 位 Mach-O 取 `LC_CODE_SIGNATURE` 指向的签名 SuperBlob 里 0 号槽 CodeDirectory 的 SHA-256（签名时间不在其中，同样的代码重签后不变），其余取整个文件的 SHA-256；宿主拿它比对随 App 分发的代理，不同或省略即为可更新。
 
 更新经 `exec` 完成，不另设请求，旧代理也能这样更新：宿主执行更新脚本，标准输入送新代理（macOS 版是代理 App 包的 tar），脚本换掉文件后交给客户机的服务管理器重启代理（Linux 以 root 执行、`systemctl restart --no-block`；macOS 以登录用户执行、重新加载 LaunchAgent；Windows 交给以 SYSTEM 运行的一次性计划任务 `macvm-agent-update` 停下代理、重新注册并启动）。代理可能在发出 `exit` 帧之前就被重启，宿主据 `exe_sha256` 变成新值判断更新完成。`features` 列出可选能力，没有时省略；`ui` 表示支持 `ui-*` 请求，`files` 表示支持 `files-put`、`files-get` 与 `clipboard-get` 里的文件，`drag` 表示支持 `drag-files`。代理对不认识的 `op` 回失败响应，宿主按 `features` 判断代理是否支持某项能力。
+
+`shutdown-status`：macOS 上代理不以 root 运行时，`shutdown` 以登录用户身份经 System Events 请求关机或重启，正在运行的 App 可以拦下（如有未存的文档、或询问是否退出），这时客户机不关机。`state` 取值：`none` 没有这样的请求；`pending` 请求已发出、客户机还没关机（有 App 拦下或取消后也是它，宿主按 `since_ms` 判断是不是本次请求）；`failed` 请求没能发出，`error` 是原因（osascript 的错误输出）。状态保持到下一次 `shutdown`。`since_ms` 是距那次请求的毫秒数，`state` 为 `none` 时省略。`apps` 是此刻仍在运行的普通前台 App（`pid`、`name`、`bundle`，最前的那个带 `"frontmost":true`），不含访达与代理自身，没有时省略；它们只是可能拦着关机，代理分不出具体是哪个。再发 `shutdown` 时代理先结束还在等的上一个请求。Linux 与 Windows 上恒为 `{"state":"none"}`。不认识这个请求的旧代理回失败响应，宿主视为没有信息。
+
+```json
+{"state":"pending","since_ms":95000,"apps":[{"pid":512,"name":"Hermes","bundle":"com.nousresearch.hermes"},{"pid":618,"name":"Google Chrome","bundle":"com.google.Chrome","frontmost":true}]}
+```
 
 `display`：只用于 Windows。代理把 virtio-gpu 设为唯一的主显示器并切到该尺寸（引导垫片的帧缓冲在 Windows 里是另一块显示器，一并卸下），设置写入显示配置数据库。宿主在开机后代理上线时发送；VZ 下分辨率固定，见 `WindowsSupport.displaySize`。
 
