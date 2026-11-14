@@ -135,6 +135,15 @@ struct MachineWindow: View {
                 takingOver = true
                 let taken = await model.takeOver(name)
                 restoring = model.wasRestored(name)
+                if let taken, restoring {
+                    await wakeGuestDisplay(of: taken)
+                    // 这期间虚拟机停了的话没有画面可接；`takingOver` 挡住了自动关窗，这里补上。
+                    guard model.isRunningHere(name) else {
+                        takingOver = false
+                        dismiss()
+                        return
+                    }
+                }
                 runner = taken
                 takingOver = false
                 recordFailure()
@@ -144,6 +153,7 @@ struct MachineWindow: View {
             awaitingFirstFrame = !model.isRunningHere(name)
             let started = await model.start(name)
             restoring = model.wasRestored(name)
+            if let started, restoring, awaitingFirstFrame { await wakeGuestDisplay(of: started) }
             runner = started
             recordFailure()
             if !(runner is VZRunner) { awaitingFirstFrame = false }
@@ -293,6 +303,12 @@ extension MachineWindow {
         failed = runner == nil
         failure = failed ? model.lastError : nil
         if failed { model.lastError = nil }
+    }
+
+    /// 给刚从挂起状态恢复的虚拟机接上画面之前，先把客户机显示器叫醒；叫不了的客户机直接返回。只在开机成功后调用。
+    fileprivate func wakeGuestDisplay(of runner: any MachineRunner) async {
+        guard runner is VZRunner, GuestDisplayWake.isSupported(runner.config) else { return }
+        await GuestDisplayWake.wake(runner.bundle)
     }
 
     /// 从挂起状态恢复后等第一帧的时长：客户机显示器醒着时恢复后很快就有画面。

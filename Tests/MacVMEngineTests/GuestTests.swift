@@ -16,6 +16,22 @@ struct CursorShapeTests {
     }
 }
 
+struct GuestDisplayWakeTests {
+    @Test func onlyMacOSGuestsWithTheAgentAreSupported() {
+        func config(_ os: GuestOS, agent: Bool) -> VMConfig {
+            VMConfig(name: "vm", os: os, cpuCount: 1, memorySize: 1 << 30, disks: [], guestAgent: agent)
+        }
+        #expect(GuestDisplayWake.isSupported(config(.macOS, agent: true)))
+        #expect(!GuestDisplayWake.isSupported(config(.macOS, agent: false)))
+        #expect(!GuestDisplayWake.isSupported(config(.linux, agent: true)))
+        #expect(!GuestDisplayWake.isSupported(config(.windows, agent: true)))
+    }
+
+    @Test func declaresUserActivityForTheAssertionPeriod() {
+        #expect(GuestDisplayWake.request.argv == ["/usr/bin/caffeinate", "-u", "-t", String(GuestDisplayWake.assertionSeconds)])
+    }
+}
+
 struct SSHConfigIncludeTests {
     @Test func removingIncludeUndoesInstall() {
         let existing = "Host work\n  HostName example.com\n"
