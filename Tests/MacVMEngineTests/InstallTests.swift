@@ -360,6 +360,9 @@ struct UbuntuAutoinstallTests {
             lock-enabled=false
             ubuntu-lock-on-suspend=false
 
+            [org/gnome/desktop/session]
+            idle-delay=uint32 0
+
             [org/gnome/settings-daemon/plugins/power]
             sleep-inactive-ac-type='nothing'
             sleep-inactive-battery-type='nothing'

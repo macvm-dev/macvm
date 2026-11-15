@@ -156,8 +156,8 @@ public enum UbuntuAutoinstall {
     /// 安装程序按安装环境里关掉的网卡写出不带 DHCP 的 netplan，删掉它，网卡交给 NetworkManager 默认的 DHCP。
     /// NetworkManager 按 MAC 发 DHCP 客户端标识，主机才能在租约表里按 MAC 查到这台机器。
     /// gdm 自动登录这个用户，开机直接进桌面。
-    /// GNOME 的系统默认设置（`/etc/dconf/db/local.d`）关掉锁屏与空闲挂起，用户仍可在设置里改回；
-    /// 挂起的虚拟机要从宿主唤醒，而空闲黑屏不锁屏，动一下就回来。
+    /// GNOME 的系统默认设置（`/etc/dconf/db/local.d`）关掉锁屏、空闲黑屏与空闲挂起，用户仍可在设置里改回；
+    /// 挂起的虚拟机要从宿主唤醒，黑屏只省下出画面的开销。
     static func setupScript(_ o: Options) -> String {
         var lines = [
             "set -eu",
@@ -172,7 +172,7 @@ public enum UbuntuAutoinstall {
             #"mv "$conf.new" "$conf""#,
             #"mkdir -p "$target/etc/dconf/profile" "$target/etc/dconf/db/local.d""#,
             #"[ -f "$target/etc/dconf/profile/user" ] || printf 'user-db:user\nsystem-db:local\n' > "$target/etc/dconf/profile/user""#,
-            #"printf '%s\n' '[org/gnome/desktop/screensaver]' 'lock-enabled=false' 'ubuntu-lock-on-suspend=false' '' '[org/gnome/settings-daemon/plugins/power]' "sleep-inactive-ac-type='nothing'" "sleep-inactive-battery-type='nothing'" > "$target/etc/dconf/db/local.d/90-macvm""#,
+            #"printf '%s\n' '[org/gnome/desktop/screensaver]' 'lock-enabled=false' 'ubuntu-lock-on-suspend=false' '' '[org/gnome/desktop/session]' 'idle-delay=uint32 0' '' '[org/gnome/settings-daemon/plugins/power]' "sleep-inactive-ac-type='nothing'" "sleep-inactive-battery-type='nothing'" > "$target/etc/dconf/db/local.d/90-macvm""#,
             #"if [ -x "$target/usr/bin/dconf" ]; then chroot "$target" dconf update; fi"#,
             #"mkdir -p "$target/etc/NetworkManager/conf.d""#,
             #"printf '[connection]\nipv4.dhcp-client-id=mac\n' > "$target/etc/NetworkManager/conf.d/90-macvm.conf""#,
