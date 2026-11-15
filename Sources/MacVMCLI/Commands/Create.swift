@@ -8,7 +8,7 @@ struct Create: AsyncParsableCommand {
         abstract: String(l10n: "Create a VM."),
         discussion: String(l10n: """
         macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,
-        turns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, turns off display sleep, and runs every macvm tune step (skip with --no-tune).
+        turns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, turns off display sleep and the screen saver, and runs every macvm tune step (skip with --no-tune).
           macvm create mac --os macos
         Windows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.
           macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso
@@ -257,7 +257,7 @@ struct Create: AsyncParsableCommand {
         do {
             try await MacOSProvisioning.applySystemSettings(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)
         } catch {
-            warn(String(l10n: "Couldn't set the hostname, time zone, and display sleep: \((error as? MacVMError)?.message ?? error.localizedDescription)"))
+            warn(String(l10n: "Couldn't apply the guest's system settings: \((error as? MacVMError)?.message ?? error.localizedDescription)"))
         }
         if AgentInstaller.binary(for: .macOS) != nil {
             _ = try await AgentInstaller.installAndEnable(bundle: bundle, config: bundle.loadConfig(), macvmPath: SSHConfigCommand.executablePath)

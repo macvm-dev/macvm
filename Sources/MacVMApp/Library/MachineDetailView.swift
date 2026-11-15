@@ -104,7 +104,7 @@ struct MachineDetailView: View {
                     Toggle("Lock Screen When Idle", isOn: Binding(get: { config.screenLock }, set: { model.setScreenLock(vm.name, $0) }))
                         .disabled(!config.guestAgent)
                         .help(config.guestAgent
-                              ? "Locks the guest screen when it's idle and the display sleeps, so a password is needed to get back in. When off, the guest never locks. Takes effect right away, even while running"
+                              ? "Turns off the guest display and locks its screen when it's idle, so a password is needed to get back in. When off, the guest never locks or turns off its display. Takes effect right away, even while running"
                               : "Requires the guest agent")
                 }
                 if let diskSize {

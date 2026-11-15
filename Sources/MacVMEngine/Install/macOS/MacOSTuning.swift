@@ -5,6 +5,9 @@ public import MacVMModel
 ///
 /// 每项单独执行、单独报告结果，一项失败不影响其余各项；要 root 的项经 `sudo -S` 用客户机密码执行。
 public enum MacOSTuning {
+    /// 以登录用户身份执行，关掉屏幕保护程序：客户机不熄屏时屏保会一直渲染。
+    static let screensaverOff = "defaults -currentHost write com.apple.screensaver idleTime -int 0"
+
     public enum Step: String, CaseIterable, Codable, Sendable {
         /// Spotlight 索引：装完系统后 mds_stores 会长时间占满 CPU 与磁盘。
         case spotlight
@@ -32,7 +35,7 @@ public enum MacOSTuning {
             switch self {
             case .spotlight: ["mdutil -a -i off"]
             case .sleep: ["pmset -a sleep 0 disksleep 0 powernap 0"]
-            case .screensaver: ["defaults -currentHost write com.apple.screensaver idleTime -int 0"]
+            case .screensaver: [MacOSTuning.screensaverOff]
             case .updates: Self.softwareUpdateKeys.map { "defaults write \(Self.softwareUpdateDomain) \($0) -bool false" }
             case .animations: Self.animationDefaults.map { "defaults write \($0.domain) \($0.key) \($0.value)" } + [Self.restartDock]
             case .transparency: Self.accessibilityKeys.map { "defaults write com.apple.universalaccess \($0) -bool true" }

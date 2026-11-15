@@ -73,12 +73,20 @@ struct GuestScreenLockTests {
     func linuxScriptParsesUnderShell(locks: Bool) throws {
         let script = GuestScreenLock.linuxScript(locks: locks)
         #expect(script.contains("lock-enabled=\(locks)"))
+        #expect(script.contains("idle-delay=uint32 \(locks ? GuestScreenLock.linuxIdleDelaySeconds : 0)"))
         let process = Process()
         process.executableURL = URL(filePath: "/bin/sh")
         process.arguments = ["-n", "-c", script]
         try process.run()
         process.waitUntilExit()
         #expect(process.terminationStatus == 0)
+    }
+
+    @Test func windowsScriptSetsSecureScreenSaver() {
+        let on = GuestScreenLock.windowsScript(locks: true), off = GuestScreenLock.windowsScript(locks: false)
+        #expect(on.contains("Set-Spi 119 1") && on.contains("CONSOLELOCK 1"))
+        #expect(on.contains("monitor-timeout-ac \(GuestScreenLock.displaySleepMinutes)"))
+        #expect(off.contains("Set-Spi 17 0") && off.contains("monitor-timeout-ac 0") && off.contains("CONSOLELOCK 0"))
     }
 
     @Test func macOSPasswordGoesThroughStandardInput() throws {
@@ -91,6 +99,16 @@ struct GuestScreenLockTests {
         #expect(String(decoding: input, as: UTF8.self) == "p'w d\n")
         #expect(!request.argv.joined().contains("p'w d"))
         #expect(request.argv.last?.contains("-screenLock off") == true)
+        #expect(request.argv.last?.contains("minutes=0") == true)
+
+        for locks in [true, false] {
+            let process = Process()
+            process.executableURL = URL(filePath: "/bin/sh")
+            process.arguments = ["-n", "-c", try GuestScreenLock.command(locks: locks, os: .macOS, bundle: bundle).0.argv.last!]
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+        }
     }
 }
 

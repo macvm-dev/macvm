@@ -903,12 +903,12 @@
         }
       }
     },
-    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest locks its screen once it's idle and the display has gone to sleep (off by default). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--ip gives the guest a fixed IPv4 address on a bridged network, written as address/prefix-length (e.g. 192.168.1.10/24) together with --gateway; --ip dhcp switches back to an address from the router. --dns sets up to 3 DNS servers and defaults to the gateway. It works only for VMs set to bridged networking in the app and needs the guest agent, which applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle; Linux guests need NetworkManager or systemd-networkd.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.\n--add-forward forwards a TCP port on the host to a port in the guest while the VM runs, written as [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect. You can change forwards while the VM is running; they take effect right away. --remove-forward takes the host port, address:host-port, or the full forward, and runs before --add-forward." : {
+    "--engine switches the virtualization engine without touching the disk or the installed system. For Windows, for example, use vz for everyday builds and tests (lowest overhead) and switch to qemu when you need sound or suspend.\nmacOS guests can only use vz.\n--retina applies only to QEMU VMs and Linux on VZ shown in the app's window. You can change it while the VM is running; it takes effect the next time an open window is resized.\n--clipboard syncs the text clipboard between the app's window and the guest (on by default). macOS and Windows guests sync through the agent, so you can change this while they run; Linux guests sync through spice-vdagent and must be shut down first.\n--screen-lock sets whether the guest turns off its display and locks its screen once it's idle (off by default: it neither locks nor turns off the display; when turned on, a guest with no idle timeout gets one: 10 minutes on macOS and Windows, 5 on GNOME; Windows uses a secure blank screen saver unless one is already on). The guest agent applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle.\n--ip gives the guest a fixed IPv4 address on a bridged network, written as address/prefix-length (e.g. 192.168.1.10/24) together with --gateway; --ip dhcp switches back to an address from the router. --dns sets up to 3 DNS servers and defaults to the gateway. It works only for VMs set to bridged networking in the app and needs the guest agent, which applies it in the guest: right away if the VM is running, otherwise when the agent starts at the next boot. macOS guests need the guest password saved in the VM bundle; Linux guests need NetworkManager or systemd-networkd.\n--disk-size only grows the system disk image; you need to expand the partition in the guest yourself, except for Linux from cloud images, which expands it automatically at the next boot.\n--remove-share runs before --add-share, so to make a shared folder read-only or writable, remove it and add it back. Shared folders work only with macOS and Linux guests on the VZ engine.\n--add-forward forwards a TCP port on the host to a port in the guest while the VM runs, written as [address:]host-port:guest-port. The address defaults to 127.0.0.1 (this Mac only); use 0.0.0.0 to let other devices on the network connect. You can change forwards while the VM is running; they take effect right away. --remove-forward takes the host port, address:host-port, or the full forward, and runs before --add-forward." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机在空闲且显示器休眠后是否锁屏（默认关）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--ip 给桥接网络上的客户机设固定的 IPv4 地址，写法为 地址/前缀长度（如 192.168.1.10/24），要同时给出 --gateway；--ip dhcp 改回从路由器获取地址。--dns 设置 DNS 服务器，最多 3 个，缺省用网关。只用于已在 App 里设成桥接网络的虚拟机，需要客户机代理，由它在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码；Linux 客户机需要 NetworkManager 或 systemd-networkd。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。\n--add-forward 在虚拟机运行期间把宿主的 TCP 端口转发到客户机端口，写法为 [地址:]宿主端口:客户机端口。地址默认 127.0.0.1（只有本机能连），用 0.0.0.0 让局域网里的其他设备也能连。虚拟机运行中也能修改，立即生效。--remove-forward 认宿主端口、地址:宿主端口或完整写法，先于 --add-forward 执行。"
+            "value" : "--engine 切换虚拟化引擎，不动磁盘和已装好的系统。例如 Windows：日常编译测试用 vz（开销最低），需要声音或挂起时换成 qemu。\nmacOS 客户机只能用 vz。\n--retina 只用于在 App 窗口里显示的 QEMU 虚拟机和 VZ 上的 Linux。虚拟机运行中也能修改，已打开的窗口在下次调整大小时生效。\n--clipboard 在 App 窗口与客户机之间同步文本剪贴板（默认开）。macOS 和 Windows 客户机经客户机代理同步，运行中也能修改；Linux 客户机经 spice-vdagent 同步，要先关机再修改。\n--screen-lock 设置客户机空闲后是否熄屏并锁屏（默认关：既不锁屏也不熄屏；打开时，没有空闲时限的客户机会设上一个：macOS 与 Windows 为 10 分钟，GNOME 为 5 分钟；Windows 没开屏保时换上空白的安全屏保）。由客户机代理在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码。\n--ip 给桥接网络上的客户机设固定的 IPv4 地址，写法为 地址/前缀长度（如 192.168.1.10/24），要同时给出 --gateway；--ip dhcp 改回从路由器获取地址。--dns 设置 DNS 服务器，最多 3 个，缺省用网关。只用于已在 App 里设成桥接网络的虚拟机，需要客户机代理，由它在客户机里应用：虚拟机运行中立即生效，否则在下次开机、代理启动时生效。macOS 客户机需要虚拟机包里保存了客户机密码；Linux 客户机需要 NetworkManager 或 systemd-networkd。\n--disk-size 只扩大系统盘镜像，客户机里的分区要自己扩展；用云镜像创建的 Linux 例外，下次开机时会自动扩展。\n--remove-share 先于 --add-share 执行，所以要把共享目录改成只读或可写，先移除再加回即可。共享目录只用于 VZ 引擎上的 macOS 和 Linux 客户机。\n--add-forward 在虚拟机运行期间把宿主的 TCP 端口转发到客户机端口，写法为 [地址:]宿主端口:客户机端口。地址默认 127.0.0.1（只有本机能连），用 0.0.0.0 让局域网里的其他设备也能连。虚拟机运行中也能修改，立即生效。--remove-forward 认宿主端口、地址:宿主端口或完整写法，先于 --add-forward 执行。"
           }
         }
       }
@@ -1952,6 +1952,16 @@
         }
       }
     },
+    "Couldn't apply the guest's system settings: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改客户机的系统设置失败：%@"
+          }
+        }
+      }
+    },
     "Couldn't apply these tuning steps in %@: %@. Run macvm tune %@ in Terminal to try again" : {
       "localizations" : {
         "en" : {
@@ -2584,16 +2594,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置磁盘大小失败"
-          }
-        }
-      }
-    },
-    "Couldn't set the hostname, time zone, and display sleep: %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "设置主机名、时区与熄屏失败：%@"
           }
         }
       }
@@ -4318,16 +4318,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "客户机空闲后锁屏：on 或 off。"
-          }
-        }
-      }
-    },
-    "Locks the guest screen when it's idle and the display sleeps, so a password is needed to get back in. When off, the guest never locks. Takes effect right away, even while running" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "客户机空闲且显示器休眠时锁定屏幕，回来要输入密码。关闭后客户机从不锁屏。运行中更改也立即生效"
           }
         }
       }
@@ -8275,6 +8265,16 @@
         }
       }
     },
+    "Turns off the guest display and locks its screen when it's idle, so a password is needed to get back in. When off, the guest never locks or turns off its display. Takes effect right away, even while running" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "客户机空闲时熄屏并锁定屏幕，回来要输入密码。关闭后客户机既不锁屏也不熄屏。运行中更改也立即生效"
+          }
+        }
+      }
+    },
     "Type text into the focused element." : {
       "localizations" : {
         "zh-Hans" : {
@@ -9208,12 +9208,12 @@
         }
       }
     },
-    "macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,\nturns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, turns off display sleep, and runs every macvm tune step (skip with --no-tune).\n  macvm create mac --os macos\nWindows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.\n  macvm create dev --image debian-13 --memory 8G\nLinux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;\nadd --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.\n  macvm create desk --desktop ubuntu-desktop\nInstallation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\nTemplates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), and --engine.\n  macvm create dev2 --template dev-base" : {
+    "macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,\nturns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, turns off display sleep and the screen saver, and runs every macvm tune step (skip with --no-tune).\n  macvm create mac --os macos\nWindows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.\n  macvm create dev --image debian-13 --memory 8G\nLinux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;\nadd --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.\n  macvm create desk --desktop ubuntu-desktop\nInstallation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\nTemplates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), and --engine.\n  macvm create dev2 --template dev-base" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、\n自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名、关掉熄屏，再执行 macvm tune 的全部项（--no-tune 跳过）。\n  macvm create mac --os macos\nWindows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。\n  macvm create dev --image debian-13 --memory 8G\nLinux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，\n加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。\n  macvm create desk --desktop ubuntu-desktop\n安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\n模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--engine。\n  macvm create dev2 --template dev-base"
+            "value" : "macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、\n自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名、关掉熄屏与屏幕保护程序，再执行 macvm tune 的全部项（--no-tune 跳过）。\n  macvm create mac --os macos\nWindows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。\n  macvm create dev --image debian-13 --memory 8G\nLinux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，\n加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。\n  macvm create desk --desktop ubuntu-desktop\n安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\n模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--engine。\n  macvm create dev2 --template dev-base"
           }
         }
       }

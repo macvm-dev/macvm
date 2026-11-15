@@ -48,7 +48,7 @@ public enum MacOSProvisioning {
     }
 
     /// 经 SSH 把运行中客户机的电脑名设为虚拟机名，主机名与本地主机名设为它能当主机名用的形式，时区设为宿主的时区，
-    /// 并关掉熄屏：熄屏只省下出画面的开销，客户机里的程序照常跑。
+    /// 并关掉熄屏与屏幕保护程序。
     /// 要 sudo，用包内保存的客户机密码；客户机要已装好 macvm 公钥。
     public static func applySystemSettings(bundle: VMBundle, config: VMConfig, macvmPath: String,
                                            timeZone: String = TimeZone.current.identifier) async throws {
@@ -68,7 +68,8 @@ public enum MacOSProvisioning {
         try GuestCredentials.writePrivate(Data((password + "\n").utf8), to: stdin)
         defer { try? FileManager.default.removeItem(at: stdin) }
         let ssh = AgentInstaller.sshArguments(bundle: bundle, user: user, macvmPath: macvmPath)
-        try await Subprocess.run("/usr/bin/ssh", ssh + ["sudo -S -p '' /bin/sh -c '\(commands)'"], stdin: stdin)
+        // 屏保是登录用户自己的偏好，不经 sudo 写。
+        try await Subprocess.run("/usr/bin/ssh", ssh + ["sudo -S -p '' /bin/sh -c '\(commands)' && \(MacOSTuning.screensaverOff)"], stdin: stdin)
     }
 
 }
