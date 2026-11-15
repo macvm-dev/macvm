@@ -8,7 +8,7 @@ public enum MacOSTuning {
     public enum Step: String, CaseIterable, Codable, Sendable {
         /// Spotlight 索引：装完系统后 mds_stores 会长时间占满 CPU 与磁盘。
         case spotlight
-        /// 系统睡眠、熄屏与 Power Nap：客户机睡下后宿主连不上它；熄屏只省下出画面的开销，客户机里的程序照常跑。
+        /// 系统睡眠与 Power Nap：客户机睡下后宿主连不上它。
         case sleep
         /// 屏幕保护程序：没人看时仍在客户机里渲染动画。
         case screensaver
@@ -31,7 +31,7 @@ public enum MacOSTuning {
         fileprivate var applyCommands: [String] {
             switch self {
             case .spotlight: ["mdutil -a -i off"]
-            case .sleep: ["pmset -a sleep 0 displaysleep 0 disksleep 0 powernap 0"]
+            case .sleep: ["pmset -a sleep 0 disksleep 0 powernap 0"]
             case .screensaver: ["defaults -currentHost write com.apple.screensaver idleTime -int 0"]
             case .updates: Self.softwareUpdateKeys.map { "defaults write \(Self.softwareUpdateDomain) \($0) -bool false" }
             case .animations: Self.animationDefaults.map { "defaults write \($0.domain) \($0.key) \($0.value)" } + [Self.restartDock]

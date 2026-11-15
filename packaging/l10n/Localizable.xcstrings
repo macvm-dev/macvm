@@ -603,6 +603,16 @@
         }
       }
     },
+    "%@'s login user is unknown, so its system settings can't be changed over SSH" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不知道 %@ 的登录用户，无法经 SSH 修改系统设置"
+          }
+        }
+      }
+    },
     "%@'s login user is unknown, so the guest agent can't be installed over SSH" : {
       "localizations" : {
         "zh-Hans" : {
@@ -619,16 +629,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不知道 %@ 的登录用户，无法更新客户机代理"
-          }
-        }
-      }
-    },
-    "%@'s login user is unknown, so the host name and time zone can't be set over SSH" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不知道 %@ 的登录用户，无法经 SSH 设置主机名与时区"
           }
         }
       }
@@ -1514,12 +1514,12 @@
         }
       }
     },
-    "Changes system settings in the guest over SSH, starting the VM if it isn't running. Steps:\n  spotlight     Turn off Spotlight indexing (Finder and Spotlight can no longer search file contents)\n  sleep         Turn off system sleep, display sleep, disk sleep, and Power Nap\n  screensaver   Turn off the screen saver\n  updates       Turn off automatic checking, downloading, and installing of system updates\n  animations    Turn off window and Dock animations\n  transparency  Turn on Reduce Transparency and Reduce Motion; if SSH doesn't have Full Disk Access, this fails\n                and you need to turn them on in the guest under System Settings > Accessibility > Display\nspotlight, sleep, and updates need sudo, which uses the guest password saved in the VM bundle (every VM created with macvm create --os macos has one).\n--revert restores the selected steps to system defaults." : {
+    "Changes system settings in the guest over SSH, starting the VM if it isn't running. Steps:\n  spotlight     Turn off Spotlight indexing (Finder and Spotlight can no longer search file contents)\n  sleep         Turn off system sleep, disk sleep, and Power Nap\n  screensaver   Turn off the screen saver\n  updates       Turn off automatic checking, downloading, and installing of system updates\n  animations    Turn off window and Dock animations\n  transparency  Turn on Reduce Transparency and Reduce Motion; if SSH doesn't have Full Disk Access, this fails\n                and you need to turn them on in the guest under System Settings > Accessibility > Display\nspotlight, sleep, and updates need sudo, which uses the guest password saved in the VM bundle (every VM created with macvm create --os macos has one).\n--revert restores the selected steps to system defaults." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "经 SSH 修改客户机里的系统设置，虚拟机未运行时会先开机。各项：\n  spotlight     关闭聚焦索引（访达和聚焦不能再搜索文件内容）\n  sleep         关闭系统睡眠、显示器睡眠、磁盘睡眠和 Power Nap\n  screensaver   关闭屏幕保护程序\n  updates       关闭自动检查、下载和安装系统更新\n  animations    关闭窗口和程序坞动画\n  transparency  打开「降低透明度」和「减弱动态效果」；SSH 没有完全磁盘访问权限时会失败，\n                需要在客户机的「系统设置 > 辅助功能 > 显示」里手动打开\nspotlight、sleep 和 updates 需要 sudo，会用虚拟机包里保存的客户机密码（用 macvm create --os macos 创建的虚拟机都有）。\n--revert 把所选各项恢复为系统默认。"
+            "value" : "经 SSH 修改客户机里的系统设置，虚拟机未运行时会先开机。各项：\n  spotlight     关闭聚焦索引（访达和聚焦不能再搜索文件内容）\n  sleep         关闭系统睡眠、磁盘睡眠和 Power Nap\n  screensaver   关闭屏幕保护程序\n  updates       关闭自动检查、下载和安装系统更新\n  animations    关闭窗口和程序坞动画\n  transparency  打开「降低透明度」和「减弱动态效果」；SSH 没有完全磁盘访问权限时会失败，\n                需要在客户机的「系统设置 > 辅助功能 > 显示」里手动打开\nspotlight、sleep 和 updates 需要 sudo，会用虚拟机包里保存的客户机密码（用 macvm create --os macos 创建的虚拟机都有）。\n--revert 把所选各项恢复为系统默认。"
           }
         }
       }
@@ -2588,12 +2588,12 @@
         }
       }
     },
-    "Couldn't set the hostname and time zone: %@" : {
+    "Couldn't set the hostname, time zone, and display sleep: %@" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "设置主机名与时区失败：%@"
+            "value" : "设置主机名、时区与熄屏失败：%@"
           }
         }
       }
@@ -4880,12 +4880,12 @@
         }
       }
     },
-    "No guest password is saved for %@, so sudo isn't available to set the host name and time zone" : {
+    "No guest password is saved for %@, so sudo isn't available to change its system settings" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没有保存 %@ 的客户机密码，无法用 sudo 设置主机名和时区"
+            "value" : "没有保存 %@ 的客户机密码，无法用 sudo 修改系统设置"
           }
         }
       }
@@ -9208,12 +9208,12 @@
         }
       }
     },
-    "macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,\nturns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, and runs every macvm tune step (skip with --no-tune).\n  macvm create mac --os macos\nWindows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.\n  macvm create dev --image debian-13 --memory 8G\nLinux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;\nadd --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.\n  macvm create desk --desktop ubuntu-desktop\nInstallation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\nTemplates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), and --engine.\n  macvm create dev2 --template dev-base" : {
+    "macOS: installs from an IPSW. Without --ipsw, downloads the latest version this Mac supports (about 15–20 GB, cached under ipsw in the downloads folder). On first boot it creates a user,\nturns on automatic login and SSH, installs the macvm SSH key and the guest agent, sets the hostname to the VM name, turns off display sleep, and runs every macvm tune step (skip with --no-tune).\n  macvm create mac --os macos\nWindows 11 ARM64: installs unattended from an official ISO using the QEMU engine (requires brew install qemu) and sets up a user and OpenSSH.\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux cloud images (recommended): pick one with --image; it's downloaded and cached on first use. The VM boots with a user and the macvm SSH key already set up.\n  macvm create dev --image debian-13 --memory 8G\nLinux desktop: --desktop downloads the distribution's desktop installer ISO (checked with SHA-256 and cached). Ubuntu installs offline and unattended by default, with a user and the SSH public key set up;\nadd --manual-install to use the graphical installer instead. Fedora boots into the graphical installer in the window, where you finish the setup.\n  macvm create desk --desktop ubuntu-desktop\nInstallation media: creates an empty disk and boots the installer from the media given with --iso (Linux, Windows).\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\nTemplates: copies a template saved with macvm template save (any OS, including macOS). You can also pass --cpus, --memory, --disk (grow only), and --engine.\n  macvm create dev2 --template dev-base" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、\n自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名，再执行 macvm tune 的全部项（--no-tune 跳过）。\n  macvm create mac --os macos\nWindows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。\n  macvm create dev --image debian-13 --memory 8G\nLinux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，\n加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。\n  macvm create desk --desktop ubuntu-desktop\n安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\n模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--engine。\n  macvm create dev2 --template dev-base"
+            "value" : "macOS：从 IPSW 安装，不给 --ipsw 时下载本机支持的最新版本（约 15–20 GB，缓存在下载目录的 ipsw 下）。装好后首次开机自动创建用户、\n自动登录并开启 SSH，装入 macvm 专用密钥与客户机代理、把主机名设为虚拟机名、关掉熄屏，再执行 macvm tune 的全部项（--no-tune 跳过）。\n  macvm create mac --os macos\nWindows 11 ARM64：用 QEMU 引擎（需 brew install qemu）从原版 ISO 无人值守安装，装好即带用户与 OpenSSH。\n  macvm create win --os windows --iso ~/Downloads/Win11_arm64.iso\nLinux 云镜像（推荐）：--image 指定镜像，首次使用时下载并缓存；开机即带用户与 macvm 专用 SSH 密钥。\n  macvm create dev --image debian-13 --memory 8G\nLinux 桌面版：--desktop 下载发行方的桌面版安装 ISO（校验 SHA-256 并缓存）。Ubuntu 默认离线无人值守安装，装好即带用户与 SSH 公钥，\n加 --manual-install 改为图形安装；Fedora 开机后在窗口里完成图形安装。\n  macvm create desk --desktop ubuntu-desktop\n安装介质：创建空磁盘，从 --iso 指定的介质启动安装（Linux、Windows）。\n  macvm create box --os linux --iso ~/Downloads/fedora-aarch64.iso\n模板：复制 macvm template save 存下的模板（任何系统，含 macOS），可另指定 --cpus、--memory、--disk（只能扩大）、--engine。\n  macvm create dev2 --template dev-base"
           }
         }
       }

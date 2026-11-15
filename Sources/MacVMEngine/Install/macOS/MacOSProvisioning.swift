@@ -47,18 +47,19 @@ public enum MacOSProvisioning {
         try? FileManager.default.removeItem(at: pendingURL(bundle))
     }
 
-    /// 经 SSH 把运行中客户机的电脑名设为虚拟机名，主机名与本地主机名设为它能当主机名用的形式，时区设为宿主的时区。
+    /// 经 SSH 把运行中客户机的电脑名设为虚拟机名，主机名与本地主机名设为它能当主机名用的形式，时区设为宿主的时区，
+    /// 并关掉熄屏：熄屏只省下出画面的开销，客户机里的程序照常跑。
     /// 要 sudo，用包内保存的客户机密码；客户机要已装好 macvm 公钥。
-    public static func setHostNameAndTimeZone(bundle: VMBundle, config: VMConfig, macvmPath: String,
-                                              timeZone: String = TimeZone.current.identifier) async throws {
-        guard let user = config.guestUser else { throw MacVMError.unsupported(String(l10n: "\(config.name)'s login user is unknown, so the host name and time zone can't be set over SSH")) }
+    public static func applySystemSettings(bundle: VMBundle, config: VMConfig, macvmPath: String,
+                                           timeZone: String = TimeZone.current.identifier) async throws {
+        guard let user = config.guestUser else { throw MacVMError.unsupported(String(l10n: "\(config.name)'s login user is unknown, so its system settings can't be changed over SSH")) }
         guard let password = GuestCredentials.password(for: bundle) else {
-            throw MacVMError.invalidConfig(String(l10n: "No guest password is saved for \(config.name), so sudo isn't available to set the host name and time zone"))
+            throw MacVMError.invalidConfig(String(l10n: "No guest password is saved for \(config.name), so sudo isn't available to change its system settings"))
         }
         // 虚拟机名只含 `SSHConfig.isPlainName` 认的字符，放进单引号里不用转义。
         try SSHConfig.validateLogin(user: user, host: bundle.name)
         let host = CloudInit.hostname(for: bundle.name, fallback: "mac")
-        var commands = "scutil --set ComputerName \(bundle.name) && scutil --set LocalHostName \(host) && scutil --set HostName \(host)"
+        var commands = "scutil --set ComputerName \(bundle.name) && scutil --set LocalHostName \(host) && scutil --set HostName \(host) && pmset -a displaysleep 0"
         // 时区名放进同一对单引号里，只收 tz 数据库名用得到的字符；不认得的名字由 systemsetup 拒绝。
         if timeZone.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "/_+-".contains($0)) }) {
             commands += " && systemsetup -settimezone \(timeZone)"

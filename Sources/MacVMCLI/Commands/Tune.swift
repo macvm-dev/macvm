@@ -11,7 +11,7 @@ struct Tune: AsyncParsableCommand {
         discussion: String(l10n: """
         Changes system settings in the guest over SSH, starting the VM if it isn't running. Steps:
           spotlight     Turn off Spotlight indexing (Finder and Spotlight can no longer search file contents)
-          sleep         Turn off system sleep, display sleep, disk sleep, and Power Nap
+          sleep         Turn off system sleep, disk sleep, and Power Nap
           screensaver   Turn off the screen saver
           updates       Turn off automatic checking, downloading, and installing of system updates
           animations    Turn off window and Dock animations
