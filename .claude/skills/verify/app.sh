@@ -59,6 +59,16 @@ skill_copies() {
     done | sort -u
 }
 
+# 临时目录里的 owner 记着占用它的进程号和启动时间，smoke.sh cleanup 不带参数时跳过还有人在用的目录。
+owner_alive() {
+    local pid started
+    [ -f "$1/owner" ] || return 1
+    read -r pid started <"$1/owner" || return 1
+    [ -n "$pid" ] && [ "$(LC_ALL=C ps -o lstart= -p "$pid" 2>/dev/null | awk '{$1 = $1; print}')" = "$started" ]
+}
+
+write_owner() { printf '%s %s\n' "$2" "$(LC_ALL=C ps -o lstart= -p "$2" | awk '{$1 = $1; print}')" >"$1/owner"; }
+
 # start 中途失败：先按已记下的状态回滚，再退出。
 abort() {
     printf '%s\n' "$*" >&2
@@ -78,7 +88,12 @@ start() {
     local dl home log make_pid app_pid i d
     dl=$(env -u MACVM_HOME "$M" doctor --json | jq -r '.result.downloadPath')
     if [ -z "$dl" ] || ! mkdir -p "$dl"; then die "拿不到下载目录"; fi
+    # 同一台机器同时只跑一份：交叠时后开始的那份会把前一份的临时 ssh_config 当原版备份。
+    for d in "$dl"/.verify-tmp.*; do
+        [ -d "$d" ] && owner_alive "$d" && die "另一份验证正在用 ${d}，等它跑完再来"
+    done
     home=$(mktemp -d "$dl/.verify-tmp.XXXXXX") || die "建不了临时虚拟机目录"
+    write_owner "$home" "$$"
     # 状态先落盘，之后每一步失败都能由 stop 回滚。
     {
         printf 'VM_HOME=%q\n' "$home"
@@ -117,6 +132,8 @@ start() {
      echo $! >"$STATE_DIR/make.pid") || abort "进不了 $REPO"
     make_pid=$(cat "$STATE_DIR/make.pid")
     printf 'MAKE_PID=%q\n' "$make_pid" >>"$STATE"
+    # make 一直活到 App 退出，拿它当这个目录的主人。
+    write_owner "$home" "$make_pid"
 
     # make run 先编译客户机程序并组装 App，之后才启动；冷构建要几分钟。
     app_pid=""

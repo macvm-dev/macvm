@@ -85,8 +85,31 @@ download_dir() {
 
 # create、clone、rm 会按 MACVM_HOME 里的虚拟机列表重写用户的 ssh_config，事先备份、事后整份还原；
 # 期间别处对它的改动会被备份覆盖。
+# 临时目录里的 owner 记着占用它的进程号和启动时间；进程还在、启动时间也对得上，才算有人在用。
+owner_alive() {
+    local pid started
+    [ -f "$1/owner" ] || return 1
+    read -r pid started <"$1/owner" || return 1
+    [ -n "$pid" ] && [ "$(LC_ALL=C ps -o lstart= -p "$pid" 2>/dev/null | awk '{$1 = $1; print}')" = "$started" ]
+}
+
+write_owner() { printf '%s %s\n' "$2" "$(LC_ALL=C ps -o lstart= -p "$2" | awk '{$1 = $1; print}')" >"$1/owner"; }
+
+# 同一台机器同时只跑一份：两份交叠时后开始的那份会把前一份的临时 ssh_config 当原版备份，收尾时写回去。
+busy_homes() {
+    local home
+    for home in "$1"/"$TMP_PREFIX"*; do
+        [ -d "$home" ] && owner_alive "$home" && printf '%s\n' "$home"
+    done
+    return 0
+}
+
 begin_vm_home() {
+    local busy
+    busy=$(busy_homes "$(download_dir)")
+    [ -z "$busy" ] || { say "另一份验证正在用 ${busy}，等它跑完再来"; exit 2; }
     VM_HOME=$(mktemp -d "$(download_dir)/${TMP_PREFIX}XXXXXX") || { say "建不了临时虚拟机目录"; exit 2; }
+    write_owner "$VM_HOME" "$$"
     export MACVM_HOME="$VM_HOME"
     if [ -f "$SSH_CONFIG" ]; then
         cp -p "$SSH_CONFIG" "$VM_HOME/ssh_config.backup" || { say "备份 $SSH_CONFIG 失败"; exit 2; }
@@ -367,6 +390,7 @@ flow_cleanup() {
     d=$(env -u MACVM_HOME "$M" doctor --json | jq -r '.result.downloadPath')
     for home in "$d"/"$TMP_PREFIX"*; do
         [ -d "$home" ] || continue
+        if owner_alive "$home"; then say "跳过 ${home}：还有验证在用它"; continue; fi
         found=1
         say "清理 $home"
         clean_home "$home" || rc=1

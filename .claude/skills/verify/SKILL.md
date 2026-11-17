@@ -17,7 +17,7 @@ description: 改了 MacVM 的 Sources/、guest/、qemu/、packaging/、scripts/�
 - 不要自己 `make run`（它在前台运行、用的是用户的虚拟机目录，要起 App 用下文的 `app.sh`），也不要 `make app`（会覆盖 `dist/` 里的发布产物）、`make install`、`make release`、`make tag`。
 - 临时虚拟机目录放在下载目录（`doctor --json` 的 `downloadPath`）里：与云镜像缓存、模板同卷时 `create` 用 clonefile，一秒内建好；放到 `/tmp` 这类别的卷上要整盘复制 3 GB 镜像，实测 45 秒到近三分钟。
 
-脚本被强杀（`kill -9`、会话中断）后，临时虚拟机和被改过的 `ssh_config` 会留下，运行 `.claude/skills/verify/smoke.sh cleanup` 收掉并还原；起过 `app.sh` 的再运行 `.claude/skills/verify/app.sh stop`，把链接、技能副本和 `creations.json` 还原回去（`creations.json` 的备份是它旁边的 `creations.json.verify-backup`，正式版在运行时 stop 不动它）。
+脚本被强杀（`kill -9`、会话中断）后，临时虚拟机和被改过的 `ssh_config` 会留下，运行 `.claude/skills/verify/smoke.sh cleanup` 收掉并还原（不带目录时跳过 `owner` 里记的进程还活着的目录，即别的验证正在用的）；起过 `app.sh` 的再运行 `.claude/skills/verify/app.sh stop`，把链接、技能副本和 `creations.json` 还原回去（`creations.json` 的备份是它旁边的 `creations.json.verify-backup`，正式版在运行时 stop 不动它）。
 
 ## 1. 静态检查（每次都做）
 
@@ -78,7 +78,7 @@ description: 改了 MacVM 的 Sources/、guest/、qemu/、packaging/、scripts/�
 - Windows：`create verify-tmp-win --os windows` 从微软下载 ISO（下载目录 `windows/` 有缓存时用缓存），无人值守部署要半小时以上。
 - Ubuntu 桌面版：`create verify-tmp-desk --desktop ubuntu-desktop` 下载安装 ISO 并离线自动安装，十几分钟以上。
 
-做法：`export MACVM_HOME="$(mktemp -d "<downloadPath>/.verify-tmp.XXXXXX")"`，先 `cp -p ~/.config/macvm/ssh_config "$MACVM_HOME/ssh_config.backup"`，命令用 `run_in_background` 跑；完了 `.claude/skills/verify/smoke.sh cleanup "$MACVM_HOME"` 删虚拟机并还原 `ssh_config`。
+做法：Bash 工具每次调用不保留环境变量，不要 `export`。先跑 `mktemp -d "<downloadPath>/.verify-tmp.XXXXXX"` 记下它打印的路径（下称 `<D>`）；有 `~/.config/macvm/ssh_config` 就 `cp -p` 到 `<D>/ssh_config.backup`，没有就 `touch <D>/ssh_config.absent`。之后每条命令都写成 `MACVM_HOME=<D> .build/debug/macvm …` 的字面量前缀，用 `run_in_background` 跑；完了 `.claude/skills/verify/smoke.sh cleanup <D>` 删虚拟机并还原 `ssh_config`。这样手建的目录没有 `owner`，跑着的时候别人不带目录跑 `cleanup` 会把它清掉，所以慢路径期间不要并行跑别的验证。
 
 ## 3. 界面：调试版 App 交给 cua-operator
 
